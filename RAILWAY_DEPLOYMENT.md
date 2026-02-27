@@ -150,16 +150,25 @@ NEXT_PUBLIC_WS_URL=wss://your-backend.railway.app
    - New → Database → **Postgres with pgvector** (или PostgreSQL + включить pgvector).
 3. Добавить Redis (опционально):
    - New → Database → Redis.
-4. Создать сервис Backend:
-   - Connect repo. Root Directory можно не задавать — в корне есть `Dockerfile` и `railway.json` для backend.
-   - Либо задать Root Directory: `backend` (тогда используется `backend/Dockerfile`).
+4. Создать **два сервиса** из одного репозитория (монорепо):
+
+   **Сервис Backend:**
+   - New → GitHub Repo → выбрать репозиторий.
+   - Settings → Root Directory: `backend`.
+   - Settings → Config path (если есть): `/backend/railway.json`.
    - Подключить PostgreSQL (Reference → Variables).
-   - Добавить `OPENAI_API_KEY`, `ADMIN_TOKEN`, `CORS_ORIGINS`.
-5. Создать сервис Frontend:
-   - Connect repo → Root Directory: `frontend`.
-   - Добавить `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL`.
-6. Сгенерировать домены для backend и frontend.
-7. Обновить `CORS_ORIGINS` на фактический URL frontend.
+   - Добавить `OPENAI_API_KEY`, `ADMIN_TOKEN`, `CORS_ORIGINS`, `DATABASE_BACKEND=postgres`, `SECRET_ENCRYPTION_KEY`.
+
+   **Сервис Frontend:**
+   - New → GitHub Repo → тот же репозиторий.
+   - Settings → Root Directory: `frontend`.
+   - Settings → Config path (если есть): `/frontend/railway.json`.
+   - Добавить `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_WS_URL` (URL backend после деплоя).
+6. Сгенерировать домены для backend и frontend (Settings → Networking → Generate Domain).
+7. Обновить `CORS_ORIGINS` в Backend на фактический URL frontend (например `["https://xxx.railway.app"]`).
+8. Обновить `NEXT_PUBLIC_API_URL` и `NEXT_PUBLIC_WS_URL` во Frontend на URL backend.
+
+**Примечание:** В корне также есть `Dockerfile` и `railway.json` — они собирают только backend. Для полного деплоя создайте два отдельных сервиса с Root Directory.
 
 ---
 
