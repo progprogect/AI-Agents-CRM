@@ -27,8 +27,8 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-# Start nginx in foreground (keeps container running)
-nginx -c /tmp/nginx.conf -g "daemon off;" &
+# Start nginx in foreground (daemon off is in config)
+nginx -c /tmp/nginx.conf &
 NGINX_PID=$!
 
 # Wait for nginx; if it exits, we exit
