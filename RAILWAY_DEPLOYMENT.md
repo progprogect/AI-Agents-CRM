@@ -86,7 +86,7 @@
 |------------|----------|--------------|
 | `ENVIRONMENT` | Окружение | `production` |
 | `DEBUG` | Режим отладки | `false` |
-| `CORS_ORIGINS` | CORS (JSON или через запятую) | `["https://your-frontend.railway.app"]` |
+| `CORS_ORIGINS` | CORS (JSON или через запятую) | `["https://your-app.railway.app"]` |
 | `RATE_LIMIT_PER_MINUTE` | Лимит запросов в минуту | `60` |
 | `OPENAI_MODEL` | Модель OpenAI | `gpt-4o-mini` |
 | `MESSAGE_TTL_HOURS` | TTL сообщений (часы) | `48` |
@@ -131,7 +131,7 @@ DATABASE_BACKEND=postgres
 SECRET_ENCRYPTION_KEY=<сгенерировать: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())">
 ENVIRONMENT=production
 DEBUG=false
-CORS_ORIGINS=["https://your-frontend.railway.app"]
+CORS_ORIGINS=["https://your-app.railway.app"]
 ```
 
 ### Frontend (при едином сервисе не нужны)
@@ -154,7 +154,7 @@ CORS_ORIGINS=["https://your-frontend.railway.app"]
    - Добавить переменные: `OPENAI_API_KEY`, `ADMIN_TOKEN`, `DATABASE_BACKEND=postgres`, `SECRET_ENCRYPTION_KEY`, `CORS_ORIGINS`.
    - `NEXT_PUBLIC_API_URL` и `NEXT_PUBLIC_WS_URL` не нужны — frontend и API на одном домене.
 6. Сгенерировать домен (Settings → Networking → Generate Domain).
-7. Обновить `CORS_ORIGINS` на URL вашего домена (например `["https://xxx.railway.app"]`) — для webhook'ов и внешних вызовов.
+7. Обновить `CORS_ORIGINS` на URL вашего домена (например `["https://xxx.railway.app"]`).
 
 ---
 

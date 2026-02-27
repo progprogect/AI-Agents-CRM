@@ -46,7 +46,7 @@ EXPOSE 8000
 
 ENV PORT=8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=15s --timeout=10s --start-period=120s --retries=5 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 CMD ["/app/start.sh"]
