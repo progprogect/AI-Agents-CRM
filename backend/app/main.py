@@ -1,7 +1,7 @@
 """FastAPI application entry point.
 
 This is the main entry point for the Doctor Agent API.
-Optimized for cost efficiency using DynamoDB for caching and RAG.
+Supports PostgreSQL or DynamoDB backend for storage, cache, and RAG.
 """
 
 import logging

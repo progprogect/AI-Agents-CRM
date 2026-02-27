@@ -374,6 +374,22 @@ class SecretsManager:
                 return
             raise RuntimeError(f"Failed to delete channel token secret: {e}") from e
 
+    async def delete_notification_token_secret(self, secret_name: str) -> None:
+        """Delete notification bot token secret."""
+        try:
+            self.client.delete_secret(
+                SecretId=secret_name,
+                ForceDeleteWithoutRecovery=True,
+            )
+            self.clear_cache(secret_name)
+            logger.info(f"Deleted notification token secret: {secret_name}")
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "ResourceNotFoundException":
+                logger.warning(f"Secret {secret_name} not found, skipping deletion")
+                return
+            raise RuntimeError(f"Failed to delete notification token secret: {e}") from e
+
 
 @lru_cache()
 def get_secrets_manager() -> SecretsManager:

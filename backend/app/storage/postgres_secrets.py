@@ -184,6 +184,12 @@ class PostgresSecretsManager:
             await conn.execute("DELETE FROM secrets WHERE key = $1", secret_name)
         self.clear_cache(secret_name)
 
+    async def delete_notification_token_secret(self, secret_name: str) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM secrets WHERE key = $1", secret_name)
+        self.clear_cache(secret_name)
+
 
 @lru_cache()
 def get_postgres_secrets_manager() -> PostgresSecretsManager:

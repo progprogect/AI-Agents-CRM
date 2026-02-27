@@ -43,13 +43,6 @@ async def close_pool() -> None:
         _pool = None
 
 
-def _serialize_json(val: Any) -> Any:
-    """Convert Python types for JSONB storage."""
-    if isinstance(val, (dict, list)):
-        return json.dumps(val) if not isinstance(val, str) else val
-    return val
-
-
 def _parse_json(val: Any) -> Any:
     """Parse JSON from DB."""
     if val is None:
@@ -489,8 +482,6 @@ class PostgreSQLClient:
             return None
         d = _row_to_binding(row)
         d.pop("encrypted_access_token", None)
-        if not d.get("secret_name") and row.get("encrypted_access_token"):
-            d["secret_name"] = binding_id
         return ChannelBinding(**d)
 
     async def get_channel_bindings_by_agent(
@@ -516,8 +507,6 @@ class PostgreSQLClient:
         for r in rows:
             d = _row_to_binding(r)
             d.pop("encrypted_access_token", None)
-            if not d.get("secret_name") and r.get("encrypted_access_token"):
-                d["secret_name"] = d["binding_id"]
             try:
                 result.append(ChannelBinding(**d))
             except Exception as e:
@@ -540,8 +529,6 @@ class PostgreSQLClient:
         r = active[0] if active else rows[0]
         d = _row_to_binding(r)
         d.pop("encrypted_access_token", None)
-        if not d.get("secret_name") and r.get("encrypted_access_token"):
-            d["secret_name"] = d["binding_id"]
         return ChannelBinding(**d)
 
     async def update_channel_binding(

@@ -319,18 +319,14 @@ async def delete_notification_config(
         # Delete secret from Secrets Manager
         secrets_manager = get_secrets_manager()
         try:
-            secrets_manager.client.delete_secret(
-                SecretId=config.bot_token_secret_name,
-                ForceDeleteWithoutRecovery=True,
-            )
-            secrets_manager.clear_cache(config.bot_token_secret_name)
+            await secrets_manager.delete_notification_token_secret(config.bot_token_secret_name)
         except Exception as e:
             logger.warning(
                 f"Failed to delete secret for config {config_id}: {e}",
                 exc_info=True,
             )
 
-        # Delete config from DynamoDB
+        # Delete config from storage
         await deps.dynamodb.delete_notification_config(config_id)
 
         logger.info(f"Deleted notification config: {config_id}")
