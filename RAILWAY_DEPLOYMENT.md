@@ -151,7 +151,8 @@ NEXT_PUBLIC_WS_URL=wss://your-backend.railway.app
 3. Добавить Redis (опционально):
    - New → Database → Redis.
 4. Создать сервис Backend:
-   - Connect repo → выбрать `backend/` как Root Directory.
+   - Connect repo. Root Directory можно не задавать — в корне есть `Dockerfile` и `railway.json` для backend.
+   - Либо задать Root Directory: `backend` (тогда используется `backend/Dockerfile`).
    - Подключить PostgreSQL (Reference → Variables).
    - Добавить `OPENAI_API_KEY`, `ADMIN_TOKEN`, `CORS_ORIGINS`.
 5. Создать сервис Frontend:
