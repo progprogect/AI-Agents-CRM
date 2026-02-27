@@ -16,7 +16,7 @@ interface LogEntry {
 export default function InstagramTestPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [recipientId, setRecipientId] = useState("62670099264");
-  const [messageText, setMessageText] = useState("Тестовое сообщение от Doctor Agent");
+  const [messageText, setMessageText] = useState("Тестовое сообщение от Agent");
   const [isSending, setIsSending] = useState(false);
   const [accountId, setAccountId] = useState("25638311079121978");
   const [recentWebhooks, setRecentWebhooks] = useState<any[]>([]);

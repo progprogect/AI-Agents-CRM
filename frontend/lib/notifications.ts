@@ -1,7 +1,7 @@
 /** Notification service for browser notifications and toast messages. */
 
-const NOTIFICATION_PERMISSION_KEY = "doctor_agent_notification_permission";
-const NOTIFICATION_SOUND_ENABLED_KEY = "doctor_agent_notification_sound_enabled";
+const NOTIFICATION_PERMISSION_KEY = "agent_notification_permission";
+const NOTIFICATION_SOUND_ENABLED_KEY = "agent_notification_sound_enabled";
 
 export type NotificationPermission = "default" | "granted" | "denied";
 

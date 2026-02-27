@@ -182,7 +182,7 @@ export const RAGStep: React.FC<RAGStepProps> = ({
         </h3>
         <p className="text-sm text-gray-600 mb-6">
           Enable RAG to provide context-aware responses based on documents
-          about the doctor and clinic.
+          about the agent and clinic.
         </p>
       </div>
 
@@ -290,7 +290,7 @@ export const RAGStep: React.FC<RAGStepProps> = ({
                         errors,
                         `rag_documents[${index}].title`
                       )}
-                      placeholder="About Doctor"
+                      placeholder="About Agent"
                     />
                     <Textarea
                       label="Content"

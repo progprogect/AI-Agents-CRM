@@ -3,8 +3,8 @@
 from typing import Any, Optional
 
 
-class DoctorAgentException(Exception):
-    """Base exception for Doctor Agent application."""
+class AgentException(Exception):
+    """Base exception for Agent application."""
 
     def __init__(
         self,
@@ -19,7 +19,7 @@ class DoctorAgentException(Exception):
         super().__init__(self.message)
 
 
-class AgentNotFoundError(DoctorAgentException):
+class AgentNotFoundError(AgentException):
     """Raised when agent is not found."""
 
     def __init__(self, agent_id: str):
@@ -31,7 +31,7 @@ class AgentNotFoundError(DoctorAgentException):
         )
 
 
-class ConversationNotFoundError(DoctorAgentException):
+class ConversationNotFoundError(AgentException):
     """Raised when conversation is not found."""
 
     def __init__(self, conversation_id: str):
@@ -43,7 +43,7 @@ class ConversationNotFoundError(DoctorAgentException):
         )
 
 
-class InvalidAgentConfigError(DoctorAgentException):
+class InvalidAgentConfigError(AgentException):
     """Raised when agent configuration is invalid."""
 
     def __init__(self, message: str, validation_errors: Optional[dict[str, Any]] = None):
@@ -55,7 +55,7 @@ class InvalidAgentConfigError(DoctorAgentException):
         )
 
 
-class EscalationError(DoctorAgentException):
+class EscalationError(AgentException):
     """Raised when escalation fails."""
 
     def __init__(self, message: str, escalation_type: Optional[str] = None):
@@ -67,7 +67,7 @@ class EscalationError(DoctorAgentException):
         )
 
 
-class ModerationViolationError(DoctorAgentException):
+class ModerationViolationError(AgentException):
     """Raised when content moderation violation is detected."""
 
     def __init__(self, message: str, categories: Optional[dict[str, bool]] = None):
@@ -79,7 +79,7 @@ class ModerationViolationError(DoctorAgentException):
         )
 
 
-class RAGServiceError(DoctorAgentException):
+class RAGServiceError(AgentException):
     """Raised when RAG service fails."""
 
     def __init__(self, message: str, agent_id: Optional[str] = None):
@@ -91,7 +91,7 @@ class RAGServiceError(DoctorAgentException):
         )
 
 
-class MessageProcessingError(DoctorAgentException):
+class MessageProcessingError(AgentException):
     """Raised when message processing fails."""
 
     def __init__(self, message: str, conversation_id: Optional[str] = None):

@@ -151,7 +151,7 @@ export function useAgentWizard() {
 
     // Filter errors for current step
     const stepFields: Record<WizardStep, string[]> = {
-      1: ["agent_id", "doctor_display_name", "clinic_display_name", "specialty", "languages"],
+      1: ["agent_id", "agent_display_name", "clinic_display_name", "specialty", "languages"],
       2: ["tone", "formality", "empathy_level", "depth_level", "message_length", "persuasion"],
       3: ["examples"],
       4: ["rag_enabled", "rag_documents"],

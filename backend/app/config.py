@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    app_name: str = Field(default="Doctor Agent API", description="Application name")
+    app_name: str = Field(default="Agent API", description="Application name")
     app_version: str = Field(default="0.1.0", description="Application version")
     environment: str = Field(default="development", description="Environment")
     debug: bool = Field(default=False, description="Debug mode")

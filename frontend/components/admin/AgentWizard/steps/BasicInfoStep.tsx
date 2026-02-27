@@ -21,7 +21,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
   errors,
   onUpdate,
 }) => {
-  // Auto-generate agent_id when clinic_display_name or doctor_display_name changes
+  // Auto-generate agent_id when clinic_display_name or agent_display_name changes
   useEffect(() => {
     if (
       config.clinic_display_name &&
@@ -29,7 +29,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
     ) {
       const generatedId = generateAgentId(
         config.clinic_display_name,
-        config.doctor_display_name
+        config.agent_display_name
       );
       // Always update agent_id to ensure it's in sync
       if (!config.agent_id || generatedId !== config.agent_id) {
@@ -37,7 +37,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
       }
     }
     // Don't generate default ID - wait for clinic name to be entered
-  }, [config.clinic_display_name, config.doctor_display_name, config.agent_id, onUpdate]);
+  }, [config.clinic_display_name, config.agent_display_name, config.agent_id, onUpdate]);
 
   const languageOptions = [
     { value: "ru", label: "Русский" },
@@ -71,7 +71,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
           Basic Information
         </h3>
         <p className="text-sm text-gray-600 mb-6">
-          Provide basic information about the doctor and clinic.
+          Provide basic information about the agent and clinic.
         </p>
       </div>
 
@@ -91,10 +91,10 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
 
         <div className="md:col-span-2">
           <Input
-            label="Doctor Display Name"
-            value={config.doctor_display_name || ""}
-            onChange={(e) => onUpdate({ doctor_display_name: e.target.value })}
-            error={getFieldError(errors, "doctor_display_name")}
+            label="Agent Display Name"
+            value={config.agent_display_name || ""}
+            onChange={(e) => onUpdate({ agent_display_name: e.target.value })}
+            error={getFieldError(errors, "agent_display_name")}
             placeholder="Dr. John Smith"
             required
           />
@@ -138,7 +138,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
 
       {/* Preview Card */}
       {(config.clinic_display_name ||
-        config.doctor_display_name ||
+        config.agent_display_name ||
         config.specialty) && (
         <div className="mt-8 p-6 bg-[#F5D76E]/10 border border-[#D4AF37]/20 rounded-sm">
           <h4 className="text-sm font-medium text-gray-700 mb-4">Preview</h4>
@@ -148,9 +148,9 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
                 <h5 className="text-lg font-semibold text-gray-900">
                   {config.clinic_display_name || "Clinic Name"}
                 </h5>
-                {config.doctor_display_name && (
+                {config.agent_display_name && (
                   <p className="text-sm text-gray-600">
-                    {config.doctor_display_name}
+                    {config.agent_display_name}
                   </p>
                 )}
               </div>

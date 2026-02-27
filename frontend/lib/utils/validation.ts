@@ -24,10 +24,10 @@ export function validateAgentConfig(
     });
   }
 
-  if (!formData.doctor_display_name || formData.doctor_display_name.trim() === "") {
+  if (!formData.agent_display_name || formData.agent_display_name.trim() === "") {
     errors.push({
-      field: "doctor_display_name",
-      message: "Doctor display name is required",
+      field: "agent_display_name",
+      message: "Agent display name is required",
     });
   }
 

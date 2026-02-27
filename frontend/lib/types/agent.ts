@@ -51,7 +51,9 @@ export interface ChannelsConfig {
 }
 
 export interface ProfileConfig {
-  doctor_display_name: string;
+  agent_display_name: string;
+  /** @deprecated Legacy field, use agent_display_name. Kept for backward compat with pre-migration API responses. */
+  doctor_display_name?: string;
   clinic_display_name: string;
   specialty: string;
   languages: string[];

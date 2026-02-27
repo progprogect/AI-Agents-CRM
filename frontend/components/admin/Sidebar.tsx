@@ -63,7 +63,7 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="w-64 bg-white border-r border-[#D4AF37]/20 flex flex-col flex-shrink-0" aria-label="Admin navigation">
       <div className="p-6 border-b border-[#D4AF37]/20">
-        <h1 className="text-xl font-bold text-[#D4AF37]">Doctor Agent</h1>
+        <h1 className="text-xl font-bold text-[#D4AF37]">Agent</h1>
         <p className="text-sm text-gray-600">Admin Panel</p>
       </div>
       <nav className="flex-1 p-4 space-y-2" aria-label="Main navigation">

@@ -23,7 +23,7 @@ import type { Message } from "@/lib/types/message";
 import type { Agent } from "@/lib/types/agent";
 import { getChannelDisplay, isInstagramChannel } from "@/lib/utils/channelDisplay";
 import { getConversationDisplayId } from "@/lib/utils/conversationDisplay";
-import { getAgentDisplayName, getAgentSpecialty, getClinicDisplayName, getDoctorDisplayName } from "@/lib/utils/agentDisplay";
+import { getAgentDisplayName, getAgentSpecialty, getClinicDisplayName, getAgentProfileDisplayName } from "@/lib/utils/agentDisplay";
 import { formatDateTime } from "@/lib/utils/timeFormat";
 import { toConversationStatus } from "@/lib/utils/statusHelpers";
 
@@ -216,7 +216,7 @@ export default function ConversationDetailPage() {
 
   const agentDisplayName = agent ? getAgentDisplayName(agent) : conversation.agent_id;
   const clinicName = agent ? getClinicDisplayName(agent) : null;
-  const doctorName = agent ? getDoctorDisplayName(agent) : null;
+  const agentProfileName = agent ? getAgentProfileDisplayName(agent) : null;
   const specialty = agent ? getAgentSpecialty(agent) : null;
 
   return (
@@ -267,10 +267,10 @@ export default function ConversationDetailPage() {
                   <p className="text-sm font-medium text-gray-900">{clinicName}</p>
                 </div>
               )}
-              {doctorName && (
+              {agentProfileName && (
                 <div>
-                  <p className="text-xs text-gray-500">Doctor</p>
-                  <p className="text-sm font-medium text-gray-900">{doctorName}</p>
+                  <p className="text-xs text-gray-500">Agent</p>
+                  <p className="text-sm font-medium text-gray-900">{agentProfileName}</p>
                 </div>
               )}
               {specialty && (

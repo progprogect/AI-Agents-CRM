@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Doctor Agent - AI Medical Assistant",
+  title: "Agent - AI Assistant",
   description: "AI-powered medical consultation platform",
 };
 

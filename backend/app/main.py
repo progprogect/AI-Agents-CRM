@@ -1,6 +1,6 @@
 """FastAPI application entry point.
 
-This is the main entry point for the Doctor Agent API.
+This is the main entry point for the Agent API.
 Supports PostgreSQL or DynamoDB backend for storage, cache, and RAG.
 """
 
@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from app.api.exceptions import DoctorAgentException
+from app.api.exceptions import AgentException
 from app.api.middleware import (
     LoggingMiddleware,
     RequestIDMiddleware,
@@ -82,7 +82,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="AI Agent for Doctor - MVP API",
+        description="AI Agent - MVP API",
         lifespan=lifespan,
     )
 
@@ -107,14 +107,14 @@ def create_app() -> FastAPI:
     )
 
     # Exception handlers
-    @app.exception_handler(DoctorAgentException)
-    async def doctor_agent_exception_handler(
-        request: Request, exc: DoctorAgentException
+    @app.exception_handler(AgentException)
+    async def agent_exception_handler(
+        request: Request, exc: AgentException
     ):
-        """Handle custom DoctorAgentException."""
+        """Handle custom AgentException."""
         request_id = getattr(request.state, "request_id", None)
         logger.error(
-            f"DoctorAgentException: {exc.code} - {exc.message}",
+            f"AgentException: {exc.code} - {exc.message}",
             extra={
                 "request_id": request_id,
                 "code": exc.code,

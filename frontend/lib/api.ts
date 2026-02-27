@@ -147,7 +147,7 @@ async function request<T>(
       if (response.status === 401 || response.status === 403) {
         // Clear token on auth failure
         if (typeof window !== "undefined") {
-          localStorage.removeItem("doctor_agent_admin_token");
+          localStorage.removeItem("agent_admin_token");
         }
       }
       

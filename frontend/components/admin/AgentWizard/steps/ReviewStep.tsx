@@ -72,13 +72,13 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   useEffect(() => {
     if (config.system_persona) {
       setSystemPersona(config.system_persona);
-    } else if (config.doctor_display_name && config.clinic_display_name) {
+    } else if (config.agent_display_name && config.clinic_display_name) {
       const specialtyPart = config.specialty ? `\nТвоя специализация: {specialty}.` : "";
       setSystemPersona(
-        `Ты общаешься от лица врача {doctor_display_name} из {clinic_display_name}.${specialtyPart}\nТвой стиль — дружелюбный и профессиональный. Ты помогаешь с информацией и записью.\nТы НЕ ведёшь медицинскую консультацию в чате.`
+        `Ты общаешься от лица агента {agent_display_name} из {clinic_display_name}.${specialtyPart}\nТвой стиль — дружелюбный и профессиональный. Ты помогаешь с информацией и записью.\nТы НЕ ведёшь медицинскую консультацию в чате.`
       );
     }
-  }, [config.system_persona, config.doctor_display_name, config.clinic_display_name, config.specialty]);
+  }, [config.system_persona, config.agent_display_name, config.clinic_display_name, config.specialty]);
 
   // Mark component as mounted to avoid SSR hydration issues
   useEffect(() => {
@@ -116,7 +116,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     if (!isEditMode && !agentId && config.clinic_display_name) {
       agentId = generateAgentId(
         config.clinic_display_name,
-        config.doctor_display_name
+        config.agent_display_name
       );
     }
     
@@ -256,9 +256,9 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">Doctor:</span>
+            <span className="text-gray-600">Agent:</span>
             <span className="font-medium text-gray-900">
-              {config.doctor_display_name || "Not set"}
+              {config.agent_display_name || "Not set"}
             </span>
           </div>
           <div className="flex justify-between">
@@ -347,11 +347,11 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
               onChange={(e) => setSystemPersona(e.target.value)}
               rows={10}
               placeholder="Enter the system persona prompt that defines how the agent communicates..."
-              helperText="This prompt defines the agent's personality and communication style. Use {doctor_display_name} and {clinic_display_name} as placeholders."
+              helperText="This prompt defines the agent's personality and communication style. Use {agent_display_name} and {clinic_display_name} as placeholders."
             />
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-sm">
               <p className="text-sm text-blue-800">
-                <strong>Tip:</strong> The prompt will be used to set the agent's personality. Make sure to include placeholders for doctor and clinic names if needed.
+                <strong>Tip:</strong> The prompt will be used to set the agent's personality. Make sure to include placeholders for agent and clinic names if needed.
               </p>
             </div>
           </div>

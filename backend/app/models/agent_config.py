@@ -34,9 +34,9 @@ class ChannelsConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
-    """Doctor profile configuration."""
+    """Agent profile configuration."""
 
-    doctor_display_name: str
+    agent_display_name: str
     clinic_display_name: str
     specialty: str
     languages: list[str] = Field(default_factory=lambda: ["ru", "en"])
@@ -303,8 +303,8 @@ class AgentConfig(BaseModel):
     def validate_config(self) -> "AgentConfig":
         """Cross-field validation."""
         # Ensure profile is set (required field)
-        if not self.profile.doctor_display_name:
-            raise ValueError("doctor_display_name is required in profile")
+        if not self.profile.agent_display_name:
+            raise ValueError("agent_display_name is required in profile")
         if not self.profile.clinic_display_name:
             raise ValueError("clinic_display_name is required in profile")
 
@@ -340,7 +340,11 @@ class AgentConfig(BaseModel):
             elif key == "channels" and isinstance(value, dict):
                 config_data[key] = ChannelsConfig(**value)
             elif key == "profile" and isinstance(value, dict):
-                config_data[key] = ProfileConfig(**value)
+                # Support legacy doctor_display_name for backward compatibility
+                profile_data = dict(value)
+                if "doctor_display_name" in profile_data and "agent_display_name" not in profile_data:
+                    profile_data["agent_display_name"] = profile_data.pop("doctor_display_name")
+                config_data[key] = ProfileConfig(**profile_data)
             elif key == "style" and isinstance(value, dict):
                 config_data[key] = StyleConfig(**value)
             elif key == "working_hours" and isinstance(value, dict):

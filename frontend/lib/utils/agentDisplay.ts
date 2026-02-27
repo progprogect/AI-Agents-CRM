@@ -4,15 +4,16 @@ import type { Agent } from "@/lib/types/agent";
 
 /**
  * Get display name for an agent.
- * Priority: doctor_display_name > clinic_display_name > agent_id
+ * Priority: agent_display_name > clinic_display_name > agent_id
  */
 export function getAgentDisplayName(agent: Agent | null | undefined): string {
   if (!agent) {
     return "Unknown Agent";
   }
 
-  if (agent.config?.profile?.doctor_display_name) {
-    return agent.config.profile.doctor_display_name;
+  const profileName = agent.config?.profile?.agent_display_name ?? agent.config?.profile?.doctor_display_name;
+  if (profileName) {
+    return profileName;
   }
 
   if (agent.config?.profile?.clinic_display_name) {
@@ -74,11 +75,9 @@ export function getClinicDisplayName(agent: Agent | null | undefined): string | 
 }
 
 /**
- * Get doctor display name.
+ * Get agent profile display name.
  */
-export function getDoctorDisplayName(agent: Agent | null | undefined): string | null {
-  if (!agent?.config?.profile?.doctor_display_name) {
-    return null;
-  }
-  return agent.config.profile.doctor_display_name;
+export function getAgentProfileDisplayName(agent: Agent | null | undefined): string | null {
+  const name = agent?.config?.profile?.agent_display_name ?? agent?.config?.profile?.doctor_display_name;
+  return name ?? null;
 }

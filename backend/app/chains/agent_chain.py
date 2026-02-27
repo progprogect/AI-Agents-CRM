@@ -100,7 +100,8 @@ class AgentChain:
 
         # Format persona with profile information
         persona = prompts.get("persona", "").format(
-            doctor_display_name=self.agent_config.profile.doctor_display_name,
+            agent_display_name=self.agent_config.profile.agent_display_name,
+            doctor_display_name=self.agent_config.profile.agent_display_name,
             clinic_display_name=self.agent_config.profile.clinic_display_name,
             specialty=self.agent_config.profile.specialty,
         )
@@ -113,7 +114,7 @@ class AgentChain:
         languages_str = ", ".join(profile.languages)
         profile_info = f"""
 Profile Information:
-- Doctor: {profile.doctor_display_name}
+- Agent: {profile.agent_display_name}
 - Clinic: {profile.clinic_display_name}
 - Specialty: {profile.specialty}
 - Languages: {languages_str}

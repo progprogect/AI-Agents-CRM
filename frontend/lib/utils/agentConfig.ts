@@ -35,7 +35,7 @@ export const DEFAULT_EXAMPLES: ConversationExample[] = [
 export interface AgentConfigFormData {
   // Basic Info
   agent_id: string;
-  doctor_display_name: string;
+  agent_display_name: string;
   clinic_display_name: string;
   specialty: string;
   languages?: string[]; // Languages the agent can communicate in
@@ -114,7 +114,7 @@ export function agentConfigToFormData(
   const formData: Partial<AgentConfigFormData> = {
     // Basic Info
     agent_id: agentConfig.agent_id || "",
-    doctor_display_name: agentConfig.profile?.doctor_display_name || "",
+    agent_display_name: agentConfig.profile?.agent_display_name || agentConfig.profile?.doctor_display_name || "",
     clinic_display_name: agentConfig.profile?.clinic_display_name || "",
     specialty: agentConfig.profile?.specialty || "",
 
@@ -178,7 +178,7 @@ export function formDataToAgentConfig(
     agent_id: formData.agent_id,
     project: formData.clinic_display_name || "Default Project", // Required by backend model
     profile: {
-      doctor_display_name: formData.doctor_display_name,
+      agent_display_name: formData.agent_display_name,
       clinic_display_name: formData.clinic_display_name,
       specialty: formData.specialty,
       languages: formData.languages || ["ru", "en"],
@@ -201,7 +201,7 @@ export function formDataToAgentConfig(
     },
     prompts: {
       system: {
-        persona: formData.system_persona || `Ты общаешься от лица врача {doctor_display_name} из {clinic_display_name}.
+        persona: formData.system_persona || `Ты общаешься от лица агента {agent_display_name} из {clinic_display_name}.
 Твоя специализация: {specialty}.
 Твой стиль — дружелюбный и профессиональный. Ты помогаешь с информацией и записью.
 Ты НЕ ведёшь медицинскую консультацию в чате.`,
@@ -293,7 +293,7 @@ function transliterate(text: string): string {
 }
 
 /**
- * Generate agent ID from clinic name and doctor name.
+ * Generate agent ID from clinic name and agent name.
  * Transliterates Cyrillic characters to Latin and creates a safe ID.
  */
 export function generateAgentId(clinicName: string, doctorName?: string): string {

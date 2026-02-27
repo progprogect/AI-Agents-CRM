@@ -377,7 +377,7 @@ async def test_notification(
 
         test_message = (
             f"✅ Test Notification\n\n"
-            f"This is a test notification from Doctor Agent system.\n"
+            f"This is a test notification from Agent system.\n"
             f"Config ID: {config_id}\n"
             f"If you received this message, your notification settings are working correctly!"
         )

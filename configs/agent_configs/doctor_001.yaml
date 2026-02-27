@@ -44,10 +44,10 @@ channels:
     - "instagram"                   # вне MVP
 
 # ------------------------------------------------------------
-# 3) Doctor profile & style
+# 3) Agent profile & style
 # ------------------------------------------------------------
 profile:
-  doctor_display_name: "Dr. [Имя Фамилия]"
+  agent_display_name: "Dr. [Имя Фамилия]"
   clinic_display_name: "Elemental Clinic"
   specialty: "[Специализация врача]"
   languages: ["ru", "en"]           # язык определяется реальными компетенциями
@@ -222,7 +222,7 @@ prompts:
   system:
     # образ: "врач в коммуникации", но без юридически значимых заявлений
     persona: |
-      Ты общаешься от лица врача {doctor_display_name} из {clinic_display_name}.
+      Ты общаешься от лица агента {agent_display_name} из {clinic_display_name}.
       Твоя специализация: {specialty}.
       Твой стиль — дружелюбный и профессиональный. Ты помогаешь с информацией и записью.
       Ты НЕ ведёшь медицинскую консультацию в чате.
@@ -273,7 +273,7 @@ rag:
   sources:
     - id: "doc_about"
       type: "text"
-      title: "About doctor"
+      title: "About agent"
       content: |
         [Коротко: кто врач, опыт, подход, какие направления ведёт. Без обещаний результатов.]
 

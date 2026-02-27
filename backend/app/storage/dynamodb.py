@@ -254,7 +254,7 @@ class DynamoDBClient:
                                 if agent_data and "config" in agent_data:
                                     from app.models.agent_config import AgentConfig
                                     agent_config = AgentConfig.from_dict(agent_data["config"])
-                                    agent_display_name = agent_config.profile.doctor_display_name
+                                    agent_display_name = agent_config.profile.agent_display_name
                                 
                                 # Create notification service
                                 # Note: TelegramService requires channel_binding_service for some methods,

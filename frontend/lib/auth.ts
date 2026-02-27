@@ -1,6 +1,6 @@
 /** Authentication utilities for admin access. */
 
-const ADMIN_TOKEN_KEY = "doctor_agent_admin_token";
+const ADMIN_TOKEN_KEY = "agent_admin_token";
 
 /**
  * Get admin token from localStorage.
