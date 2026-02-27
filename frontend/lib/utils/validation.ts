@@ -34,7 +34,7 @@ export function validateAgentConfig(
   if (!formData.clinic_display_name || formData.clinic_display_name.trim() === "") {
     errors.push({
       field: "clinic_display_name",
-      message: "Clinic display name is required",
+      message: "Company display name is required",
     });
   }
 

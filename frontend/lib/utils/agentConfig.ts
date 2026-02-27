@@ -21,14 +21,14 @@ export const DEFAULT_EXAMPLES: ConversationExample[] = [
     category: "info",
     user_message: "What services do you provide?",
     agent_response:
-      "We offer a comprehensive range of medical services tailored to meet your healthcare needs. Our clinic specializes in [specialty], and we provide consultations, diagnostic services, and follow-up care. Would you like more details about any specific service, or would you prefer to schedule a consultation to discuss your needs?",
+      "We offer a comprehensive range of medical services tailored to meet your healthcare needs. Our company specializes in [specialty], and we provide consultations, diagnostic services, and follow-up care. Would you like more details about any specific service, or would you prefer to schedule a consultation to discuss your needs?",
   },
   {
     id: "example_hours",
     category: "hours",
     user_message: "What are your working hours?",
     agent_response:
-      "Our clinic is open Monday through Friday from 9:00 AM to 6:00 PM. We're closed on weekends. If you need to reach us outside of these hours, please leave your contact information and we'll get back to you as soon as possible. Would you like to schedule an appointment?",
+      "Our company is open Monday through Friday from 9:00 AM to 6:00 PM. We're closed on weekends. If you need to reach us outside of these hours, please leave your contact information and we'll get back to you as soon as possible. Would you like to schedule an appointment?",
   },
 ];
 
@@ -201,7 +201,7 @@ export function formDataToAgentConfig(
     },
     prompts: {
       system: {
-        persona: formData.system_persona || `Ты общаешься от лица агента {agent_display_name} из {clinic_display_name}.
+        persona: formData.system_persona || `Ты общаешься от лица агента {agent_display_name} из компании {clinic_display_name}.
 Твоя специализация: {specialty}.
 Твой стиль — дружелюбный и профессиональный. Ты помогаешь с информацией и записью.
 Ты НЕ ведёшь медицинскую консультацию в чате.`,

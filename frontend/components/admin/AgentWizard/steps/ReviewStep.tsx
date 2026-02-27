@@ -75,7 +75,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     } else if (config.agent_display_name && config.clinic_display_name) {
       const specialtyPart = config.specialty ? `\nТвоя специализация: {specialty}.` : "";
       setSystemPersona(
-        `Ты общаешься от лица агента {agent_display_name} из {clinic_display_name}.${specialtyPart}\nТвой стиль — дружелюбный и профессиональный. Ты помогаешь с информацией и записью.\nТы НЕ ведёшь медицинскую консультацию в чате.`
+        `Ты общаешься от лица агента {agent_display_name} из компании {clinic_display_name}.${specialtyPart}\nТвой стиль — дружелюбный и профессиональный. Ты помогаешь с информацией и записью.\nТы НЕ ведёшь медицинскую консультацию в чате.`
       );
     }
   }, [config.system_persona, config.agent_display_name, config.clinic_display_name, config.specialty]);
@@ -121,7 +121,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     }
     
     if (!agentId) {
-      setError("Agent ID is required. Please fill in the clinic name.");
+      setError("Agent ID is required. Please fill in the company name.");
       return;
     }
 
@@ -250,7 +250,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">Clinic:</span>
+            <span className="text-gray-600">Company:</span>
             <span className="font-medium text-gray-900">
               {config.clinic_display_name || "Not set"}
             </span>
@@ -347,11 +347,11 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
               onChange={(e) => setSystemPersona(e.target.value)}
               rows={10}
               placeholder="Enter the system persona prompt that defines how the agent communicates..."
-              helperText="This prompt defines the agent's personality and communication style. Use {agent_display_name} and {clinic_display_name} as placeholders."
+              helperText="This prompt defines the agent's personality and communication style. Use {agent_display_name} and {clinic_display_name} (company name) as placeholders."
             />
             <div className="p-4 bg-blue-50 border border-blue-200 rounded-sm">
               <p className="text-sm text-blue-800">
-                <strong>Tip:</strong> The prompt will be used to set the agent's personality. Make sure to include placeholders for agent and clinic names if needed.
+                <strong>Tip:</strong> The prompt will be used to set the agent's personality. Make sure to include placeholders for agent and company names if needed.
               </p>
             </div>
           </div>

@@ -115,7 +115,7 @@ class AgentChain:
         profile_info = f"""
 Profile Information:
 - Agent: {profile.agent_display_name}
-- Clinic: {profile.clinic_display_name}
+- Company: {profile.clinic_display_name}
 - Specialty: {profile.specialty}
 - Languages: {languages_str}
 

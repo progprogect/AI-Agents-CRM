@@ -352,7 +352,7 @@ export default function AgentsPage() {
           description={
             searchQuery
               ? "Try adjusting your search query."
-              : "Create your first AI agent to start chatting with patients."
+              : "Create your first AI agent to start chatting with clients."
           }
           action={
             !searchQuery && (

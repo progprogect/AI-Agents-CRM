@@ -71,20 +71,20 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
           Basic Information
         </h3>
         <p className="text-sm text-gray-600 mb-6">
-          Provide basic information about the agent and clinic.
+          Provide basic information about the agent and company.
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="md:col-span-2">
           <Input
-            label="Clinic Display Name"
+            label="Company Display Name"
             value={config.clinic_display_name || ""}
             onChange={(e) =>
               onUpdate({ clinic_display_name: e.target.value })
             }
             error={getFieldError(errors, "clinic_display_name")}
-            placeholder="Elemental Clinic"
+            placeholder="Acme Corp"
             required
           />
         </div>
@@ -146,7 +146,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
             <div className="flex items-start justify-between mb-2">
               <div className="flex-1">
                 <h5 className="text-lg font-semibold text-gray-900">
-                  {config.clinic_display_name || "Clinic Name"}
+                  {config.clinic_display_name || "Company Name"}
                 </h5>
                 {config.agent_display_name && (
                   <p className="text-sm text-gray-600">

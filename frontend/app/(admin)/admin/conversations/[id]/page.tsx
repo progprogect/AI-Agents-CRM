@@ -263,7 +263,7 @@ export default function ConversationDetailPage() {
               </div>
               {clinicName && (
                 <div>
-                  <p className="text-xs text-gray-500">Clinic</p>
+                  <p className="text-xs text-gray-500">Company</p>
                   <p className="text-sm font-medium text-gray-900">{clinicName}</p>
                 </div>
               )}
