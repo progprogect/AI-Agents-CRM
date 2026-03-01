@@ -64,13 +64,7 @@ async def create_agent(
                 validation_errors={"agent_id_mismatch": True},
             )
 
-        # Validate RAG configuration if enabled
-        if agent_config.rag.enabled:
-            if not agent_config.rag.sources or len(agent_config.rag.sources) == 0:
-                raise InvalidAgentConfigError(
-                    "RAG is enabled but no documents provided",
-                    validation_errors={"rag_no_documents": True},
-                )
+        # RAG: allow empty sources - user can add documents via RAG page after creation
     except Exception as e:
         if isinstance(e, InvalidAgentConfigError):
             raise

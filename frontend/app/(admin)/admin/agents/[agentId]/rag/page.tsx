@@ -180,8 +180,9 @@ export default function AgentRAGPage() {
     accept: {
       "text/plain": [".txt"],
       "text/markdown": [".md"],
+      "application/json": [".json"],
       "application/pdf": [".pdf"],
-      "image/*": [".jpg", ".jpeg", ".png", ".gif", ".webp"],
+      "image/*": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"],
     },
     multiple: true,
     disabled: uploading,
@@ -308,7 +309,7 @@ export default function AgentRAGPage() {
                 Drag & drop files here, or click to select
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                Supports: .txt, .md, .pdf, images (.jpg, .png, .gif, .webp)
+                Supports: .txt, .md, .json, .pdf, images (.jpg, .jpeg, .png, .gif, .webp, .bmp)
               </p>
             </>
           )}

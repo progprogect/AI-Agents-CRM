@@ -22,7 +22,7 @@ router = APIRouter()
 # Max file size 10MB
 MAX_FILE_SIZE = 10 * 1024 * 1024
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
-TEXT_EXTENSIONS = {".txt", ".md"}
+TEXT_EXTENSIONS = {".txt", ".md", ".json"}
 PDF_EXTENSIONS = {".pdf"}
 
 

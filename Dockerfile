@@ -29,7 +29,8 @@ WORKDIR /app
 
 # Copy backend and install deps (reuse from stage for layer cache)
 COPY backend/requirements.txt /app/backend/
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
+    && pip install --no-cache-dir python-multipart
 COPY backend/app/ /app/backend/app/
 
 # Copy frontend standalone (node image already has node)

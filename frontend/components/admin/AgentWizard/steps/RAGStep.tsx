@@ -200,17 +200,18 @@ export const RAGStep: React.FC<RAGStepProps> = ({
         <p className="text-sm text-gray-600 mt-2">
           <Link
             href={`/admin/agents/${agentId}/rag`}
-            className="text-[#D4AF37] hover:text-[#B8860B] underline"
+            className="text-[#D4AF37] hover:text-[#B8860B] underline font-medium"
           >
             Manage documents
           </Link>
-          {" "}— upload files, organize in folders, add images.
+          {" "}— upload files, organize in folders, add images (PDF, txt, md, images).
         </p>
       )}
 
       {!agentId && ragEnabled && (
-        <p className="text-sm text-gray-500 mt-2 italic">
-          You can add and manage documents after creating the agent.
+        <p className="text-sm text-gray-600 mt-2">
+          Add documents here or after creating the agent on the{" "}
+          <span className="font-medium">RAG page</span>. You can also upload PDFs and images there.
         </p>
       )}
 
@@ -259,7 +260,7 @@ export const RAGStep: React.FC<RAGStepProps> = ({
                     Drag & drop files here, or click to select
                   </p>
                   <p className="text-xs text-gray-500">
-                    Supports: .txt, .md, .json, .pdf files
+                    Supports: .txt, .md, .json, .pdf (images: .jpg, .png, .gif, .webp — on RAG page after creation)
                   </p>
                 </>
               )}
