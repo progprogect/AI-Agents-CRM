@@ -5,7 +5,6 @@ from typing import Optional
 
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai import ChatOpenAI
 
 from app.models.agent_config import AgentConfig
 from app.services.llm_factory import LLMFactory
@@ -13,7 +12,6 @@ from app.tools.escalation_tool import EscalationTool
 from app.tools.booking_tool import BookingTool
 from app.services.escalation_service import EscalationService
 from app.services.rag_service import RAGService
-from app.utils.model_params import requires_max_completion_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -38,25 +36,7 @@ class AgentChain:
     async def _get_executor(self) -> AgentExecutor:
         """Get or create agent executor."""
         if self._executor is None:
-            client = await self.llm_factory.get_client(self.agent_config.agent_id)
-
-            # Create LLM with correct parameter based on model
-            llm_kwargs = {
-                "model": self.agent_config.llm.model,
-                "temperature": self.agent_config.llm.temperature,
-                "openai_api_key": client.api_key,
-                "timeout": self.agent_config.llm.timeout,
-            }
-            
-            # Use max_completion_tokens for o1/o3 and newer models, max_tokens for others
-            if requires_max_completion_tokens(self.agent_config.llm.model):
-                # For models requiring max_completion_tokens, pass via model_kwargs
-                # ChatOpenAI will pass these kwargs directly to OpenAI API
-                llm_kwargs["model_kwargs"] = {"max_completion_tokens": self.agent_config.llm.max_output_tokens}
-            else:
-                llm_kwargs["max_tokens"] = self.agent_config.llm.max_output_tokens
-            
-            llm = ChatOpenAI(**llm_kwargs)
+            llm = await self.llm_factory.get_chat_model(self.agent_config)
 
             # Create tools
             tools = [

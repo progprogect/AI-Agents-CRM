@@ -5,7 +5,13 @@
 import React, { useCallback } from "react";
 import Link from "next/link";
 import { Toggle } from "@/components/shared/Toggle";
+import { Select } from "@/components/shared/Select";
 import type { AgentConfigFormData } from "@/lib/utils/agentConfig";
+
+const PROVIDER_OPTIONS = [
+  { value: "openai", label: "OpenAI" },
+  { value: "google_ai_studio", label: "Google AI Studio (Gemini)" },
+];
 
 interface RAGStepProps {
   config: Partial<AgentConfigFormData>;
@@ -50,7 +56,22 @@ export const RAGStep: React.FC<RAGStepProps> = ({
       />
 
       {ragEnabled && (
-        <div className="mt-4 p-4 bg-gray-50 rounded-sm border border-gray-200">
+        <div className="mt-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Select
+              label="Embeddings provider"
+              value={config.rag_embeddings_provider || "openai"}
+              onChange={(e) => onUpdate({ rag_embeddings_provider: e.target.value })}
+              options={PROVIDER_OPTIONS}
+            />
+            <Select
+              label="Vision provider (image descriptions)"
+              value={config.rag_vision_provider || "openai"}
+              onChange={(e) => onUpdate({ rag_vision_provider: e.target.value })}
+              options={PROVIDER_OPTIONS}
+            />
+          </div>
+          <div className="p-4 bg-gray-50 rounded-sm border border-gray-200">
           {agentId ? (
             <p className="text-sm text-gray-700">
               <Link
@@ -67,6 +88,7 @@ export const RAGStep: React.FC<RAGStepProps> = ({
               <span className="font-medium">RAG page</span> — folders, PDFs, images.
             </p>
           )}
+          </div>
         </div>
       )}
     </div>

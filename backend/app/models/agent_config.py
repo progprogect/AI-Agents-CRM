@@ -150,7 +150,7 @@ class LLMConfig(BaseModel):
     @classmethod
     def validate_provider(cls, v: str) -> str:
         """Validate LLM provider."""
-        valid_providers = ["openai", "aws_bedrock"]
+        valid_providers = ["openai", "aws_bedrock", "google_ai_studio"]
         if v not in valid_providers:
             raise ValueError(f"LLM provider must be one of: {', '.join(valid_providers)}")
         return v
@@ -186,7 +186,7 @@ class EmbeddingsConfig(BaseModel):
     @classmethod
     def validate_provider(cls, v: str) -> str:
         """Validate embeddings provider."""
-        valid_providers = ["openai", "aws_bedrock"]
+        valid_providers = ["openai", "aws_bedrock", "google_ai_studio"]
         if v not in valid_providers:
             raise ValueError(
                 f"Embeddings provider must be one of: {', '.join(valid_providers)}"
@@ -264,6 +264,14 @@ class RAGConfig(BaseModel):
     retrieval: dict[str, Any] = Field(default_factory=dict)
     scope: str = Field(default="agent_only")
     sources: list[dict[str, Any]] = Field(default_factory=list)
+    embeddings_provider: str = Field(
+        default="openai",
+        description="Provider for RAG embeddings (openai, google_ai_studio)",
+    )
+    vision_provider: str = Field(
+        default="openai",
+        description="Provider for image descriptions (openai, google_ai_studio)",
+    )
 
 
 class MonitoringConfig(BaseModel):

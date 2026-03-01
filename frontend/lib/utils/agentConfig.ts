@@ -50,6 +50,8 @@ export interface AgentConfigFormData {
 
   // RAG
   rag_enabled: boolean;
+  rag_embeddings_provider?: string;
+  rag_vision_provider?: string;
   rag_documents: Array<{
     id: string;
     title: string;
@@ -63,6 +65,7 @@ export interface AgentConfigFormData {
   pre_procedure_policy?: string;
 
   // LLM Settings (Step 5)
+  llm_provider?: string;
   llm_model?: string;
   llm_temperature?: number;
   llm_max_tokens?: number;
@@ -80,6 +83,8 @@ export interface AgentConfigFormData {
 export function generateDefaultConfig(): Partial<AgentConfigFormData> {
   return {
     rag_enabled: false,
+    rag_embeddings_provider: "openai",
+    rag_vision_provider: "openai",
     rag_documents: [],
     languages: ["ru", "en"], // Default languages
     // Style defaults
@@ -97,6 +102,7 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     repeat_patient_policy: "handoff_only",
     pre_procedure_policy: "handoff_only",
     // LLM defaults
+    llm_provider: "openai",
     llm_model: "gpt-4o-mini",
     llm_temperature: 0.2,
     llm_max_tokens: 600,
@@ -159,9 +165,13 @@ export function agentConfigToFormData(
     system_persona: agentConfig.prompts?.system?.persona,
 
     // LLM
+    llm_provider: agentConfig.llm?.provider || "openai",
     llm_model: agentConfig.llm?.model,
     llm_temperature: agentConfig.llm?.temperature,
     llm_max_tokens: agentConfig.llm?.max_output_tokens,
+    // RAG providers
+    rag_embeddings_provider: agentConfig.rag?.embeddings_provider || agentConfig.embeddings?.provider || "openai",
+    rag_vision_provider: agentConfig.rag?.vision_provider || agentConfig.llm?.provider || "openai",
   };
 
   return formData;
@@ -192,7 +202,7 @@ export function formDataToAgentConfig(
       persuasion: formData.persuasion || "soft",
     },
     llm: {
-      provider: "openai",
+      provider: formData.llm_provider || "openai",
       api: "responses",
       model: formData.llm_model || "gpt-4o-mini",
       temperature: formData.llm_temperature ?? 0.2,
@@ -226,6 +236,8 @@ export function formDataToAgentConfig(
     },
     rag: {
       enabled: formData.rag_enabled,
+      embeddings_provider: formData.rag_embeddings_provider || formData.llm_provider || "openai",
+      vision_provider: formData.rag_vision_provider || formData.llm_provider || "openai",
       vector_store: {
         provider: "opensearch",
         index_name: `agent_${formData.agent_id}_documents`,
@@ -255,6 +267,13 @@ export function formDataToAgentConfig(
       repeat_patient_policy: formData.repeat_patient_policy || "handoff_only",
       pre_procedure_policy: formData.pre_procedure_policy || "handoff_only",
     },
+  };
+
+  // Embeddings config (for RAG - synced with rag.embeddings_provider)
+  config.embeddings = {
+    provider: formData.rag_embeddings_provider || formData.llm_provider || "openai",
+    model: formData.rag_embeddings_provider === "google_ai_studio" ? "text-embedding-004" : "text-embedding-3-small",
+    dimensions: 1536,
   };
 
   return config;

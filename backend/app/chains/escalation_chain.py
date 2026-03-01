@@ -4,7 +4,6 @@ from typing import Optional
 
 from langchain.chains import LLMChain
 from langchain.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 from langchain.output_parsers import PydanticOutputParser
 
 from app.config import get_settings
@@ -140,14 +139,19 @@ Return a structured response with:
         config = agent_config or self.agent_config
 
         if cache_key not in self._chains:
-            client = await self.llm_factory.get_client(agent_id)
             settings = get_settings()
-            llm = ChatOpenAI(
-                model=settings.openai_model,
-                temperature=0.5,  # Higher temperature for more flexible interpretation
-                openai_api_key=client.api_key,
-                timeout=settings.openai_timeout,
-            )
+            # Use agent's LLM when config available, else fallback to default OpenAI config
+            if config:
+                llm = await self.llm_factory.get_chat_model(config)
+            else:
+                from langchain_openai import ChatOpenAI
+                client = await self.llm_factory.get_client(agent_id)
+                llm = ChatOpenAI(
+                    model=settings.openai_model,
+                    temperature=0.5,
+                    openai_api_key=client.api_key,
+                    timeout=settings.openai_timeout,
+                )
 
             # Build system prompt from config
             system_prompt = self._build_system_prompt(config)

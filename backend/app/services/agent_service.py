@@ -127,6 +127,7 @@ class AgentService:
                 rag_context = await self.rag_service.get_formatted_context(
                     query=user_message,
                     agent_id=self.agent_config.agent_id,
+                    agent_config=self.agent_config,
                     top_k=self.agent_config.rag.retrieval.get("top_k", 6),
                     score_threshold=self.agent_config.rag.retrieval.get("score_threshold", 0.2),
                 )

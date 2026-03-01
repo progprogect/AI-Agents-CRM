@@ -135,6 +135,8 @@ export interface PromptsConfig {
 
 export interface RAGConfig {
   enabled: boolean;
+  embeddings_provider?: string;
+  vision_provider?: string;
   vector_store: Record<string, any>;
   retrieval: Record<string, any>;
   scope: string;

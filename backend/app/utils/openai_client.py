@@ -1,9 +1,11 @@
-"""OpenAI client wrapper with retry logic."""
+"""OpenAI client wrapper and LLM factory with multi-provider support."""
 
 import logging
 from functools import lru_cache
 from typing import Optional
 
+from langchain_core.embeddings import Embeddings
+from langchain_core.language_models.chat_models import BaseChatModel
 from openai import AsyncOpenAI, OpenAI
 from tenacity import (
     retry,
@@ -13,9 +15,14 @@ from tenacity import (
 )
 
 from app.config import Settings, get_settings
+from app.models.agent_config import AgentConfig, EmbeddingsConfig
 from app.storage.secrets import SecretsManager, get_secrets_manager
 from app.storage.postgres_secrets import PostgresSecretsManager, get_postgres_secrets_manager
-from app.utils.model_params import requires_max_completion_tokens
+from app.utils.llm_provider import (
+    create_chat_model,
+    create_embeddings as create_embeddings_model,
+    _get_google_api_key_sync,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -160,14 +167,15 @@ class OpenAIClientWrapper:
 
 
 class LLMFactory:
-    """Factory for creating OpenAI clients."""
+    """Factory for creating LLM clients (OpenAI, Google AI Studio) and embeddings."""
 
     def __init__(self, settings: Settings, secrets_manager: SecretsManager):
         """Initialize LLM factory."""
         self.settings = settings
         self.secrets_manager = secrets_manager
         self._clients: dict[str, OpenAIClientWrapper] = {}
-    
+        self._embeddings_cache: dict[tuple[str, str], Embeddings] = {}
+
     def _clean_api_key(self, api_key: str) -> str:
         """Clean API key from any JSON artifacts."""
         api_key = api_key.strip().strip('"').strip("'")
@@ -208,12 +216,57 @@ class LLMFactory:
 
         return self._clients[cache_key]
 
+    async def get_chat_model(self, agent_config: AgentConfig) -> BaseChatModel:
+        """Get chat model (OpenAI or Google) for agent config."""
+        openai_key = self.settings.openai_api_key
+        if not openai_key:
+            try:
+                openai_key = await self.secrets_manager.get_openai_api_key()
+            except Exception as e:
+                logger.error(f"Failed to get OpenAI API key: {e}")
+                raise RuntimeError("OpenAI API key not found") from e
+        openai_key = self._clean_api_key(openai_key)
+
+        google_key = _get_google_api_key_sync(self.settings)
+
+        return create_chat_model(
+            agent_config=agent_config,
+            openai_api_key=openai_key,
+            google_api_key=google_key,
+        )
+
+    async def get_embeddings(self, embeddings_config: EmbeddingsConfig) -> Embeddings:
+        """Get embeddings model (OpenAI or Google), cached by (provider, model)."""
+        cache_key = (embeddings_config.provider or "openai", embeddings_config.model or "text-embedding-3-small")
+        if cache_key in self._embeddings_cache:
+            return self._embeddings_cache[cache_key]
+
+        openai_key = self.settings.openai_api_key
+        if not openai_key:
+            try:
+                openai_key = await self.secrets_manager.get_openai_api_key()
+            except Exception as e:
+                logger.error(f"Failed to get OpenAI API key for embeddings: {e}")
+                raise RuntimeError("OpenAI API key not found") from e
+        openai_key = self._clean_api_key(openai_key)
+
+        google_key = _get_google_api_key_sync(self.settings)
+
+        embeddings = create_embeddings_model(
+            embeddings_config=embeddings_config,
+            openai_api_key=openai_key,
+            google_api_key=google_key,
+        )
+        self._embeddings_cache[cache_key] = embeddings
+        return embeddings
+
     def clear_cache(self, agent_id: Optional[str] = None) -> None:
-        """Clear cached client."""
+        """Clear cached clients and embeddings."""
         if agent_id:
             self._clients.pop(agent_id, None)
         else:
             self._clients.clear()
+            self._embeddings_cache.clear()
 
 
 @lru_cache()

@@ -2,14 +2,16 @@
 
 import logging
 from functools import lru_cache
-from typing import Optional
+from typing import Any, Optional
 
 from app.api.exceptions import RAGServiceError
 from app.chains.rag_chain import RAGChain
 from app.config import get_settings
+from app.models.agent_config import AgentConfig
 from app.services.llm_factory import LLMFactory, get_llm_factory
 from app.storage.dynamodb_rag import DynamoDBRAGClient, get_dynamodb_rag_client
 from app.storage.postgres_rag import PostgresRAGClient, get_postgres_rag_client
+from app.utils.llm_provider import get_rag_embeddings_config
 
 logger = logging.getLogger(__name__)
 
@@ -32,20 +34,31 @@ class RAGService:
         agent_id: str,
         documents: list[dict],
         index_name: Optional[str] = None,
+        agent_config: Optional[AgentConfig] = None,
     ) -> tuple[int, int]:
         """Index documents for an agent."""
         try:
             if index_name is None:
                 index_name = f"agent_{agent_id}_documents"
 
-            # Ensure index exists (no-op for DynamoDB, table created via Terraform)
+            if agent_config:
+                embeddings_config = get_rag_embeddings_config(agent_config)
+            else:
+                from app.models.agent_config import EmbeddingsConfig
+                settings = get_settings()
+                embeddings_config = EmbeddingsConfig(
+                    provider="openai",
+                    model=settings.openai_embedding_model,
+                    dimensions=1536,
+                )
+
+            # Ensure index exists
             await self.rag_client.create_index(
                 index_name=index_name,
-                vector_dimension=1536,  # Default for text-embedding-3-small
+                vector_dimension=embeddings_config.dimensions,
             )
 
-            # Generate embeddings and prepare documents
-            embeddings = await self.rag_chain._get_embeddings(agent_id)
+            embeddings = await self.rag_chain._get_embeddings(embeddings_config)
             indexed_docs = []
 
             for doc in documents:
@@ -116,6 +129,7 @@ class RAGService:
         query: str,
         agent_id: str,
         index_name: Optional[str] = None,
+        agent_config: Optional[AgentConfig] = None,
         top_k: int = 6,
         score_threshold: float = 0.2,
     ) -> list[dict]:
@@ -124,10 +138,22 @@ class RAGService:
             if index_name is None:
                 index_name = f"agent_{agent_id}_documents"
 
+            if agent_config:
+                embeddings_config = get_rag_embeddings_config(agent_config)
+            else:
+                from app.models.agent_config import EmbeddingsConfig
+                settings = get_settings()
+                embeddings_config = EmbeddingsConfig(
+                    provider="openai",
+                    model=settings.openai_embedding_model,
+                    dimensions=1536,
+                )
+
             results = await self.rag_chain.retrieve(
                 query=query,
                 agent_id=agent_id,
                 index_name=index_name,
+                embeddings_config=embeddings_config,
                 top_k=top_k,
                 score_threshold=score_threshold,
             )
@@ -152,6 +178,7 @@ class RAGService:
         query: str,
         agent_id: str,
         index_name: Optional[str] = None,
+        agent_config: Optional[AgentConfig] = None,
         top_k: int = 6,
         score_threshold: float = 0.2,
     ) -> str:
@@ -160,10 +187,22 @@ class RAGService:
             if index_name is None:
                 index_name = f"agent_{agent_id}_documents"
 
+            if agent_config:
+                embeddings_config = get_rag_embeddings_config(agent_config)
+            else:
+                from app.models.agent_config import EmbeddingsConfig
+                settings = get_settings()
+                embeddings_config = EmbeddingsConfig(
+                    provider="openai",
+                    model=settings.openai_embedding_model,
+                    dimensions=1536,
+                )
+
             context = await self.rag_chain.get_relevant_context(
                 query=query,
                 agent_id=agent_id,
                 index_name=index_name,
+                embeddings_config=embeddings_config,
                 top_k=top_k,
                 score_threshold=score_threshold,
             )

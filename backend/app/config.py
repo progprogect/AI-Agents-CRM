@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Annotated, Optional, Union
 
-from pydantic import BeforeValidator, Field, computed_field, field_validator, model_validator
+from pydantic import AliasChoices, BeforeValidator, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     )
     openai_embedding_dimensions: int = Field(
         default=1536, description="Embedding dimensions"
+    )
+
+    # Google AI Studio (Gemini)
+    google_ai_studio_api_key: Optional[str] = Field(
+        default=None,
+        description="Google AI Studio API key",
+        validation_alias=AliasChoices("GOOGLE_AI_STUDIO_API", "Google_AI_Studio_API"),
     )
 
     # Database (PostgreSQL for Railway)

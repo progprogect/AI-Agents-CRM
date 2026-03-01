@@ -35,14 +35,15 @@ def _ensure_postgres() -> None:
         )
 
 
-async def _ensure_agent_exists(deps: CommonDependencies, agent_id: str) -> None:
-    """Ensure agent exists."""
+async def _ensure_agent_exists(deps: CommonDependencies, agent_id: str) -> dict | None:
+    """Ensure agent exists. Returns agent dict or None if not found."""
     agent = await deps.dynamodb.get_agent(agent_id)
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Agent '{agent_id}' not found",
         )
+    return agent
 
 
 # --- Folders ---
@@ -178,7 +179,8 @@ async def upload_rag_document(
 ):
     """Upload RAG document (file → Cloudinary, process, index)."""
     _ensure_postgres()
-    await _ensure_agent_exists(deps, agent_id)
+    agent = await _ensure_agent_exists(deps, agent_id)
+    agent_config_dict = agent.get("config", {}) if agent else {}
 
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
@@ -224,7 +226,7 @@ async def upload_rag_document(
     text_content = ""
     if file_type == "image":
         try:
-            text_content = await image_processor.describe_image(file_url, agent_id)
+            text_content = await image_processor.describe_image(file_url, agent_id, agent_config_dict)
         except Exception as e:
             logger.error(f"Image description failed: {e}", exc_info=True)
             text_content = f"Image: {filename}"
@@ -255,10 +257,15 @@ async def upload_rag_document(
     # Get embeddings and index
     from app.chains.rag_chain import RAGChain
     from app.services.llm_factory import get_llm_factory
+    from app.utils.llm_provider import get_rag_embeddings_config
 
     llm_factory = get_llm_factory()
     chain = RAGChain(llm_factory, rag_client)
-    embeddings = await chain._get_embeddings(agent_id)
+    embeddings_config = get_rag_embeddings_config(agent_config_dict) if agent_config_dict else None
+    if embeddings_config is None:
+        from app.models.agent_config import EmbeddingsConfig
+        embeddings_config = EmbeddingsConfig(provider="openai", model="text-embedding-3-small", dimensions=1536)
+    embeddings = await chain._get_embeddings(embeddings_config)
     embedding = await embeddings.aembed_query(text_content)
 
     index_name = f"agent_{agent_id}_documents"
@@ -307,7 +314,7 @@ async def upload_rag_document(
             try:
                 descriptions = [{"id": d["document_id"], "description": d["content"]} for d in group]
                 additions = await image_processor.describe_images_comparatively(
-                    descriptions, agent_id
+                    descriptions, agent_id, agent_config_dict
                 )
                 for d in group:
                     add = additions.get(d["document_id"], "")

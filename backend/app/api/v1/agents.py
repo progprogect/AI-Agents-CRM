@@ -99,6 +99,7 @@ async def create_agent(
                     agent_id=request.agent_id,
                     documents=documents,
                     index_name=index_name,
+                    agent_config=agent_config,
                 )
 
                 logger.info(
