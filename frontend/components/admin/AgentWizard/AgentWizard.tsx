@@ -43,19 +43,20 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
     hasDraft,
   } = useAgentWizard();
   
-  // Check if we're editing an existing agent
-  const isEditMode = React.useMemo(() => {
-    if (typeof window === "undefined") return false;
+  // Check if we're editing an existing agent and get agent ID
+  const { isEditMode, editingAgentId } = React.useMemo(() => {
+    if (typeof window === "undefined") return { isEditMode: false, editingAgentId: null as string | null };
     try {
       const draft = localStorage.getItem("agent_wizard_draft");
       if (draft) {
         const parsed = JSON.parse(draft);
-        return parsed.isEdit === true && !!parsed.editingAgentId;
+        const edit = parsed.isEdit === true && !!parsed.editingAgentId;
+        return { isEditMode: edit, editingAgentId: edit ? parsed.editingAgentId : null };
       }
     } catch {
-      return false;
+      return { isEditMode: false, editingAgentId: null };
     }
-    return false;
+    return { isEditMode: false, editingAgentId: null };
   }, []);
 
   const handleNext = () => {
@@ -119,12 +120,13 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
             onUpdate={updateConfig}
           />
         );
-      case 4:
+        case 4:
         return (
           <RAGStep
             config={state.config}
             errors={state.errors}
             onUpdate={updateConfig}
+            agentId={editingAgentId ?? undefined}
           />
         );
       case 5:

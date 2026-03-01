@@ -82,7 +82,10 @@ class RAGChain:
         for i, result in enumerate(results, 1):
             title = result.get("title", "Document")
             content = result.get("content", "")
-            context_parts.append(f"[{i}] {title}\n{content}")
+            part = f"[{i}] {title}\n{content}"
+            if result.get("file_url"):
+                part += f"\nImage: {result['file_url']}"
+            context_parts.append(part)
 
         return "\n\n".join(context_parts)
 

@@ -202,6 +202,20 @@ class Settings(BaseSettings):
         default=60, description="Rate limit per minute per IP"
     )
 
+    # Cloudinary (RAG file storage)
+    cloudinary_cloud_name: Optional[str] = Field(
+        default=None, description="Cloudinary cloud name", alias="CLOUDINARY_CLOUD_NAME"
+    )
+    cloudinary_api_key: Optional[str] = Field(
+        default=None, description="Cloudinary API key", alias="CLOUDINARY_API_KEY"
+    )
+    cloudinary_api_secret: Optional[str] = Field(
+        default=None, description="Cloudinary API secret", alias="CLOUDINARY_API_SECRET"
+    )
+    cloudinary_folder: str = Field(
+        default="rag", description="Cloudinary base folder for RAG", alias="CLOUDINARY_FOLDER"
+    )
+
     # Instagram
     instagram_webhook_verify_token: Optional[str] = Field(
         default=None, description="Token for Instagram webhook verification"

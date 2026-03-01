@@ -133,6 +133,14 @@ const AgentRow = memo(function AgentRow({
           </Link>
         )}
       </td>
+      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        <Link
+          href={`/admin/agents/${agent.agent_id}/rag`}
+          className="text-[#D4AF37] hover:text-[#B8860B] transition-colors duration-200"
+        >
+          RAG
+        </Link>
+      </td>
       <td className="px-6 py-4 whitespace-nowrap">
         <div className="flex items-center gap-2">
           <Tooltip content="Edit agent">
@@ -375,6 +383,9 @@ export default function AgentsPage() {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
                   Channels
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                  RAG
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
                   Actions

@@ -22,6 +22,37 @@ import type {
   UpdateNotificationConfigRequest,
 } from "./types/notification";
 
+export interface RagFolder {
+  id: string;
+  agent_id: string;
+  parent_id: string | null;
+  name: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface RagDocument {
+  document_id: string;
+  title: string;
+  file_type: string;
+  file_url: string | null;
+  original_filename: string | null;
+  file_size: number | null;
+  folder_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface RagDocumentUploadResponse {
+  document_id: string;
+  title: string;
+  file_type: string;
+  file_url: string;
+  original_filename: string;
+  file_size: number;
+  folder_id: string | null;
+}
+
 // Use relative URLs when running on same domain (via ALB)
 // This automatically uses the same protocol (HTTP/HTTPS) as the page
 // Fallback to absolute URL only for development (localhost)
@@ -558,6 +589,142 @@ export const api = {
         method: "POST",
       },
       true // require auth
+    );
+  },
+
+  // RAG endpoints
+  async listRagFolders(agentId: string): Promise<RagFolder[]> {
+    return request<RagFolder[]>(
+      `/api/v1/agents/${agentId}/rag/folders`,
+      {},
+      true
+    );
+  },
+
+  async createRagFolder(
+    agentId: string,
+    name: string,
+    parentId?: string
+  ): Promise<RagFolder> {
+    const formData = new FormData();
+    formData.append("name", name);
+    if (parentId) formData.append("parent_id", parentId);
+    const API_BASE_URL = getApiBaseUrl();
+    const token = getAdminToken();
+    const res = await fetch(
+      `${API_BASE_URL}/api/v1/agents/${agentId}/rag/folders`,
+      {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new ApiError(
+        err.error?.code || res.status.toString(),
+        err.error?.message || err.detail || "Failed to create folder"
+      );
+    }
+    return res.json();
+  },
+
+  async updateRagFolder(
+    agentId: string,
+    folderId: string,
+    name: string
+  ): Promise<{ message: string }> {
+    return request<{ message: string }>(
+      `/api/v1/agents/${agentId}/rag/folders/${folderId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      },
+      true
+    );
+  },
+
+  async deleteRagFolder(
+    agentId: string,
+    folderId: string
+  ): Promise<{ message: string }> {
+    return request<{ message: string }>(
+      `/api/v1/agents/${agentId}/rag/folders/${folderId}`,
+      { method: "DELETE" },
+      true
+    );
+  },
+
+  async listRagDocuments(
+    agentId: string,
+    folderId?: string,
+    limit?: number,
+    offset?: number
+  ): Promise<RagDocument[]> {
+    const params = new URLSearchParams();
+    if (folderId) params.append("folder_id", folderId);
+    if (limit) params.append("limit", limit.toString());
+    if (offset) params.append("offset", offset.toString());
+    return request<RagDocument[]>(
+      `/api/v1/agents/${agentId}/rag/documents?${params.toString()}`,
+      {},
+      true
+    );
+  },
+
+  async uploadRagDocument(
+    agentId: string,
+    file: File,
+    folderId?: string,
+    title?: string
+  ): Promise<RagDocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (folderId) formData.append("folder_id", folderId);
+    if (title) formData.append("title", title);
+    const API_BASE_URL = getApiBaseUrl();
+    const token = getAdminToken();
+    const res = await fetch(
+      `${API_BASE_URL}/api/v1/agents/${agentId}/rag/documents`,
+      {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new ApiError(
+        err.error?.code || res.status.toString(),
+        err.error?.message || err.detail || "Failed to upload document"
+      );
+    }
+    return res.json();
+  },
+
+  async updateRagDocument(
+    agentId: string,
+    documentId: string,
+    data: { title?: string; folder_id?: string }
+  ): Promise<{ message: string }> {
+    return request<{ message: string }>(
+      `/api/v1/agents/${agentId}/rag/documents/${documentId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      },
+      true
+    );
+  },
+
+  async deleteRagDocument(
+    agentId: string,
+    documentId: string
+  ): Promise<{ message: string }> {
+    return request<{ message: string }>(
+      `/api/v1/agents/${agentId}/rag/documents/${documentId}`,
+      { method: "DELETE" },
+      true
     );
   },
 

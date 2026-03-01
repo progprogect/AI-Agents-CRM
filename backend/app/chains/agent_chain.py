@@ -210,6 +210,9 @@ After using escalation_detector and it indicates escalation is needed, you shoul
 - Escalate urgent or medical questions to human using escalation_detector tool
 - Help with booking appointments
 - Use available tools when needed
+
+When context includes "Image: URL", you may suggest relevant images in your response.
+Use format: [Image: URL] or ![description](URL) for the user to view.
 """)
         
         return "\n\n".join(prompt_parts)

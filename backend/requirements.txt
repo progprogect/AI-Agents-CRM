@@ -25,8 +25,12 @@ botocore>=1.32.0
 # WebSocket
 websockets==12.0
 
+# PDF
+PyPDF2>=3.0.0
+
 # Utilities
 python-dotenv==1.0.0
 httpx==0.25.2
+cloudinary>=1.36.0
 tenacity==8.2.3
 

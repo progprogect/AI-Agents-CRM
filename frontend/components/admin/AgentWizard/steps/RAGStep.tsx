@@ -3,6 +3,7 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
+import Link from "next/link";
 import { useDropzone } from "react-dropzone";
 import { Toggle } from "@/components/shared/Toggle";
 import { Input } from "@/components/shared/Input";
@@ -16,12 +17,14 @@ interface RAGStepProps {
   config: Partial<AgentConfigFormData>;
   errors: ValidationError[];
   onUpdate: (config: Partial<AgentConfigFormData>) => void;
+  agentId?: string;
 }
 
 export const RAGStep: React.FC<RAGStepProps> = ({
   config,
   errors,
   onUpdate,
+  agentId,
 }) => {
   const ragEnabled = config.rag_enabled || false;
   const documents = config.rag_documents || [];
@@ -192,6 +195,24 @@ export const RAGStep: React.FC<RAGStepProps> = ({
         onChange={handleToggleRAG}
         description="Retrieval-Augmented Generation allows the agent to use your documents for context-aware responses."
       />
+
+      {agentId && ragEnabled && (
+        <p className="text-sm text-gray-600 mt-2">
+          <Link
+            href={`/admin/agents/${agentId}/rag`}
+            className="text-[#D4AF37] hover:text-[#B8860B] underline"
+          >
+            Manage documents
+          </Link>
+          {" "}— upload files, organize in folders, add images.
+        </p>
+      )}
+
+      {!agentId && ragEnabled && (
+        <p className="text-sm text-gray-500 mt-2 italic">
+          You can add and manage documents after creating the agent.
+        </p>
+      )}
 
       {ragEnabled && (
         <div className="mt-6 space-y-6">
