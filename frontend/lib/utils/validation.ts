@@ -93,30 +93,7 @@ export function validateAgentConfig(
     });
   }
 
-  // RAG validation
-  if (formData.rag_enabled) {
-    if (!formData.rag_documents || formData.rag_documents.length === 0) {
-      errors.push({
-        field: "rag_documents",
-        message: "At least one RAG document is required when RAG is enabled",
-      });
-    } else {
-      formData.rag_documents.forEach((doc, index) => {
-        if (!doc.title || doc.title.trim() === "") {
-          errors.push({
-            field: `rag_documents[${index}].title`,
-            message: "Document title is required",
-          });
-        }
-        if (!doc.content || doc.content.trim() === "") {
-          errors.push({
-            field: `rag_documents[${index}].content`,
-            message: "Document content is required",
-          });
-        }
-      });
-    }
-  }
+  // RAG: documents are managed on RAG page, no inline validation needed
 
   return errors;
 }

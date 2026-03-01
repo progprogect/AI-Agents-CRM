@@ -11,10 +11,16 @@ import { api, ApiError } from "@/lib/api";
 import type { AgentConfigFormData } from "@/lib/utils/agentConfig";
 import { formDataToAgentConfig, generateAgentId } from "@/lib/utils/agentConfig";
 
+export interface AgentWizardSuccessResult {
+  agentId: string;
+  isCreate: boolean;
+  ragEnabled: boolean;
+}
+
 interface ReviewStepProps {
   config: Partial<AgentConfigFormData>;
   isSubmitting?: boolean;
-  onSubmit: () => Promise<void> | void;
+  onSubmit: (result?: AgentWizardSuccessResult) => Promise<void> | void;
   onStartOver?: () => void;
   onBack?: () => void;
   hasDraft?: boolean;
@@ -151,6 +157,8 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       // Ensure agent_id is set in config
       finalConfig.agent_id = agentId;
 
+      let successAgentId = agentId;
+
       if (isEditMode) {
         // Update existing agent
         await api.updateAgent(agentId, finalConfig);
@@ -164,6 +172,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           try {
             finalConfig.agent_id = finalAgentId;
             await api.createAgent(finalAgentId, finalConfig);
+            successAgentId = finalAgentId;
             break; // Success, exit loop
           } catch (err) {
             // Check if it's a conflict error (409) and we can retry with suffix
@@ -197,9 +206,13 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           }
         }
       }
-      
-      // Success - call onSubmit to trigger success handler in parent
-      await onSubmit();
+
+      const result: AgentWizardSuccessResult = {
+        agentId: successAgentId,
+        isCreate: !isEditMode,
+        ragEnabled: !!finalConfig.rag?.enabled,
+      };
+      await onSubmit(result);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -275,9 +288,9 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           </div>
           {config.rag_enabled && (
             <div className="flex justify-between">
-              <span className="text-gray-600">RAG Documents:</span>
-              <span className="font-medium text-gray-900">
-                {config.rag_documents?.length || 0}
+              <span className="text-gray-600">RAG:</span>
+              <span className="font-medium text-gray-900 text-sm">
+                Documents on RAG page
               </span>
             </div>
           )}

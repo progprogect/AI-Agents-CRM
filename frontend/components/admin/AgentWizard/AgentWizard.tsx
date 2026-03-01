@@ -12,20 +12,20 @@ import { ExamplesStep } from "./steps/ExamplesStep";
 import { RAGStep } from "./steps/RAGStep";
 import { EscalationStep } from "./steps/EscalationStep";
 import { LLMStep } from "./steps/LLMStep";
-import { ReviewStep } from "./steps/ReviewStep";
+import { ReviewStep, type AgentWizardSuccessResult } from "./steps/ReviewStep";
 
 const WIZARD_STEPS = [
   { number: 1, title: "Basic Info" },
   { number: 2, title: "Style" },
   { number: 3, title: "Examples" },
-  { number: 4, title: "RAG Documents" },
+  { number: 4, title: "RAG" },
   { number: 5, title: "Escalation" },
   { number: 6, title: "LLM Settings" },
   { number: 7, title: "Review" },
 ];
 
 interface AgentWizardProps {
-  onSuccess: () => void;
+  onSuccess: (result?: AgentWizardSuccessResult) => void;
   onCancel: () => void;
 }
 
@@ -87,11 +87,10 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
     }
   };
 
-  const handleSuccess = () => {
-    // Clear draft on successful creation
+  const handleSuccess = (result?: AgentWizardSuccessResult) => {
     clearDraft();
     reset();
-    onSuccess();
+    onSuccess(result);
   };
 
   const renderStep = () => {
@@ -124,7 +123,6 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
         return (
           <RAGStep
             config={state.config}
-            errors={state.errors}
             onUpdate={updateConfig}
             agentId={editingAgentId ?? undefined}
           />
@@ -150,10 +148,8 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
           <ReviewStep
             config={state.config}
             isSubmitting={state.isSubmitting}
-            onSubmit={async () => {
-              // ReviewStep handles the API call
-              // On success, call handleSuccess to clear draft and redirect
-              handleSuccess();
+            onSubmit={async (result) => {
+              handleSuccess(result);
             }}
             onStartOver={handleStartOver}
             onBack={prevStep}

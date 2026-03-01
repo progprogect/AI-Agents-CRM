@@ -154,7 +154,7 @@ export function useAgentWizard() {
       1: ["agent_id", "agent_display_name", "clinic_display_name", "specialty", "languages"],
       2: ["tone", "formality", "empathy_level", "depth_level", "message_length", "persuasion"],
       3: ["examples"],
-      4: ["rag_enabled", "rag_documents"],
+      4: ["rag_enabled"],
       5: ["medical_question_policy", "urgent_case_policy", "repeat_patient_policy", "pre_procedure_policy"],
       6: ["llm_model", "llm_temperature", "llm_max_tokens"],
       7: [],

@@ -19,8 +19,12 @@ export default function CreateAgentPage() {
     }
   });
 
-  const handleSuccess = () => {
-    router.push("/admin/agents");
+  const handleSuccess = (result?: { agentId: string; isCreate: boolean; ragEnabled: boolean }) => {
+    if (result?.isCreate && result?.ragEnabled) {
+      router.push(`/admin/agents/${result.agentId}/rag`);
+    } else {
+      router.push("/admin/agents");
+    }
   };
 
   const handleCancel = () => {
