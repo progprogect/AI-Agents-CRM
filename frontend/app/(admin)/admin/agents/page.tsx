@@ -97,9 +97,15 @@ const AgentRow = memo(function AgentRow({
     }
   };
 
-  const displayName = useMemo(() => getAgentDisplayName(agent), [agent]);
+  const agentName = useMemo(
+    () => agent.config?.profile?.agent_display_name || agent.config?.profile?.doctor_display_name || agent.agent_id,
+    [agent]
+  );
+  const companyName = useMemo(
+    () => agent.config?.profile?.company_display_name || null,
+    [agent]
+  );
   const initials = useMemo(() => getAgentInitials(agent), [agent]);
-  const specialty = useMemo(() => getAgentSpecialty(agent), [agent]);
 
   return (
     <tr className="hover:bg-[#EEEAE7]/5 transition-colors duration-150">
@@ -109,9 +115,9 @@ const AgentRow = memo(function AgentRow({
             {initials}
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-medium text-gray-900">{displayName}</span>
-            {specialty && (
-              <span className="text-xs text-gray-500">{specialty}</span>
+            <span className="text-sm font-medium text-gray-900">{agentName}</span>
+            {companyName && (
+              <span className="text-xs text-gray-500">{companyName}</span>
             )}
           </div>
         </div>
