@@ -12,7 +12,6 @@ import {
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
-  type DragOverEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -418,7 +417,8 @@ export default function CRMPage() {
   // ── Drag handlers ────────────────────────────────────────────────────────────
 
   const handleDragStart = (event: DragStartEvent) => {
-    const conv = conversations.find((c) => c.conversation_id === event.active.id);
+    const activeId = String(event.active.id);
+    const conv = conversations.find((c) => c.conversation_id === activeId);
     setActiveConversation(conv ?? null);
   };
 
@@ -427,13 +427,16 @@ export default function CRMPage() {
     const { active, over } = event;
     if (!over) return;
 
-    const conv = conversations.find((c) => c.conversation_id === active.id);
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    const conv = conversations.find((c) => c.conversation_id === activeId);
     if (!conv) return;
 
     // Determine target stage: over.id can be a stage UUID or a conversation UUID
     const targetStageId =
-      stages.find((s) => s.id === over.id)?.id ??
-      conversations.find((c) => c.conversation_id === over.id)?.crm_stage_id;
+      stages.find((s) => s.id === overId)?.id ??
+      conversations.find((c) => c.conversation_id === overId)?.crm_stage_id;
 
     if (!targetStageId || targetStageId === conv.crm_stage_id) return;
 
