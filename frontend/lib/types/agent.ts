@@ -95,13 +95,22 @@ export interface HandoffConfig {
   stop_ai_after_handoff: boolean;
 }
 
+export interface EscalationCustomRule {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface EscalationConfig {
-  medical_question_policy: string;
-  urgent_case_policy: string;
-  repeat_patient_policy: string;
-  pre_procedure_policy: string;
-  triggers: Record<string, any>;
-  actions: Record<string, any>;
+  detect_contact: boolean;
+  custom_rules: EscalationCustomRule[];
+  // Legacy fields — may be present in older agent configs
+  medical_question_policy?: string;
+  urgent_case_policy?: string;
+  repeat_patient_policy?: string;
+  pre_procedure_policy?: string;
+  triggers?: Record<string, any>;
+  actions?: Record<string, any>;
 }
 
 export interface LLMConfig {
