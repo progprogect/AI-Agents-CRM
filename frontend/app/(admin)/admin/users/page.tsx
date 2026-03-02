@@ -9,7 +9,10 @@ import { isSuperAdmin, getAdminToken } from "@/lib/auth";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/shared/Button";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const getApiUrl = (): string => {
+  if (typeof window !== "undefined" && !window.location.host.startsWith("localhost")) return "";
+  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+};
 
 interface AdminUser {
   email: string;
@@ -51,7 +54,7 @@ export default function UsersPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v1/admin/auth/users`, {
+      const res = await fetch(`${getApiUrl()}/api/v1/admin/auth/users`, {
         headers: authHeaders(),
       });
       if (!res.ok) throw new Error(`Error ${res.status}`);
@@ -74,7 +77,7 @@ export default function UsersPage() {
     setInviteLoading(true);
     setInviteError(null);
     try {
-      const res = await fetch(`${API_URL}/api/v1/admin/auth/users`, {
+      const res = await fetch(`${getApiUrl()}/api/v1/admin/auth/users`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({ email: inviteEmail.trim().toLowerCase() }),
@@ -99,7 +102,7 @@ export default function UsersPage() {
     setRemovingEmail(email);
     try {
       const res = await fetch(
-        `${API_URL}/api/v1/admin/auth/users/${encodeURIComponent(email)}`,
+        `${getApiUrl()}/api/v1/admin/auth/users/${encodeURIComponent(email)}`,
         { method: "DELETE", headers: authHeaders() }
       );
       if (!res.ok) {
