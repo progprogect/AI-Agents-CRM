@@ -104,7 +104,7 @@ export default function StatsPage() {
               id="comparison-toggle"
               checked={includeComparison}
               onChange={(e) => setIncludeComparison(e.target.checked)}
-              className="h-4 w-4 text-[#D4AF37] focus:ring-[#D4AF37] border-gray-300 rounded"
+              className="h-4 w-4 text-[#251D1C] focus:ring-[#251D1C] border-gray-300 rounded"
             />
             <label htmlFor="comparison-toggle" className="text-sm font-medium text-gray-700">
               Show comparison with previous period
@@ -121,7 +121,7 @@ export default function StatsPage() {
             value: stats.total_conversations,
             change: stats.comparison?.total_conversations,
             icon: "💬",
-            colorClass: "bg-[#F5D76E]/10 text-[#B8860B] border-[#D4AF37]/30",
+            colorClass: "bg-[#EEEAE7]/10 text-[#443C3C] border-[#251D1C]/30",
           },
         ]}
         columns={1}
@@ -135,7 +135,7 @@ export default function StatsPage() {
             value: stats.ai_active,
             change: stats.comparison?.ai_active,
             icon: "🤖",
-            colorClass: "bg-[#F5D76E]/20 text-[#B8860B] border-[#D4AF37]/40",
+            colorClass: "bg-[#EEEAE7]/20 text-[#443C3C] border-[#251D1C]/40",
           },
           {
             label: "Needs Human",

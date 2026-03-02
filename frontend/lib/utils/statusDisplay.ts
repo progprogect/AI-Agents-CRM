@@ -17,7 +17,7 @@ export function getStatusDisplay(status: ConversationStatus): StatusDisplayConfi
     AI_ACTIVE: {
       label: "AI Responding",
       icon: "🤖",
-      colorClasses: "bg-[#F5D76E]/20 text-[#B8860B] border border-[#D4AF37]/30",
+      colorClasses: "bg-[#EEEAE7]/20 text-[#443C3C] border border-[#251D1C]/30",
       ariaLabel: "AI is currently responding",
     },
     NEEDS_HUMAN: {

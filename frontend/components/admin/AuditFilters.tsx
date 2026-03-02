@@ -50,7 +50,7 @@ export const AuditFilters: React.FC<AuditFiltersProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-sm shadow border border-[#D4AF37]/20 p-4 mb-6">
+    <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-4 mb-6">
       <h2 className="text-sm font-medium text-gray-700 mb-4">Filters</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Select

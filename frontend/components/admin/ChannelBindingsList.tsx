@@ -20,7 +20,7 @@ export function ChannelBindingsList({
 }: ChannelBindingsListProps) {
   if (bindings.length === 0) {
     return (
-      <div className="text-center py-16 bg-white rounded-sm shadow border border-[#D4AF37]/20">
+      <div className="text-center py-16 bg-white rounded-sm shadow border border-[#251D1C]/20">
         <div className="max-w-md mx-auto">
           <div className="text-6xl mb-4">📱</div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">
@@ -35,26 +35,26 @@ export function ChannelBindingsList({
   }
 
   return (
-    <div className="bg-white rounded-sm shadow border border-[#D4AF37]/20 overflow-hidden">
+    <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 overflow-hidden">
       <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-[#F5D76E]/10">
+        <thead className="bg-[#EEEAE7]/10">
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
               Channel
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
               Account ID
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
               Username
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
               Status
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
               Verified
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+            <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
               Actions
             </th>
           </tr>
@@ -63,7 +63,7 @@ export function ChannelBindingsList({
           {bindings.map((binding) => (
             <tr
               key={binding.binding_id}
-              className="hover:bg-[#F5D76E]/5 transition-colors duration-150"
+              className="hover:bg-[#EEEAE7]/5 transition-colors duration-150"
             >
               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                 {binding.channel_type === "instagram"
@@ -82,7 +82,7 @@ export function ChannelBindingsList({
                 <span
                   className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-sm ${
                     binding.is_active
-                      ? "bg-[#F5D76E]/20 text-[#B8860B] border border-[#D4AF37]/30"
+                      ? "bg-[#EEEAE7]/20 text-[#443C3C] border border-[#251D1C]/30"
                       : "bg-gray-100 text-gray-800"
                   }`}
                 >

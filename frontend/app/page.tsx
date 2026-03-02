@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
@@ -65,12 +66,12 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-[#F5D76E]/5 to-[#D4AF37]/10">
+    <div className="min-h-screen bg-gradient-to-br from-white via-[#EEEAE7]/5 to-[#251D1C]/10">
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            <span className="text-[#D4AF37]">Agent</span>
-          </h1>
+          <div className="flex justify-center mb-4">
+            <Image src="/logo.svg" alt="CAworks" width={160} height={44} priority />
+          </div>
           <p className="text-xl text-gray-600">
             Select an agent to start a consultation
           </p>
@@ -84,7 +85,7 @@ export default function Home() {
             action={
               <a
                 href="/admin/agents"
-                className="text-[#D4AF37] hover:text-[#B8860B] underline transition-colors duration-200"
+                className="text-[#251D1C] hover:text-[#443C3C] underline transition-colors duration-200"
               >
                 Go to Admin Panel
               </a>
@@ -100,7 +101,7 @@ export default function Home() {
               return (
                 <div
                   key={agent.agent_id}
-                  className="bg-white rounded-sm shadow-md border border-[#D4AF37]/20 p-6 hover:shadow-lg hover:border-[#D4AF37]/40 transition-all duration-200 cursor-pointer"
+                  className="bg-white rounded-sm shadow-md border border-[#251D1C]/20 p-6 hover:shadow-lg hover:border-[#251D1C]/40 transition-all duration-200 cursor-pointer"
                   onClick={() => handleStartChat(agent.agent_id)}
                   role="button"
                   tabIndex={0}
@@ -112,7 +113,7 @@ export default function Home() {
                   aria-label={`Start chat with ${displayName}`}
                 >
                   <div className="flex items-start gap-4 mb-4">
-                    <div className="flex-shrink-0 w-12 h-12 rounded-full bg-[#F5D76E]/20 flex items-center justify-center text-lg font-medium text-[#B8860B]">
+                    <div className="flex-shrink-0 w-12 h-12 rounded-full bg-[#EEEAE7]/20 flex items-center justify-center text-lg font-medium text-[#443C3C]">
                       {initials}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -145,7 +146,7 @@ export default function Home() {
         <div className="text-center mt-12">
           <a
             href="/admin/agents"
-            className="text-gray-600 hover:text-[#D4AF37] underline text-sm transition-colors duration-200"
+            className="text-gray-600 hover:text-[#251D1C] underline text-sm transition-colors duration-200"
           >
             Admin Panel
           </a>

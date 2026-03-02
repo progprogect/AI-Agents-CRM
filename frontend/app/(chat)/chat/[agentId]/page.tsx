@@ -125,9 +125,9 @@ export default function ChatPage() {
 
   return (
     <div className="h-screen flex flex-col bg-white">
-      <div className="border-b border-[#D4AF37]/20 px-6 py-4 bg-white shadow-sm">
+      <div className="border-b border-[#251D1C]/20 px-6 py-4 bg-white shadow-sm">
         <div className="flex items-center gap-4">
-          <div className="flex-shrink-0 w-12 h-12 rounded-full bg-[#F5D76E]/20 flex items-center justify-center text-lg font-medium text-[#B8860B]">
+          <div className="flex-shrink-0 w-12 h-12 rounded-full bg-[#EEEAE7]/20 flex items-center justify-center text-lg font-medium text-[#443C3C]">
             {agentInitials}
           </div>
           <div className="flex-1">

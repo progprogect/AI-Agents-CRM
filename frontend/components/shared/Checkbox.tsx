@@ -25,7 +25,7 @@ export const Checkbox: React.FC<CheckboxProps> = ({
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         disabled={disabled}
-        className={`mt-1 h-4 w-4 rounded border-gray-300 text-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37] focus:ring-offset-0 transition-colors duration-200 ${
+        className={`mt-1 h-4 w-4 rounded border-gray-300 text-[#251D1C] focus:ring-2 focus:ring-[#251D1C] focus:ring-offset-0 transition-colors duration-200 ${
           error ? "border-red-500" : ""
         } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
       />

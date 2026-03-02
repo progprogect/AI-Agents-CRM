@@ -140,9 +140,9 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
       {(config.clinic_display_name ||
         config.agent_display_name ||
         config.specialty) && (
-        <div className="mt-8 p-6 bg-[#F5D76E]/10 border border-[#D4AF37]/20 rounded-sm">
+        <div className="mt-8 p-6 bg-[#EEEAE7]/10 border border-[#251D1C]/20 rounded-sm">
           <h4 className="text-sm font-medium text-gray-700 mb-4">Preview</h4>
-          <div className="bg-white p-4 rounded-sm border border-[#D4AF37]/20">
+          <div className="bg-white p-4 rounded-sm border border-[#251D1C]/20">
             <div className="flex items-start justify-between mb-2">
               <div className="flex-1">
                 <h5 className="text-lg font-semibold text-gray-900">
@@ -170,7 +170,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
               </p>
             )}
             <div className="mt-3">
-              <span className="px-3 py-1 rounded-sm text-xs font-medium bg-[#F5D76E]/20 text-[#B8860B] border border-[#D4AF37]/30">
+              <span className="px-3 py-1 rounded-sm text-xs font-medium bg-[#EEEAE7]/20 text-[#443C3C] border border-[#251D1C]/30">
                 Active
               </span>
             </div>

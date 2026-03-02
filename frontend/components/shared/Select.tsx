@@ -30,7 +30,7 @@ export const Select: React.FC<SelectProps> = ({
         </label>
       )}
       <select
-        className={`w-full px-3 py-2 border rounded-sm bg-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] appearance-none cursor-pointer ${
+        className={`w-full px-3 py-2 border rounded-sm bg-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C] appearance-none cursor-pointer ${
           error ? "border-red-500 focus:ring-red-500" : "border-gray-300"
         } ${className}`}
         style={{

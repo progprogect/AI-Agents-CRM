@@ -33,7 +33,7 @@ export const Slider: React.FC<SliderProps> = ({
           </label>
         )}
         {showValue && (
-          <span className="text-sm font-medium text-[#D4AF37]">{value}</span>
+          <span className="text-sm font-medium text-[#251D1C]">{value}</span>
         )}
       </div>
       <input
@@ -43,11 +43,11 @@ export const Slider: React.FC<SliderProps> = ({
         step={step}
         value={value}
         onChange={onChange}
-        className={`w-full h-2 bg-gray-200 rounded-sm appearance-none cursor-pointer accent-[#D4AF37] ${
+        className={`w-full h-2 bg-gray-200 rounded-sm appearance-none cursor-pointer accent-[#251D1C] ${
           error ? "border-red-500" : ""
         } ${className}`}
         style={{
-          background: `linear-gradient(to right, #D4AF37 0%, #D4AF37 ${((value - min) / (max - min)) * 100}%, #E5E7EB ${((value - min) / (max - min)) * 100}%, #E5E7EB 100%)`,
+          background: `linear-gradient(to right, #251D1C 0%, #251D1C ${((value - min) / (max - min)) * 100}%, #E5E7EB ${((value - min) / (max - min)) * 100}%, #E5E7EB 100%)`,
         }}
         {...props}
       />

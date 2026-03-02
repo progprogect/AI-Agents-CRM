@@ -34,7 +34,7 @@ export default function CreateAgentPage() {
   return (
     <div className="p-6">
       {hasDraft && (
-        <div className="mb-4 p-4 bg-[#F5D76E]/10 border border-[#D4AF37]/20 rounded-sm">
+        <div className="mb-4 p-4 bg-[#EEEAE7]/10 border border-[#251D1C]/20 rounded-sm">
           <p className="text-sm text-gray-700">
             <strong>
               {(() => {

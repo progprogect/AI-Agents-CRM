@@ -18,7 +18,7 @@ export const SimpleLineChart: React.FC<SimpleLineChartProps> = ({
   data,
   width = 800,
   height = 200,
-  color = "#D4AF37",
+  color = "#251D1C",
 }) => {
   if (data.length === 0) {
     return (
@@ -49,7 +49,7 @@ export const SimpleLineChart: React.FC<SimpleLineChartProps> = ({
   const points = data.map((point, index) => `${getX(index)},${getY(point.value)}`).join(" ");
 
   return (
-    <div className="bg-white rounded-sm border border-[#D4AF37]/20 p-4">
+    <div className="bg-white rounded-sm border border-[#251D1C]/20 p-4">
       <svg width={width} height={height} className="overflow-visible">
         {/* Grid lines */}
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {

@@ -76,7 +76,7 @@ export const RAGStep: React.FC<RAGStepProps> = ({
             <p className="text-sm text-gray-700">
               <Link
                 href={`/admin/agents/${agentId}/rag`}
-                className="text-[#D4AF37] hover:text-[#B8860B] underline font-medium"
+                className="text-[#251D1C] hover:text-[#443C3C] underline font-medium"
               >
                 Manage documents
               </Link>

@@ -73,7 +73,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const isNearLimit = maxLength && remainingChars !== null && remainingChars < 20;
 
   return (
-    <div className="border-t border-[#D4AF37]/20 p-4 bg-white">
+    <div className="border-t border-[#251D1C]/20 p-4 bg-white">
       <div className="flex gap-2 items-end">
         <div className="flex-1 flex flex-col">
           <textarea
@@ -85,7 +85,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             placeholder={placeholder}
             rows={1}
             maxLength={maxLength}
-            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-sm bg-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37] resize-none disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] max-h-[120px] overflow-y-auto"
+            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-sm bg-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C] resize-none disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] max-h-[120px] overflow-y-auto"
             aria-label="Message input"
           />
           {maxLength && (

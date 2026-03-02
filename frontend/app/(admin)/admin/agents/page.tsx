@@ -102,10 +102,10 @@ const AgentRow = memo(function AgentRow({
   const specialty = useMemo(() => getAgentSpecialty(agent), [agent]);
 
   return (
-    <tr className="hover:bg-[#F5D76E]/5 transition-colors duration-150">
+    <tr className="hover:bg-[#EEEAE7]/5 transition-colors duration-150">
       <td className="px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[#F5D76E]/20 flex items-center justify-center text-sm font-medium text-[#B8860B]">
+          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-[#EEEAE7]/20 flex items-center justify-center text-sm font-medium text-[#443C3C]">
             {initials}
           </div>
           <div className="flex flex-col">
@@ -127,7 +127,7 @@ const AgentRow = memo(function AgentRow({
         ) : (
           <Link
             href={`/admin/agents/${agent.agent_id}/channels`}
-            className="text-[#D4AF37] hover:text-[#B8860B] transition-colors duration-200"
+            className="text-[#251D1C] hover:text-[#443C3C] transition-colors duration-200"
           >
             {channelCount ?? 0} channel{channelCount !== 1 ? "s" : ""}
           </Link>
@@ -136,7 +136,7 @@ const AgentRow = memo(function AgentRow({
       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
         <Link
           href={`/admin/agents/${agent.agent_id}/rag`}
-          className="text-[#D4AF37] hover:text-[#B8860B] transition-colors duration-200"
+          className="text-[#251D1C] hover:text-[#443C3C] transition-colors duration-200"
         >
           RAG
         </Link>
@@ -146,7 +146,7 @@ const AgentRow = memo(function AgentRow({
           <Tooltip content="Edit agent">
             <button
               onClick={() => onEdit(agent)}
-              className="inline-flex items-center justify-center w-8 h-8 text-[#D4AF37] hover:text-[#B8860B] hover:bg-[#F5D76E]/10 rounded-sm transition-all duration-200"
+              className="inline-flex items-center justify-center w-8 h-8 text-[#251D1C] hover:text-[#443C3C] hover:bg-[#EEEAE7]/10 rounded-sm transition-all duration-200"
               aria-label="Edit agent"
             >
               <EditIcon />
@@ -155,7 +155,7 @@ const AgentRow = memo(function AgentRow({
           <Tooltip content="Clone agent">
             <button
               onClick={() => onClone(agent)}
-              className="inline-flex items-center justify-center w-8 h-8 text-[#D4AF37] hover:text-[#B8860B] hover:bg-[#F5D76E]/10 rounded-sm transition-all duration-200"
+              className="inline-flex items-center justify-center w-8 h-8 text-[#251D1C] hover:text-[#443C3C] hover:bg-[#EEEAE7]/10 rounded-sm transition-all duration-200"
               aria-label="Clone agent"
             >
               <CloneIcon />
@@ -371,23 +371,23 @@ export default function AgentsPage() {
           }
         />
       ) : (
-        <div className="bg-white rounded-sm shadow border border-[#D4AF37]/20 overflow-hidden">
+        <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-[#F5D76E]/10">
+            <thead className="bg-[#EEEAE7]/10">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Agent
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Channels
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   RAG
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Actions
                 </th>
               </tr>

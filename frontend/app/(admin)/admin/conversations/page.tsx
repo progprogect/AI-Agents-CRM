@@ -252,34 +252,34 @@ export default function ConversationsPage() {
           }
         />
       ) : (
-        <div className="bg-white rounded-sm shadow border border-[#D4AF37]/20 overflow-hidden">
+        <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-[#F5D76E]/10">
+            <thead className="bg-[#EEEAE7]/10">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Conversation
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Agent
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Channel
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Marketing Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Created
                 </th>
                 {(filter === "all" || filter === "needs_attention") && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                     Waiting
                   </th>
                 )}
-                <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -296,7 +296,7 @@ export default function ConversationsPage() {
                     className={`transition-colors duration-150 ${
                       needsAttention
                         ? "bg-[#F59E0B]/10 hover:bg-[#F59E0B]/15 border-l-4 border-[#F59E0B]"
-                        : "hover:bg-[#F5D76E]/5"
+                        : "hover:bg-[#EEEAE7]/5"
                     }`}
                   >
                     <td className="px-6 py-4">
@@ -402,7 +402,7 @@ export default function ConversationsPage() {
                         <Tooltip content={`View conversation ${conv.conversation_id}`}>
                           <Link
                             href={`/admin/conversations/${conv.conversation_id}`}
-                            className="inline-flex items-center justify-center w-8 h-8 text-[#D4AF37] hover:text-[#B8860B] hover:bg-[#F5D76E]/10 rounded-sm transition-all duration-200"
+                            className="inline-flex items-center justify-center w-8 h-8 text-[#251D1C] hover:text-[#443C3C] hover:bg-[#EEEAE7]/10 rounded-sm transition-all duration-200"
                             aria-label="View conversation"
                           >
                             <ViewIcon />

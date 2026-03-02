@@ -3,6 +3,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAdminWebSocket } from "@/lib/hooks/useAdminWebSocket";
@@ -61,10 +62,10 @@ export const Sidebar: React.FC = () => {
   }, [onStatsUpdate, onNewEscalation]);
 
   return (
-    <aside className="w-64 bg-white border-r border-[#D4AF37]/20 flex flex-col flex-shrink-0" aria-label="Admin navigation">
-      <div className="p-6 border-b border-[#D4AF37]/20">
-        <h1 className="text-xl font-bold text-[#D4AF37]">Agent</h1>
-        <p className="text-sm text-gray-600">Admin Panel</p>
+    <aside className="w-64 bg-white border-r border-[#BEBAB7] flex flex-col flex-shrink-0" aria-label="Admin navigation">
+      <div className="p-6 border-b border-[#BEBAB7]">
+        <Image src="/logo.svg" alt="CAworks" width={120} height={32} className="h-8 w-auto" priority />
+        <p className="text-sm text-gray-600 mt-1">Admin Panel</p>
       </div>
       <nav className="flex-1 p-4 space-y-2" aria-label="Main navigation">
         {navigation.map((item) => {
@@ -78,8 +79,8 @@ export const Sidebar: React.FC = () => {
               href={item.href}
               className={`flex items-center justify-between gap-3 px-4 py-2 rounded-sm transition-all duration-200 ${
                 isActive
-                  ? "bg-[#F5D76E]/20 text-[#B8860B] font-medium border-l-2 border-[#D4AF37]"
-                  : "text-gray-700 hover:bg-[#F5D76E]/10 hover:text-[#D4AF37]"
+                  ? "bg-[#EEEAE7] text-[#443C3C] font-medium border-l-2 border-[#251D1C]"
+                  : "text-gray-700 hover:bg-[#EEEAE7]/50 hover:text-[#251D1C]"
               }`}
               aria-current={isActive ? "page" : undefined}
               aria-label={`Navigate to ${item.name}${showBadge ? ` (${needsHumanCount} require attention)` : ""}`}

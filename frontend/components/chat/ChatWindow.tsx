@@ -40,7 +40,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   return (
     <div className="flex flex-col h-full">
       {/* Connection status */}
-      <div className="border-b border-[#D4AF37]/20 px-4 py-2.5 bg-white">
+      <div className="border-b border-[#251D1C]/20 px-4 py-2.5 bg-white">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div

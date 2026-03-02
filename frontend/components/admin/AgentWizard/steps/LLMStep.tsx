@@ -125,11 +125,11 @@ export const LLMStep: React.FC<LLMStepProps> = ({
       </div>
 
       {/* Preview */}
-      <div className="mt-8 p-6 bg-[#F5D76E]/10 border border-[#D4AF37]/20 rounded-sm">
+      <div className="mt-8 p-6 bg-[#EEEAE7]/10 border border-[#251D1C]/20 rounded-sm">
         <h4 className="text-sm font-medium text-gray-700 mb-4">
           LLM Configuration Preview
         </h4>
-        <div className="bg-white p-4 rounded-sm border border-[#D4AF37]/20 space-y-2 text-sm">
+        <div className="bg-white p-4 rounded-sm border border-[#251D1C]/20 space-y-2 text-sm">
           <p className="text-gray-600">
             <strong>Provider:</strong> {provider === "google_ai_studio" ? "Google AI Studio" : "OpenAI"}
           </p>

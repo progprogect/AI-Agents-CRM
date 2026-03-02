@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </p>
             <button
               onClick={() => this.setState({ hasError: false })}
-              className="px-4 py-2 bg-[#D4AF37] text-white rounded-sm hover:bg-[#B8860B] transition-all duration-200 shadow-sm hover:shadow-md"
+              className="px-4 py-2 bg-[#251D1C] text-white rounded-sm hover:bg-[#443C3C] transition-all duration-200 shadow-sm hover:shadow-md"
               aria-label="Try again after error"
             >
               Try again

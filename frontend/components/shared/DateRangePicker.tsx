@@ -91,7 +91,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               type="date"
               value={formatDateForInput(value.start)}
               onChange={handleStartDateChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37]"
+              className="w-full px-3 py-2 border border-gray-300 rounded-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C]"
             />
           </div>
           <div>
@@ -102,7 +102,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
               type="date"
               value={formatDateForInput(value.end)}
               onChange={handleEndDateChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:border-[#D4AF37]"
+              className="w-full px-3 py-2 border border-gray-300 rounded-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C]"
             />
           </div>
         </div>

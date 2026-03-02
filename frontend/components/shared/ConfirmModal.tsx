@@ -66,7 +66,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       onClick={handleBackdropClick}
     >
       <div
-        className="bg-white rounded-sm shadow-lg border border-[#D4AF37]/20 max-w-md w-full mx-4 transform transition-all duration-200"
+        className="bg-white rounded-sm shadow-lg border border-[#BEBAB7] max-w-md w-full mx-4 transform transition-all duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

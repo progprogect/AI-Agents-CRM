@@ -194,7 +194,7 @@ export default function InstagramTestPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Левая колонка: Форма тестирования */}
         <div className="space-y-4">
-          <div className="bg-white rounded-sm shadow border border-[#D4AF37]/20 p-6">
+          <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-6">
             <h2 className="text-lg font-semibold mb-4">Параметры теста</h2>
 
             <div className="space-y-4">
@@ -255,7 +255,7 @@ export default function InstagramTestPage() {
 
           {/* Последние webhook события */}
           {recentWebhooks.length > 0 && (
-            <div className="bg-white rounded-sm shadow border border-[#D4AF37]/20 p-6">
+            <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-semibold">
                   Последние webhook события ({recentWebhooks.length})
@@ -324,7 +324,7 @@ export default function InstagramTestPage() {
                                 setRecipientId(senderId);
                                 addLog("success", `Recipient ID заполнен из webhook: ${senderId}`);
                               }}
-                              className="text-xs bg-[#D4AF37] text-white px-2 py-1 rounded hover:bg-[#B8860B] transition-colors"
+                              className="text-xs bg-[#251D1C] text-white px-2 py-1 rounded hover:bg-[#443C3C] transition-colors"
                               title="Использовать Sender ID как Recipient ID для отправки ответа"
                             >
                               Использовать Sender ID
@@ -432,7 +432,7 @@ export default function InstagramTestPage() {
         </div>
 
         {/* Правая колонка: Логи */}
-        <div className="bg-white rounded-sm shadow border border-[#D4AF37]/20 p-6">
+        <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold">Логи</h2>
             <Button

@@ -78,10 +78,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = memo(({ message }) =>
       <div
         className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-lg ${
           isUser
-            ? "bg-[#D4AF37]/20"
+            ? "bg-[#251D1C]/20"
             : isAdmin
-            ? "bg-[#B8860B]/20"
-            : "bg-[#F5D76E]/20"
+            ? "bg-[#443C3C]/20"
+            : "bg-[#EEEAE7]/20"
         }`}
         aria-label={getRoleLabel(message.role)}
       >
@@ -94,7 +94,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = memo(({ message }) =>
         {(isAdmin || isAgent) && (
           <span
             className={`text-xs font-medium mb-1 ${
-              isAdmin ? "text-[#B8860B]" : "text-[#D4AF37]"
+              isAdmin ? "text-[#443C3C]" : "text-[#251D1C]"
             }`}
           >
             {getRoleLabel(message.role)}
@@ -105,10 +105,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = memo(({ message }) =>
         <div
           className={`rounded-sm px-4 py-2.5 transition-all duration-200 ${
             isUser
-              ? "bg-[#D4AF37] text-white shadow-sm"
+              ? "bg-[#251D1C] text-white shadow-sm"
               : isAdmin
-              ? "bg-[#B8860B] text-white shadow-sm border border-[#D4AF37]"
-              : "bg-white text-gray-900 border border-[#D4AF37]/30 shadow-sm"
+              ? "bg-[#443C3C] text-white shadow-sm border border-[#251D1C]"
+              : "bg-white text-gray-900 border border-[#251D1C]/30 shadow-sm"
           }`}
         >
           <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">

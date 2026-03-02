@@ -26,9 +26,9 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({
                 <div
                   className={`w-10 h-10 rounded-full flex items-center justify-center font-medium text-sm transition-all duration-200 ${
                     isActive
-                      ? "bg-[#D4AF37] text-white border-2 border-[#D4AF37]"
+                      ? "bg-[#251D1C] text-white border-2 border-[#251D1C]"
                       : isCompleted
-                      ? "bg-[#D4AF37] text-white border-2 border-[#D4AF37]"
+                      ? "bg-[#251D1C] text-white border-2 border-[#251D1C]"
                       : "bg-gray-200 text-gray-600 border-2 border-gray-300"
                   }`}
                 >
@@ -52,7 +52,7 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({
                 </div>
                 <span
                   className={`mt-2 text-xs font-medium text-center ${
-                    isActive ? "text-[#D4AF37]" : "text-gray-600"
+                    isActive ? "text-[#251D1C]" : "text-gray-600"
                   }`}
                 >
                   {step.title}
@@ -61,7 +61,7 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({
               {!isLast && (
                 <div
                   className={`flex-1 h-0.5 mx-2 transition-all duration-200 ${
-                    isCompleted ? "bg-[#D4AF37]" : "bg-gray-300"
+                    isCompleted ? "bg-[#251D1C]" : "bg-gray-300"
                   }`}
                 />
               )}

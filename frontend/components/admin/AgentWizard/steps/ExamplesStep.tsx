@@ -173,7 +173,7 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
               return (
                 <div
                   key={example.id}
-                  className="p-4 bg-white rounded-sm border border-[#D4AF37]/20 space-y-4"
+                  className="p-4 bg-white rounded-sm border border-[#251D1C]/20 space-y-4"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <h5 className="text-sm font-medium text-gray-900">

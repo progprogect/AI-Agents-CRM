@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 44" fill="none">
+  <!-- Open frame - top-left L -->
+  <rect x="0" y="0" width="4" height="44" fill="#251D1C"/>
+  <rect x="0" y="0" width="44" height="4" fill="#251D1C"/>
+  <!-- Open frame - bottom-right L -->
+  <rect x="156" y="0" width="4" height="44" fill="#251D1C"/>
+  <rect x="116" y="40" width="44" height="4" fill="#251D1C"/>
+  <!-- CAworks text - CA large, works smaller -->
+  <text x="52" y="30" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="24" font-weight="700" fill="#251D1C">CA</text>
+  <text x="88" y="30" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" font-weight="700" fill="#251D1C">works</text>
+</svg>

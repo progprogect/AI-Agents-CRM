@@ -36,7 +36,7 @@ export const AuditLogRow: React.FC<AuditLogRowProps> = ({ log }) => {
   return (
     <>
       <tr
-        className="hover:bg-[#F5D76E]/5 transition-colors duration-150 cursor-pointer"
+        className="hover:bg-[#EEEAE7]/5 transition-colors duration-150 cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -66,7 +66,7 @@ export const AuditLogRow: React.FC<AuditLogRowProps> = ({ log }) => {
             <Link
               href={resourceLink}
               onClick={(e) => e.stopPropagation()}
-              className="text-[#B8860B] hover:text-[#D4AF37] hover:underline"
+              className="text-[#443C3C] hover:text-[#251D1C] hover:underline"
             >
               {log.resource_id.substring(0, 8)}...
             </Link>
@@ -83,7 +83,7 @@ export const AuditLogRow: React.FC<AuditLogRowProps> = ({ log }) => {
                 e.stopPropagation();
                 setIsExpanded(!isExpanded);
               }}
-              className="text-[#B8860B] hover:text-[#D4AF37]"
+              className="text-[#443C3C] hover:text-[#251D1C]"
             >
               {isExpanded ? "▼" : "▶"}
             </button>

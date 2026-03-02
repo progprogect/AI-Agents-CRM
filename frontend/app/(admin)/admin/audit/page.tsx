@@ -194,26 +194,26 @@ export default function AuditPage() {
         </div>
       ) : (
         <>
-          <div className="bg-white rounded-sm shadow border border-[#D4AF37]/20 overflow-hidden">
+          <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 overflow-hidden">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-[#F5D76E]/10">
+              <thead className="bg-[#EEEAE7]/10">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                     Action
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                     Timestamp
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                     Admin
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                     Resource Type
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                     Resource ID
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-[#B8860B] uppercase tracking-wider">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                     Details
                   </th>
                 </tr>

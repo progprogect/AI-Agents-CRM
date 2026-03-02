@@ -28,8 +28,8 @@ export const Toggle: React.FC<ToggleProps> = ({
           aria-checked={checked}
           disabled={disabled}
           onClick={() => !disabled && onChange(!checked)}
-          className={`relative inline-flex h-6 w-11 items-center rounded-sm transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#D4AF37] focus:ring-offset-2 ${
-            checked ? "bg-[#D4AF37]" : "bg-gray-300"
+          className={`relative inline-flex h-6 w-11 items-center rounded-sm transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:ring-offset-2 ${
+            checked ? "bg-[#251D1C]" : "bg-gray-300"
           } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
         >
           <span

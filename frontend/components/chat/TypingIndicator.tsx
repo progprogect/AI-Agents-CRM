@@ -19,26 +19,26 @@ export const TypingIndicator: React.FC<TypingIndicatorProps> = ({
     <div className="flex items-start gap-2 mb-4 px-4">
       {/* Avatar */}
       <div
-        className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-lg bg-[#F5D76E]/20"
+        className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-lg bg-[#EEEAE7]/20"
         aria-hidden="true"
       >
         🤖
       </div>
 
       {/* Typing bubble */}
-      <div className="bg-white border border-[#D4AF37]/30 rounded-sm px-4 py-3 shadow-sm">
+      <div className="bg-white border border-[#251D1C]/30 rounded-sm px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
           <div className="flex gap-1">
             <div
-              className="w-2 h-2 bg-[#D4AF37] rounded-full animate-bounce"
+              className="w-2 h-2 bg-[#251D1C] rounded-full animate-bounce"
               style={{ animationDuration: "1.4s" }}
             />
             <div
-              className="w-2 h-2 bg-[#D4AF37] rounded-full animate-bounce"
+              className="w-2 h-2 bg-[#251D1C] rounded-full animate-bounce"
               style={{ animationDelay: "0.2s", animationDuration: "1.4s" }}
             />
             <div
-              className="w-2 h-2 bg-[#D4AF37] rounded-full animate-bounce"
+              className="w-2 h-2 bg-[#251D1C] rounded-full animate-bounce"
               style={{ animationDelay: "0.4s", animationDuration: "1.4s" }}
             />
           </div>

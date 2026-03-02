@@ -67,8 +67,8 @@ export function showNotification(
 
   try {
     const notification = new Notification(title, {
-      icon: "/favicon.ico",
-      badge: "/favicon.ico",
+      icon: "/logo.svg",
+      badge: "/logo.svg",
       ...options,
     });
 

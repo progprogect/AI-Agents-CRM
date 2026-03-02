@@ -179,7 +179,7 @@ export function NotificationConfigModal({
                 rows={3}
                 value={formData.description}
                 onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-sm shadow-sm focus:outline-none focus:ring-[#D4AF37] focus:border-[#D4AF37]"
+                className="w-full px-3 py-2 border border-gray-300 rounded-sm shadow-sm focus:outline-none focus:ring-[#251D1C] focus:border-[#251D1C]"
                 placeholder="e.g., Admin notifications, Team alerts, etc."
               />
             </div>

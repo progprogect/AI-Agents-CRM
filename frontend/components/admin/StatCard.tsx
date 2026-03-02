@@ -16,13 +16,13 @@ export const StatCard: React.FC<StatCardProps> = ({
   value,
   change,
   icon,
-  colorClass = "bg-[#F5D76E]/10 text-[#B8860B] border-[#D4AF37]/30",
+  colorClass = "bg-[#EEEAE7]/10 text-[#443C3C] border-[#251D1C]/30",
 }) => {
   const changeDisplay = change !== undefined ? formatChange(change) : null;
 
   return (
     <div
-      className={`p-6 rounded-sm border border-[#D4AF37]/20 bg-white shadow-sm hover:shadow-md transition-all duration-200 ${colorClass}`}
+      className={`p-6 rounded-sm border border-[#251D1C]/20 bg-white shadow-sm hover:shadow-md transition-all duration-200 ${colorClass}`}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">

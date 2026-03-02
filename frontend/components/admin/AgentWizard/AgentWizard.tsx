@@ -163,7 +163,7 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="bg-white rounded-sm shadow-md border border-[#D4AF37]/20 p-8">
+      <div className="bg-white rounded-sm shadow-md border border-[#BEBAB7] p-8">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">
           {isEditMode ? "Edit Agent" : "Create New Agent"}
         </h2>

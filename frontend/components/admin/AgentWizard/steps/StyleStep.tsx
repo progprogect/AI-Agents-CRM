@@ -134,9 +134,9 @@ export const StyleStep: React.FC<StyleStepProps> = ({
       </div>
 
       {/* Preview */}
-      <div className="mt-8 p-6 bg-[#F5D76E]/10 border border-[#D4AF37]/20 rounded-sm">
+      <div className="mt-8 p-6 bg-[#EEEAE7]/10 border border-[#251D1C]/20 rounded-sm">
         <h4 className="text-sm font-medium text-gray-700 mb-4">Style Preview</h4>
-        <div className="bg-white p-4 rounded-sm border border-[#D4AF37]/20">
+        <div className="bg-white p-4 rounded-sm border border-[#251D1C]/20">
           <p className="text-sm text-gray-600 mb-2">
             <strong>Tone:</strong> {TONE_OPTIONS.find((o) => o.value === config.tone)?.label || "Friendly & Professional"}
           </p>
