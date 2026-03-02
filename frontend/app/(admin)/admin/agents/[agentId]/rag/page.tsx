@@ -327,8 +327,8 @@ export default function AgentRAGPage() {
               )}
             </p>
           </div>
-          <Link href={`/admin/agents/${agentId}`}>
-            <Button variant="secondary">Back to Agent</Button>
+          <Link href="/admin/agents">
+            <Button variant="secondary">Back to Agents</Button>
           </Link>
         </div>
 
