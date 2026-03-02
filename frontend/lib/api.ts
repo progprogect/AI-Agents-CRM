@@ -51,6 +51,7 @@ export interface RagDocumentUploadResponse {
   original_filename: string;
   file_size: number;
   folder_id: string | null;
+  warning?: string; // Present when document was saved but AI processing (embeddings/description) failed
 }
 
 // Use relative URLs when running on same domain (via ALB)

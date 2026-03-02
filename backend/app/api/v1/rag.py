@@ -265,8 +265,20 @@ async def upload_rag_document(
     if embeddings_config is None:
         from app.models.agent_config import EmbeddingsConfig
         embeddings_config = EmbeddingsConfig(provider="openai", model="text-embedding-3-small", dimensions=1536)
-    embeddings = await chain._get_embeddings(embeddings_config)
-    embedding = await embeddings.aembed_query(text_content)
+
+    embedding: list[float] = []
+    embedding_failed = False
+    try:
+        embeddings = await chain._get_embeddings(embeddings_config)
+        embedding = await embeddings.aembed_query(text_content)
+    except Exception as e:
+        # Graceful degradation: save document without vector embeddings.
+        # It will appear in the UI but won't be found via semantic search.
+        embedding_failed = True
+        logger.error(
+            f"Embedding generation failed for document {doc_id} — saving without embeddings: {e}",
+            exc_info=True,
+        )
 
     index_name = f"agent_{agent_id}_documents"
     await rag_client.index_document(
@@ -327,7 +339,7 @@ async def upload_rag_document(
             except Exception as e:
                 logger.warning(f"Comparative description failed for group: {e}")
 
-    return {
+    response = {
         "document_id": doc_id,
         "title": doc_title,
         "file_type": file_type,
@@ -336,6 +348,13 @@ async def upload_rag_document(
         "file_size": len(content),
         "folder_id": folder_id,
     }
+    if embedding_failed:
+        response["warning"] = (
+            "Document saved, but embedding generation failed. "
+            "This file will not appear in semantic search results. "
+            "Check your AI provider quota and re-upload to fix."
+        )
+    return response
 
 
 @router.patch("/{agent_id}/rag/documents/{document_id}")

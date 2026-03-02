@@ -41,6 +41,7 @@ export default function AgentRAGPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{current: number; total: number} | null>(null);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [uploadWarnings, setUploadWarnings] = useState<string[]>([]);
   const [deleteModal, setDeleteModal] = useState<{
     type: "folder" | "document";
     id: string;
@@ -189,15 +190,21 @@ export default function AgentRAGPage() {
     if (!pendingFiles.length) return;
     setUploading(true);
     setError(null);
+    setUploadWarnings([]);
     setUploadProgress({ current: 0, total: pendingFiles.length });
+    const warnings: string[] = [];
     try {
       for (let i = 0; i < pendingFiles.length; i++) {
         setUploadProgress({ current: i + 1, total: pendingFiles.length });
-        await api.uploadRagDocument(agentId, pendingFiles[i].file, selectedFolderId || undefined);
+        const result = await api.uploadRagDocument(agentId, pendingFiles[i].file, selectedFolderId || undefined);
+        // Check for partial success (document saved but AI processing failed)
+        if (result && typeof result === "object" && "warning" in result) {
+          warnings.push(`${pendingFiles[i].file.name}: ${(result as {warning: string}).warning}`);
+        }
       }
-      // Revoke all previews and clear queue
       pendingFiles.forEach((pf) => { if (pf.preview) URL.revokeObjectURL(pf.preview); });
       setPendingFiles([]);
+      if (warnings.length) setUploadWarnings(warnings);
       loadDocuments();
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
@@ -328,6 +335,26 @@ export default function AgentRAGPage() {
         {error && (
           <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded-sm">
             <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
+
+        {uploadWarnings.length > 0 && (
+          <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-4 rounded-sm">
+            <p className="text-sm font-medium text-amber-800 mb-1">
+              Files saved, but AI processing failed:
+            </p>
+            <ul className="text-xs text-amber-700 space-y-1 list-disc list-inside">
+              {uploadWarnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+            <p className="text-xs text-amber-600 mt-2">
+              These files are stored but won&apos;t appear in semantic search. Check your Google AI Studio quota or switch to OpenAI embeddings.
+            </p>
+            <button
+              onClick={() => setUploadWarnings([])}
+              className="mt-2 text-xs text-amber-700 underline hover:text-amber-900"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 
