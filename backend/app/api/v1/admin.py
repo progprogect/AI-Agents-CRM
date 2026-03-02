@@ -64,7 +64,7 @@ async def list_conversations(
             status_enum = ConversationStatus(status)
         except ValueError:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail=f"Invalid status: {status}. Valid values: {', '.join([s.value for s in ConversationStatus])}",
             )
 
@@ -72,7 +72,7 @@ async def list_conversations(
         valid_marketing_statuses = [s.value for s in MarketingStatus]
         if marketing_status not in valid_marketing_statuses:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=400,
                 detail=f"Invalid marketing_status: {marketing_status}. Valid values: {', '.join(valid_marketing_statuses)}",
             )
 

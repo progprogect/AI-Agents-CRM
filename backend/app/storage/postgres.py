@@ -129,8 +129,11 @@ class PostgreSQLClient:
                         conversation_id, agent_id, channel, external_conversation_id, external_user_id,
                         status, created_at, updated_at, closed_at, handoff_reason, request_type, ttl,
                         external_user_name, external_user_username, external_user_profile_pic,
-                        marketing_status, rejection_reason
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                        marketing_status, rejection_reason, crm_stage_id
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                        COALESCE($18::uuid, (SELECT id FROM crm_stages WHERE is_default = TRUE ORDER BY position ASC LIMIT 1))
+                    )
                     ON CONFLICT (conversation_id) DO UPDATE SET
                         updated_at = EXCLUDED.updated_at
                     """,
@@ -151,6 +154,7 @@ class PostgreSQLClient:
                     conversation.external_user_profile_pic,
                     ms,
                     conversation.rejection_reason,
+                    conversation.crm_stage_id,
                 )
         return conversation
 

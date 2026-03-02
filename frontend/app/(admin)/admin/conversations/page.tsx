@@ -72,6 +72,11 @@ function CRMStageSelector({
             onChange={handleChange}
             className="text-xs border border-[#BEBAB7] rounded px-1.5 py-0.5 text-[#443C3C] bg-white outline-none focus:border-[#251D1C] max-w-[130px]"
           >
+            {!currentStageId && (
+              <option value="" disabled>
+                — No stage —
+              </option>
+            )}
             {stages.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}

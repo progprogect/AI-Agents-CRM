@@ -164,9 +164,9 @@ function KanbanColumn({ stage, conversations, onRename, onDelete, onColorChange 
     const trimmed = editName.trim();
     if (trimmed && trimmed !== stage.name) {
       onRename(stage.id, trimmed);
+      setEditName(trimmed); // show new name immediately; parent re-render will confirm
     }
     setEditing(false);
-    setEditName(stage.name);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
