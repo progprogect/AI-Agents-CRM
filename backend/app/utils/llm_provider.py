@@ -100,12 +100,11 @@ def create_embeddings(
             raise RuntimeError(
                 "Google AI Studio API key not found for embeddings. Set GOOGLE_AI_STUDIO_API env var."
             )
-        # Google models: text-embedding-004, gemini-embedding-001
+        # Google models: text-embedding-004 outputs 768 dims natively (no output_dimensionality needed)
         google_model = "text-embedding-004" if "embedding-3" in model or "ada" in model else model
         return GoogleGenerativeAIEmbeddings(
             model=google_model,
             google_api_key=google_api_key,
-            output_dimensionality=RAG_EMBEDDING_DIMENSIONS,
         )
 
     return OpenAIEmbeddings(
