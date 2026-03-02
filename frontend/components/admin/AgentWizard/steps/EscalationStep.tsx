@@ -137,7 +137,7 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
 
       <div className="p-4 bg-[#EEEAE7] border border-[#D0CBC8] rounded-sm">
         <p className="text-sm text-[#443C3C]">
-          <strong>Note:</strong> The AI automatically detects escalation triggers such as medical questions, urgent cases, and booking intents — no keywords needed. Custom rules let you add domain-specific escalation behaviour on top of that.
+          <strong>Note:</strong> The agent will always escalate when a user shares a phone number or email (contact detected). Add custom rules above to define any additional escalation scenarios specific to your business.
         </p>
       </div>
     </div>

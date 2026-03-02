@@ -27,18 +27,18 @@ class EscalationChain:
 
         # Base escalation types
         base_types = """Escalation types:
-- urgent: Emergency situations, severe symptoms, life-threatening conditions
-- medical: Medical questions requiring diagnosis, treatment advice, or interpretation
-- booking: User wants to book an appointment
-- repeat_patient: User indicates they are a returning/previous patient
+- booking: User shares a phone number or email address (contact info detected) — always escalate
+- custom: Custom escalation rule defined by the agent configuration
 - none: No escalation needed, AI can handle"""
 
         # If no config or no instructions, use default prompt
         if not config or not config.escalation.instructions:
-            return f"""You are an escalation detection system for a medical AI agent.
+            return f"""You are an escalation detection system for an AI agent.
 Your task is to analyze user messages and determine if they require human intervention.
 
 {base_types}
+
+IMPORTANT: Only escalate based on the rules above. Do NOT escalate for medical questions, urgency, or any other reason unless a custom rule explicitly defines it.
 
 Contact Information Extraction:
 When analyzing messages, also extract contact information:
@@ -111,10 +111,12 @@ Return a structured response with:
         if instructions_section:
             instructions_text = f"\n\nEscalation Detection Instructions:\n{chr(10).join(instructions_section)}"
         
-        return f"""You are an escalation detection system for a medical AI agent.
+        return f"""You are an escalation detection system for an AI agent.
 Your task is to analyze user messages and determine if they require human intervention.
 
 {base_types}{instructions_text}{policies_section}{triggers_section}
+
+IMPORTANT: Only escalate based on contact info detection or the custom rules defined above. Do NOT escalate for reasons not listed.
 
 Contact Information Extraction:
 When analyzing messages, also extract contact information:
