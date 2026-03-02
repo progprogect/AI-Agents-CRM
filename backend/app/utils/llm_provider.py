@@ -100,11 +100,13 @@ def create_embeddings(
             raise RuntimeError(
                 "Google AI Studio API key not found for embeddings. Set GOOGLE_AI_STUDIO_API env var."
             )
-        # Google models: text-embedding-004 outputs 768 dims natively (no output_dimensionality needed)
-        google_model = "text-embedding-004" if "embedding-3" in model or "ada" in model else model
+        # Use gemini-embedding-001 (768 dims) — recommended by LangChain docs for v1beta compatibility.
+        # text-embedding-004 causes 404 on v1beta endpoint used by langchain-google-genai.
+        google_model = "models/gemini-embedding-001" if "text-embedding-004" in model or "embedding-3" in model or "ada" in model else model
         return GoogleGenerativeAIEmbeddings(
             model=google_model,
             google_api_key=google_api_key,
+            task_type="retrieval_document",
         )
 
     return OpenAIEmbeddings(
@@ -140,8 +142,8 @@ def get_rag_embeddings_config(agent_config: AgentConfig | dict) -> EmbeddingsCon
     if rag_provider == "google_ai_studio":
         return EmbeddingsConfig(
             provider="google_ai_studio",
-            model="text-embedding-004",
-            dimensions=RAG_EMBEDDING_DIMENSIONS,
+            model="models/gemini-embedding-001",  # text-embedding-004 fails on v1beta endpoint
+            dimensions=768,  # gemini-embedding-001 native dimension
         )
     return EmbeddingsConfig(
         provider="openai",
