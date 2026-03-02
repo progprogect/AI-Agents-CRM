@@ -26,7 +26,7 @@ interface ReviewStepProps {
   hasDraft?: boolean;
 }
 
-const DEFAULT_PERSONA = `You are an agent named {agent_display_name} representing {clinic_display_name}.
+const DEFAULT_PERSONA = `You are an agent named {agent_display_name} representing {company_display_name}.
 Your style is friendly and professional. You help users with information and bookings.
 You do NOT conduct consultations in chat — you guide users toward scheduling an appointment.`;
 
@@ -123,8 +123,8 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   const handleCreate = async () => {
     let agentId = isEditMode ? editingAgentId : config.agent_id;
 
-    if (!isEditMode && !agentId && config.clinic_display_name) {
-      agentId = generateAgentId(config.clinic_display_name, config.agent_display_name);
+    if (!isEditMode && !agentId && config.company_display_name) {
+      agentId = generateAgentId(config.company_display_name, config.agent_display_name);
     }
 
     if (!agentId) {
@@ -271,7 +271,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           <div className="flex justify-between gap-4">
             <span className="text-gray-600 shrink-0">Company:</span>
             <span className="font-medium text-gray-900 text-right">
-              {config.clinic_display_name || "Not set"}
+              {config.company_display_name || "Not set"}
             </span>
           </div>
           <div className="flex justify-between gap-4">
@@ -338,7 +338,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           <div className="space-y-5">
             <div className="p-3 bg-[#EEEAE7] border border-[#D0CBC8] rounded-sm">
               <p className="text-xs text-[#443C3C]">
-                Customize the system prompts that guide the agent&apos;s behaviour. Leave blank to use the default templates. Available placeholders: <code className="bg-white px-1 rounded">{"{agent_display_name}"}</code>, <code className="bg-white px-1 rounded">{"{clinic_display_name}"}</code>.
+                Customize the system prompts that guide the agent&apos;s behaviour. Leave blank to use the default templates. Available placeholders: <code className="bg-white px-1 rounded">{"{agent_display_name}"}</code>, <code className="bg-white px-1 rounded">{"{company_display_name}"}</code>.
               </p>
             </div>
 

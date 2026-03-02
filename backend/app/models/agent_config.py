@@ -37,7 +37,7 @@ class ProfileConfig(BaseModel):
     """Agent profile configuration."""
 
     agent_display_name: str
-    clinic_display_name: str
+    company_display_name: str
     specialty: str
     languages: list[str] = Field(default_factory=lambda: ["ru", "en"])
 
@@ -313,8 +313,8 @@ class AgentConfig(BaseModel):
         # Ensure profile is set (required field)
         if not self.profile.agent_display_name:
             raise ValueError("agent_display_name is required in profile")
-        if not self.profile.clinic_display_name:
-            raise ValueError("clinic_display_name is required in profile")
+        if not self.profile.company_display_name:
+            raise ValueError("company_display_name is required in profile")
 
         # Validate RAG configuration if enabled
         if self.rag.enabled:

@@ -4,7 +4,7 @@ import type { Agent } from "@/lib/types/agent";
 
 /**
  * Get display name for an agent.
- * Priority: agent_display_name > clinic_display_name > agent_id
+ * Priority: agent_display_name > company_display_name > agent_id
  */
 export function getAgentDisplayName(agent: Agent | null | undefined): string {
   if (!agent) {
@@ -16,8 +16,8 @@ export function getAgentDisplayName(agent: Agent | null | undefined): string {
     return profileName;
   }
 
-  if (agent.config?.profile?.clinic_display_name) {
-    return agent.config.profile.clinic_display_name;
+  if (agent.config?.profile?.company_display_name) {
+    return agent.config.profile.company_display_name;
   }
 
   return agent.agent_id;
@@ -68,10 +68,10 @@ export function getAgentSpecialty(agent: Agent | null | undefined): string | nul
  * Get clinic display name.
  */
 export function getClinicDisplayName(agent: Agent | null | undefined): string | null {
-  if (!agent?.config?.profile?.clinic_display_name) {
+  if (!agent?.config?.profile?.company_display_name) {
     return null;
   }
-  return agent.config.profile.clinic_display_name;
+  return agent.config.profile.company_display_name;
 }
 
 /**

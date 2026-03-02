@@ -21,18 +21,18 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
   errors,
   onUpdate,
 }) => {
-  // Auto-generate agent_id when clinic_display_name or agent_display_name changes
+  // Auto-generate agent_id when company_display_name or agent_display_name changes
   useEffect(() => {
-    if (config.clinic_display_name && config.clinic_display_name.trim() !== "") {
+    if (config.company_display_name && config.company_display_name.trim() !== "") {
       const generatedId = generateAgentId(
-        config.clinic_display_name,
+        config.company_display_name,
         config.agent_display_name
       );
       if (!config.agent_id || generatedId !== config.agent_id) {
         onUpdate({ agent_id: generatedId });
       }
     }
-  }, [config.clinic_display_name, config.agent_display_name, config.agent_id, onUpdate]);
+  }, [config.company_display_name, config.agent_display_name, config.agent_id, onUpdate]);
 
   const languageOptions = [
     { value: "ru", label: "Русский" },
@@ -72,9 +72,9 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
         <div className="md:col-span-2">
           <Input
             label="Company Display Name"
-            value={config.clinic_display_name || ""}
-            onChange={(e) => onUpdate({ clinic_display_name: e.target.value })}
-            error={getFieldError(errors, "clinic_display_name")}
+            value={config.company_display_name || ""}
+            onChange={(e) => onUpdate({ company_display_name: e.target.value })}
+            error={getFieldError(errors, "company_display_name")}
             placeholder="Acme Corp"
             required
           />
@@ -117,14 +117,14 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
       </div>
 
       {/* Preview Card */}
-      {(config.clinic_display_name || config.agent_display_name) && (
+      {(config.company_display_name || config.agent_display_name) && (
         <div className="mt-8 p-6 bg-[#EEEAE7]/10 border border-[#251D1C]/20 rounded-sm">
           <h4 className="text-sm font-medium text-gray-700 mb-4">Preview</h4>
           <div className="bg-white p-4 rounded-sm border border-[#251D1C]/20">
             <div className="flex items-start justify-between mb-2">
               <div className="flex-1 min-w-0">
                 <h5 className="text-lg font-semibold text-gray-900 truncate">
-                  {config.clinic_display_name || "Company Name"}
+                  {config.company_display_name || "Company Name"}
                 </h5>
                 {config.agent_display_name && (
                   <p className="text-sm text-gray-600 truncate">

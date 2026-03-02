@@ -31,9 +31,9 @@ export function validateAgentConfig(
     });
   }
 
-  if (!formData.clinic_display_name || formData.clinic_display_name.trim() === "") {
+  if (!formData.company_display_name || formData.company_display_name.trim() === "") {
     errors.push({
-      field: "clinic_display_name",
+      field: "company_display_name",
       message: "Company display name is required",
     });
   }

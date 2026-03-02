@@ -42,7 +42,7 @@ export interface AgentConfigFormData {
   // Basic Info
   agent_id: string;
   agent_display_name: string;
-  clinic_display_name: string;
+  company_display_name: string;
   languages?: string[]; // Languages the agent can communicate in
 
   // Style (Step 2)
@@ -135,7 +135,7 @@ export function agentConfigToFormData(
     // Basic Info
     agent_id: agentConfig.agent_id || "",
     agent_display_name: agentConfig.profile?.agent_display_name || agentConfig.profile?.doctor_display_name || "",
-    clinic_display_name: agentConfig.profile?.clinic_display_name || "",
+    company_display_name: agentConfig.profile?.company_display_name || "",
 
     // Style
     tone: agentConfig.style?.tone,
@@ -202,7 +202,7 @@ export function agentConfigToFormData(
 /**
  * Default prompt templates used when user leaves fields empty.
  */
-const DEFAULT_PERSONA = `You are an agent named {agent_display_name} representing {clinic_display_name}.
+const DEFAULT_PERSONA = `You are an agent named {agent_display_name} representing {company_display_name}.
 Your style is friendly and professional. You help users with information and bookings.
 You do NOT conduct consultations in chat — you guide users toward scheduling an appointment.`;
 
@@ -224,10 +224,10 @@ export function formDataToAgentConfig(
 ): Record<string, any> {
   const config: Record<string, any> = {
     agent_id: formData.agent_id,
-    project: formData.clinic_display_name || "Default Project",
+    project: formData.company_display_name || "Default Project",
     profile: {
       agent_display_name: formData.agent_display_name,
-      clinic_display_name: formData.clinic_display_name,
+      company_display_name: formData.company_display_name,
       languages: formData.languages || ["ru", "en"],
     },
     style: {
