@@ -9,13 +9,15 @@ import { usePathname } from "next/navigation";
 import { useAdminWebSocket } from "@/lib/hooks/useAdminWebSocket";
 import { api } from "@/lib/api";
 
+import { Bot, MessageSquare, Bell, ClipboardList, BarChart3, FlaskConical } from "lucide-react";
+
 const navigation = [
-  { name: "Agents", href: "/admin/agents", icon: "🤖" },
-  { name: "Conversations", href: "/admin/conversations", icon: "💬" },
-  { name: "Notifications", href: "/admin/notifications", icon: "🔔" },
-  { name: "Audit", href: "/admin/audit", icon: "📋" },
-  { name: "Stats", href: "/admin/stats", icon: "📊" },
-  { name: "Instagram Test", href: "/admin/instagram-test", icon: "🧪" },
+  { name: "Agents", href: "/admin/agents", icon: <Bot size={20} /> },
+  { name: "Conversations", href: "/admin/conversations", icon: <MessageSquare size={20} /> },
+  { name: "Notifications", href: "/admin/notifications", icon: <Bell size={20} /> },
+  { name: "Audit", href: "/admin/audit", icon: <ClipboardList size={20} /> },
+  { name: "Stats", href: "/admin/stats", icon: <BarChart3 size={20} /> },
+  { name: "Instagram Test", href: "/admin/instagram-test", icon: <FlaskConical size={20} /> },
 ];
 
 export const Sidebar: React.FC = () => {
@@ -63,9 +65,8 @@ export const Sidebar: React.FC = () => {
 
   return (
     <aside className="w-64 bg-white border-r border-[#BEBAB7] flex flex-col flex-shrink-0" aria-label="Admin navigation">
-      <div className="p-6 border-b border-[#BEBAB7]">
+      <div className="flex items-center h-[72px] px-6 border-b border-[#BEBAB7]">
         <Image src="/logo.svg" alt="CAworks" width={120} height={32} className="h-8 w-auto" priority />
-        <p className="text-sm text-gray-600 mt-1">Admin Panel</p>
       </div>
       <nav className="flex-1 p-4 space-y-2" aria-label="Main navigation">
         {navigation.map((item) => {
@@ -77,7 +78,7 @@ export const Sidebar: React.FC = () => {
             <Link
               key={item.name}
               href={item.href}
-              className={`flex items-center justify-between gap-3 px-4 py-2 rounded-sm transition-all duration-200 ${
+              className={`group flex items-center justify-between gap-3 px-4 py-2 rounded-sm transition-all duration-200 ${
                 isActive
                   ? "bg-[#EEEAE7] text-[#443C3C] font-medium border-l-2 border-[#251D1C]"
                   : "text-gray-700 hover:bg-[#EEEAE7]/50 hover:text-[#251D1C]"
@@ -86,7 +87,7 @@ export const Sidebar: React.FC = () => {
               aria-label={`Navigate to ${item.name}${showBadge ? ` (${needsHumanCount} require attention)` : ""}`}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl" aria-hidden="true">{item.icon}</span>
+                <span className={`flex items-center justify-center transition-colors duration-200 group-hover:text-[#251D1C] ${isActive ? "text-[#251D1C]" : "text-gray-500"}`} aria-hidden="true">{item.icon}</span>
                 <span>{item.name}</span>
               </div>
               {showBadge && (
