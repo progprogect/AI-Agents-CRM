@@ -1,4 +1,4 @@
-/** Step 5: LLM Settings. */
+/** Step 6: LLM Settings. */
 
 "use client";
 
@@ -22,18 +22,23 @@ const PROVIDER_OPTIONS = [
 ];
 
 const OPENAI_MODELS = [
-  { value: "gpt-4.1", label: "GPT-4.1 (Smartest Non-Reasoning) ⭐", description: "Smartest non-reasoning model" },
-  { value: "gpt-4o", label: "GPT-4o (Fast & Intelligent) ⭐", description: "Fast, intelligent, flexible GPT model" },
-  { value: "gpt-4o-mini", label: "GPT-4o Mini (Fast & Affordable) ⭐", description: "Fast, affordable small model for focused tasks" },
-  { value: "gpt-4-turbo", label: "GPT-4 Turbo (Legacy)", description: "An older high-intelligence GPT model" },
-  { value: "gpt-4", label: "GPT-4 (Legacy)", description: "An older high-intelligence GPT model" },
-  { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo (Legacy)", description: "Legacy GPT model for cheaper chat tasks" },
+  { value: "gpt-4.1", label: "GPT-4.1", description: "Latest flagship model — high capability, non-reasoning" },
+  { value: "gpt-4o", label: "GPT-4o", description: "Fast and intelligent multimodal model" },
+  { value: "gpt-4o-mini", label: "GPT-4o Mini", description: "Fast and affordable — recommended for most use cases" },
+  { value: "o3", label: "o3", description: "Advanced reasoning model — coding, math, science" },
+  { value: "o4-mini", label: "o4-mini", description: "Cost-efficient reasoning model with fast inference" },
+  { value: "gpt-4-turbo", label: "GPT-4 Turbo (Legacy)", description: "Previous generation high-intelligence model" },
+  { value: "gpt-4", label: "GPT-4 (Legacy)", description: "Original GPT-4 model" },
+  { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo (Legacy)", description: "Lightweight model for simple tasks" },
 ];
 
 const GEMINI_MODELS = [
-  { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro ⭐", description: "Most capable Gemini model" },
-  { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash", description: "Fast and efficient" },
-  { value: "gemini-1.0-pro", label: "Gemini 1.0 Pro", description: "Previous generation" },
+  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", description: "Most advanced Gemini — deep reasoning, coding, 1M context" },
+  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", description: "Best price-performance — low latency, high volume" },
+  { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite", description: "Fastest and most budget-friendly multimodal model" },
+  { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro", description: "Previous generation capable model" },
+  { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash", description: "Previous generation fast model" },
+  { value: "gemini-1.0-pro", label: "Gemini 1.0 Pro", description: "Original Gemini Pro model" },
 ];
 
 export const LLMStep: React.FC<LLMStepProps> = ({
@@ -43,13 +48,12 @@ export const LLMStep: React.FC<LLMStepProps> = ({
 }) => {
   const provider = config.llm_provider || "openai";
   const modelOptions = provider === "google_ai_studio" ? GEMINI_MODELS : OPENAI_MODELS;
-  const defaultModel = provider === "google_ai_studio" ? "gemini-1.5-flash" : "gpt-4o-mini";
+  const defaultModel = provider === "google_ai_studio" ? "gemini-2.5-flash" : "gpt-4o-mini";
   const currentModel = config.llm_model || defaultModel;
-  const selectedModel = modelOptions.find((m) => m.value === currentModel)
-    || modelOptions[0];
+  const selectedModel = modelOptions.find((m) => m.value === currentModel) || modelOptions[0];
 
   const handleProviderChange = (newProvider: string) => {
-    const newDefault = newProvider === "google_ai_studio" ? "gemini-1.5-flash" : "gpt-4o-mini";
+    const newDefault = newProvider === "google_ai_studio" ? "gemini-2.5-flash" : "gpt-4o-mini";
     onUpdate({ llm_provider: newProvider, llm_model: newDefault });
   };
 
@@ -73,6 +77,7 @@ export const LLMStep: React.FC<LLMStepProps> = ({
             options={PROVIDER_OPTIONS}
           />
         </div>
+
         <div className="md:col-span-2">
           <Select
             label="Model"
@@ -86,9 +91,11 @@ export const LLMStep: React.FC<LLMStepProps> = ({
               {selectedModel.description}
             </p>
           )}
-          <p className="mt-1 text-xs text-gray-500">
-            Choose the model for generating responses. Set GOOGLE_AI_STUDIO_API env for Gemini.
-          </p>
+          {provider === "google_ai_studio" && (
+            <p className="mt-1 text-xs text-gray-500">
+              Requires <code className="bg-gray-100 px-1 rounded">GOOGLE_AI_STUDIO_API</code> environment variable.
+            </p>
+          )}
         </div>
 
         <div className="md:col-span-2">
@@ -98,9 +105,7 @@ export const LLMStep: React.FC<LLMStepProps> = ({
             min={0}
             max={2}
             step={0.1}
-            onChange={(e) =>
-              onUpdate({ llm_temperature: parseFloat(e.target.value) })
-            }
+            onChange={(e) => onUpdate({ llm_temperature: parseFloat(e.target.value) })}
             error={getFieldError(errors, "llm_temperature")}
           />
           <p className="mt-1 text-xs text-gray-500">
@@ -113,13 +118,11 @@ export const LLMStep: React.FC<LLMStepProps> = ({
             type="number"
             label="Max Output Tokens"
             value={config.llm_max_tokens ?? 600}
-            onChange={(e) =>
-              onUpdate({ llm_max_tokens: parseInt(e.target.value) || 600 })
-            }
+            onChange={(e) => onUpdate({ llm_max_tokens: parseInt(e.target.value) || 600 })}
             error={getFieldError(errors, "llm_max_tokens")}
             min={1}
             max={4096}
-            helperText="Maximum length of generated responses (1-4096 tokens)"
+            helperText="Maximum length of generated responses (1–4096 tokens)"
           />
         </div>
       </div>
@@ -131,7 +134,8 @@ export const LLMStep: React.FC<LLMStepProps> = ({
         </h4>
         <div className="bg-white p-4 rounded-sm border border-[#251D1C]/20 space-y-2 text-sm">
           <p className="text-gray-600">
-            <strong>Provider:</strong> {provider === "google_ai_studio" ? "Google AI Studio" : "OpenAI"}
+            <strong>Provider:</strong>{" "}
+            {provider === "google_ai_studio" ? "Google AI Studio" : "OpenAI"}
           </p>
           <p className="text-gray-600">
             <strong>Model:</strong> {currentModel}

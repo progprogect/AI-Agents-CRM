@@ -38,13 +38,6 @@ export function validateAgentConfig(
     });
   }
 
-  if (!formData.specialty || formData.specialty.trim() === "") {
-    errors.push({
-      field: "specialty",
-      message: "Specialty is required",
-    });
-  }
-
   // Languages validation
   if (!formData.languages || formData.languages.length === 0) {
     errors.push({

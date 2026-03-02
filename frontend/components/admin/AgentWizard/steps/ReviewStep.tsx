@@ -1,4 +1,4 @@
-/** Step 6: Review and Create. */
+/** Step 7: Review and Create. */
 
 "use client";
 
@@ -26,6 +26,20 @@ interface ReviewStepProps {
   hasDraft?: boolean;
 }
 
+const DEFAULT_PERSONA = `You are an agent named {agent_display_name} representing {clinic_display_name}.
+Your style is friendly and professional. You help users with information and bookings.
+You do NOT conduct consultations in chat — you guide users toward scheduling an appointment.`;
+
+const DEFAULT_HARD_RULES = `Never provide diagnoses, treatment plans, drug recommendations, or test interpretations.
+For any medical questions, redirect the user to book an in-person appointment or transfer to a human.
+In urgent cases, advise emergency services and stop independent communication.
+Returning patients — transfer to a human agent only.
+After receiving contact info: pass to administrator and end the conversation.
+Do not promise outcomes. Do not claim that a specialist is personally reading messages right now.`;
+
+const DEFAULT_GOAL = `Primary goal: quickly and politely assist, qualify the request, and guide toward booking without pressure.
+If the service does not match the user's needs — suggest another direction and offer to book.`;
+
 export const ReviewStep: React.FC<ReviewStepProps> = ({
   config,
   isSubmitting: externalIsSubmitting,
@@ -38,14 +52,16 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editMode, setEditMode] = useState<"form" | "yaml" | "prompt">("form");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [editedConfig, setEditedConfig] = useState<Record<string, any> | null>(
-    null
-  );
+  const [editedConfig, setEditedConfig] = useState<Record<string, any> | null>(null);
   const [jsonError, setJsonError] = useState<string | null>(null);
+
+  // Prompt fields local state
   const [systemPersona, setSystemPersona] = useState<string>("");
+  const [systemHardRules, setSystemHardRules] = useState<string>("");
+  const [systemGoal, setSystemGoal] = useState<string>("");
+
   const [isMounted, setIsMounted] = useState(false);
-  
-  // Check if we're editing an existing agent
+
   const isEditMode = useMemo(() => {
     if (typeof window === "undefined") return false;
     try {
@@ -59,7 +75,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     }
     return false;
   }, []);
-  
+
   const editingAgentId = useMemo(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -74,40 +90,30 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     return null;
   }, []);
 
-  // Initialize system persona from config or generate default
+  // Initialize prompt fields from config or defaults
   useEffect(() => {
-    if (config.system_persona) {
-      setSystemPersona(config.system_persona);
-    } else if (config.agent_display_name && config.clinic_display_name) {
-      const specialtyPart = config.specialty ? `\nТвоя специализация: {specialty}.` : "";
-      setSystemPersona(
-        `Ты общаешься от лица агента {agent_display_name} из компании {clinic_display_name}.${specialtyPart}\nТвой стиль — дружелюбный и профессиональный. Ты помогаешь с информацией и записью.\nТы НЕ ведёшь медицинскую консультацию в чате.`
-      );
-    }
-  }, [config.system_persona, config.agent_display_name, config.clinic_display_name, config.specialty]);
+    setSystemPersona(config.system_persona || DEFAULT_PERSONA);
+    setSystemHardRules(config.system_hard_rules || DEFAULT_HARD_RULES);
+    setSystemGoal(config.system_goal || DEFAULT_GOAL);
+  }, [config.system_persona, config.system_hard_rules, config.system_goal]);
 
-  // Mark component as mounted to avoid SSR hydration issues
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // Generate YAML preview
   const agentConfig = useMemo(() => {
     const baseConfig = editedConfig || formDataToAgentConfig(config as AgentConfigFormData);
-    // Update system persona if edited
-    if (systemPersona && baseConfig.prompts?.system) {
-      baseConfig.prompts.system.persona = systemPersona;
+    if (baseConfig.prompts?.system) {
+      baseConfig.prompts.system.persona = systemPersona || DEFAULT_PERSONA;
+      baseConfig.prompts.system.hard_rules = systemHardRules || DEFAULT_HARD_RULES;
+      baseConfig.prompts.system.goal = systemGoal || DEFAULT_GOAL;
     }
     return baseConfig;
-  }, [config, editedConfig, systemPersona]);
+  }, [config, editedConfig, systemPersona, systemHardRules, systemGoal]);
 
-  // Generate YAML preview only on client side
   const yamlPreview = useMemo(() => {
-    if (!isMounted) {
-      return ""; // Return empty string during SSR
-    }
+    if (!isMounted) return "";
     try {
-      // Convert to YAML-like format (JSON with proper indentation)
       return JSON.stringify(agentConfig, null, 2);
     } catch {
       return "Error generating preview";
@@ -115,23 +121,17 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   }, [agentConfig, isMounted]);
 
   const handleCreate = async () => {
-    // In edit mode, use the existing agent_id
     let agentId = isEditMode ? editingAgentId : config.agent_id;
-    
-    // For new agents, ensure agent_id is generated if missing
+
     if (!isEditMode && !agentId && config.clinic_display_name) {
-      agentId = generateAgentId(
-        config.clinic_display_name,
-        config.agent_display_name
-      );
+      agentId = generateAgentId(config.clinic_display_name, config.agent_display_name);
     }
-    
+
     if (!agentId) {
       setError("Agent ID is required. Please fill in the company name.");
       return;
     }
 
-    // Validate JSON if in YAML edit mode
     if (editMode === "yaml") {
       if (!editedConfig || jsonError) {
         setError(`Invalid JSON configuration. Please fix the errors before ${isEditMode ? "updating" : "creating"} the agent.`);
@@ -143,27 +143,25 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     setError(null);
 
     try {
-      // Use edited config if in YAML mode, otherwise use form data
       const finalConfig =
         editMode === "yaml" && editedConfig
           ? editedConfig
           : formDataToAgentConfig({ ...config, agent_id: agentId } as AgentConfigFormData);
 
-      // Update system persona if edited
-      if (systemPersona && finalConfig.prompts?.system) {
-        finalConfig.prompts.system.persona = systemPersona;
+      // Apply prompt edits
+      if (finalConfig.prompts?.system) {
+        finalConfig.prompts.system.persona = systemPersona || DEFAULT_PERSONA;
+        finalConfig.prompts.system.hard_rules = systemHardRules || DEFAULT_HARD_RULES;
+        finalConfig.prompts.system.goal = systemGoal || DEFAULT_GOAL;
       }
 
-      // Ensure agent_id is set in config
       finalConfig.agent_id = agentId;
 
       let successAgentId = agentId;
 
       if (isEditMode) {
-        // Update existing agent
         await api.updateAgent(agentId, finalConfig);
       } else {
-        // Create new agent, handle ID conflicts by adding suffix
         let finalAgentId = agentId;
         let attempts = 0;
         const maxAttempts = 10;
@@ -173,28 +171,21 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             finalConfig.agent_id = finalAgentId;
             await api.createAgent(finalAgentId, finalConfig);
             successAgentId = finalAgentId;
-            break; // Success, exit loop
+            break;
           } catch (err) {
-            // Check if it's a conflict error (409) and we can retry with suffix
             const isConflictError =
               err instanceof ApiError &&
               (err.code === "409" || err.message.includes("already exists"));
-            
+
             if (isConflictError && attempts < maxAttempts - 1) {
-              // Agent ID already exists, try with suffix
               attempts++;
-              // Keep base ID shorter to leave room for suffix (max 3 chars for _10)
-              // Agent ID max length is 50, so we keep base at 45 to allow _10
               const baseId = finalAgentId.length > 45 ? finalAgentId.substring(0, 45) : finalAgentId;
               finalAgentId = `${baseId}_${attempts + 1}`;
-              continue; // Retry with new ID
+              continue;
             } else {
-              // Other error or max attempts reached
               if (err instanceof ApiError) {
                 if (isConflictError && attempts >= maxAttempts - 1) {
-                  setError(
-                    `Agent ID "${finalAgentId}" already exists. Please edit the Agent ID manually in the JSON Editor to make it unique.`
-                  );
+                  setError(`Agent ID "${finalAgentId}" already exists. Please edit the Agent ID manually in the JSON Editor.`);
                 } else {
                   setError(err.message);
                 }
@@ -230,14 +221,29 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       setEditedConfig(parsed);
       setJsonError(null);
       setError(null);
-    } catch (e) {
-      // Invalid JSON - keep the value but show error
+    } catch {
       setEditedConfig(null);
       setJsonError("Invalid JSON syntax");
     }
   };
 
   const submitting = isSubmitting || externalIsSubmitting;
+
+  const tabButton = (mode: typeof editMode, label: string) => (
+    <Button
+      variant={editMode === mode ? "primary" : "secondary"}
+      size="sm"
+      onClick={() => {
+        setEditMode(mode);
+        if (mode !== "yaml") {
+          setEditedConfig(null);
+          setJsonError(null);
+        }
+      }}
+    >
+      {label}
+    </Button>
+  );
 
   return (
     <div className="space-y-6">
@@ -246,7 +252,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           {isEditMode ? "Review and Update Configuration" : "Review Configuration"}
         </h3>
         <p className="text-sm text-gray-600 mb-6">
-          {isEditMode 
+          {isEditMode
             ? "Review your agent configuration before updating."
             : "Review your agent configuration before creating."}
         </p>
@@ -256,117 +262,112 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       <div className="bg-gray-50 rounded-sm border border-gray-200 p-6">
         <h4 className="text-md font-medium text-gray-900 mb-4">Summary</h4>
         <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-gray-600">Agent ID:</span>
-            <span className="font-medium text-gray-900">
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 shrink-0">Agent ID:</span>
+            <span className="font-medium text-gray-900 text-right break-all">
               {config.agent_id || "Not set"}
             </span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Company:</span>
-            <span className="font-medium text-gray-900">
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 shrink-0">Company:</span>
+            <span className="font-medium text-gray-900 text-right">
               {config.clinic_display_name || "Not set"}
             </span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Agent:</span>
-            <span className="font-medium text-gray-900">
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 shrink-0">Agent:</span>
+            <span className="font-medium text-gray-900 text-right">
               {config.agent_display_name || "Not set"}
             </span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">Specialty:</span>
-            <span className="font-medium text-gray-900">
-              {config.specialty || "Not set"}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-600">RAG Enabled:</span>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 shrink-0">RAG Enabled:</span>
             <span className="font-medium text-gray-900">
               {config.rag_enabled ? "Yes" : "No"}
             </span>
           </div>
-          {config.rag_enabled && (
-            <div className="flex justify-between">
-              <span className="text-gray-600">RAG:</span>
-              <span className="font-medium text-gray-900 text-sm">
-                Documents on RAG page
-              </span>
-            </div>
-          )}
-          <div className="flex justify-between">
-            <span className="text-gray-600">Examples:</span>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 shrink-0">Examples:</span>
             <span className="font-medium text-gray-900">
               {config.examples?.length || 0}
+            </span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 shrink-0">Escalation Rules:</span>
+            <span className="font-medium text-gray-900">
+              {config.escalation_rules?.length || 0} custom
+            </span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 shrink-0">Model:</span>
+            <span className="font-medium text-gray-900">
+              {config.llm_model || "gpt-4o-mini"}
             </span>
           </div>
         </div>
       </div>
 
-      {/* YAML/JSON Editor */}
+      {/* Configuration views */}
       <div>
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h4 className="text-md font-medium text-gray-900">
-            Configuration Preview
+            Configuration
           </h4>
-          <div className="flex gap-2">
-            <Button
-              variant={editMode === "form" ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => {
-                setEditMode("form");
-                setEditedConfig(null);
-                setJsonError(null);
-              }}
-            >
-              Summary
-            </Button>
-            <Button
-              variant={editMode === "prompt" ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => {
-                setEditMode("prompt");
-                setJsonError(null);
-              }}
-            >
-              Edit Prompt
-            </Button>
-            <Button
-              variant={editMode === "yaml" ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => {
-                setEditMode("yaml");
-                setJsonError(null);
-              }}
-            >
-              JSON Editor
-            </Button>
+          <div className="flex flex-wrap gap-2">
+            {tabButton("form", "Summary")}
+            {tabButton("prompt", "Edit Prompts")}
+            {tabButton("yaml", "JSON Editor")}
           </div>
         </div>
+
         {editMode === "yaml" ? (
-          <YAMLEditor
-            value={yamlPreview}
-            onChange={handleYAMLChange}
-            readOnly={false}
-            height="500px"
-            language="json"
-            error={jsonError || undefined}
-          />
-        ) : editMode === "prompt" ? (
-          <div className="space-y-4">
-            <Textarea
-              label="System Persona Prompt"
-              value={systemPersona}
-              onChange={(e) => setSystemPersona(e.target.value)}
-              rows={10}
-              placeholder="Enter the system persona prompt that defines how the agent communicates..."
-              helperText="This prompt defines the agent's personality and communication style. Use {agent_display_name} and {clinic_display_name} (company name) as placeholders."
+          <>
+            <YAMLEditor
+              value={yamlPreview}
+              onChange={handleYAMLChange}
+              readOnly={false}
+              height="500px"
+              language="json"
+              error={jsonError || undefined}
             />
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-sm">
-              <p className="text-sm text-blue-800">
-                <strong>Tip:</strong> The prompt will be used to set the agent's personality. Make sure to include placeholders for agent and company names if needed.
+            <p className="mt-2 text-xs text-gray-500">
+              You can edit the JSON configuration directly. Changes will be applied when you create the agent.
+            </p>
+          </>
+        ) : editMode === "prompt" ? (
+          <div className="space-y-5">
+            <div className="p-3 bg-[#EEEAE7] border border-[#D0CBC8] rounded-sm">
+              <p className="text-xs text-[#443C3C]">
+                Customize the system prompts that guide the agent&apos;s behaviour. Leave blank to use the default templates. Available placeholders: <code className="bg-white px-1 rounded">{"{agent_display_name}"}</code>, <code className="bg-white px-1 rounded">{"{clinic_display_name}"}</code>.
               </p>
             </div>
+
+            <Textarea
+              label="Persona"
+              value={systemPersona}
+              onChange={(e) => setSystemPersona(e.target.value)}
+              rows={6}
+              placeholder={DEFAULT_PERSONA}
+              helperText="How the agent presents itself — its identity, tone, and role."
+            />
+
+            <Textarea
+              label="Hard Rules"
+              value={systemHardRules}
+              onChange={(e) => setSystemHardRules(e.target.value)}
+              rows={7}
+              placeholder={DEFAULT_HARD_RULES}
+              helperText="Absolute boundaries — what the agent must never do, regardless of context."
+            />
+
+            <Textarea
+              label="Goal"
+              value={systemGoal}
+              onChange={(e) => setSystemGoal(e.target.value)}
+              rows={4}
+              placeholder={DEFAULT_GOAL}
+              helperText="The agent's primary objective — what success looks like in each conversation."
+            />
           </div>
         ) : (
           <div className="border border-gray-300 rounded-sm p-4 bg-gray-50 max-h-[500px] overflow-auto">
@@ -375,40 +376,31 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             </pre>
           </div>
         )}
-        {editMode === "yaml" && (
-          <p className="mt-2 text-xs text-gray-500">
-            You can edit the JSON configuration directly. Changes will be applied when you create the agent.
-          </p>
-        )}
       </div>
 
-      {/* Error Message */}
+      {/* Error */}
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-sm">
           <p className="text-sm text-red-600">{error}</p>
         </div>
       )}
 
-      {/* Loading State */}
+      {/* Loading */}
       {submitting && (
         <div className="flex items-center justify-center py-8">
           <LoadingSpinner size="lg" />
           <span className="ml-3 text-gray-600">
-            {isEditMode ? "Updating agent and indexing documents..." : "Creating agent and indexing documents..."}
+            {isEditMode ? "Updating agent..." : "Creating agent..."}
           </span>
         </div>
       )}
 
-      {/* Action Buttons */}
+      {/* Actions */}
       {!submitting && (
-        <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-6 border-t border-gray-200">
           <div className="flex items-center gap-2">
             {onBack && (
-              <Button
-                variant="secondary"
-                onClick={onBack}
-                disabled={submitting}
-              >
+              <Button variant="secondary" onClick={onBack} disabled={submitting}>
                 Back
               </Button>
             )}
@@ -423,14 +415,11 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
               </Button>
             )}
           </div>
-          <div>
-            <Button variant="primary" onClick={handleCreate} size="lg">
-              {isEditMode ? "Update Agent" : "Create Agent"}
-            </Button>
-          </div>
+          <Button variant="primary" onClick={handleCreate} size="lg">
+            {isEditMode ? "Update Agent" : "Create Agent"}
+          </Button>
         </div>
       )}
     </div>
   );
 };
-

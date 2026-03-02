@@ -13,8 +13,8 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({
   steps,
 }) => {
   return (
-    <div className="w-full mb-8">
-      <div className="flex items-center justify-between">
+    <div className="w-full mb-8 overflow-x-auto pb-2 -mx-1 px-1">
+      <div className="flex items-start min-w-max">
         {steps.map((step, index) => {
           const isActive = step.number === currentStep;
           const isCompleted = step.number < currentStep;
@@ -22,9 +22,9 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({
 
           return (
             <React.Fragment key={step.number}>
-              <div className="flex flex-col items-center flex-1">
+              <div className="flex flex-col items-center w-14 sm:w-16">
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center font-medium text-sm transition-all duration-200 ${
+                  className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center font-medium text-xs sm:text-sm transition-all duration-200 flex-shrink-0 ${
                     isActive
                       ? "bg-[#251D1C] text-white border-2 border-[#251D1C]"
                       : isCompleted
@@ -34,7 +34,7 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({
                 >
                   {isCompleted ? (
                     <svg
-                      className="w-6 h-6"
+                      className="w-4 h-4 sm:w-5 sm:h-5"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -51,8 +51,8 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({
                   )}
                 </div>
                 <span
-                  className={`mt-2 text-xs font-medium text-center ${
-                    isActive ? "text-[#251D1C]" : "text-gray-600"
+                  className={`mt-1.5 text-xs font-medium text-center leading-tight max-w-[52px] sm:max-w-[64px] ${
+                    isActive ? "text-[#251D1C]" : "text-gray-500"
                   }`}
                 >
                   {step.title}
@@ -60,7 +60,7 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({
               </div>
               {!isLast && (
                 <div
-                  className={`flex-1 h-0.5 mx-2 transition-all duration-200 ${
+                  className={`flex-shrink-0 w-6 sm:w-8 h-0.5 mt-4 sm:mt-5 transition-all duration-200 ${
                     isCompleted ? "bg-[#251D1C]" : "bg-gray-300"
                   }`}
                 />
@@ -72,4 +72,3 @@ export const WizardProgress: React.FC<WizardProgressProps> = ({
     </div>
   );
 };
-

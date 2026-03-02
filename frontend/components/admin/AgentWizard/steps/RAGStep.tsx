@@ -8,9 +8,14 @@ import { Toggle } from "@/components/shared/Toggle";
 import { Select } from "@/components/shared/Select";
 import type { AgentConfigFormData } from "@/lib/utils/agentConfig";
 
-const PROVIDER_OPTIONS = [
-  { value: "openai", label: "OpenAI" },
-  { value: "google_ai_studio", label: "Google AI Studio (Gemini)" },
+const EMBEDDINGS_PROVIDER_OPTIONS = [
+  { value: "openai", label: "OpenAI (text-embedding-3-small)" },
+  { value: "google_ai_studio", label: "Google AI Studio (text-embedding-004)" },
+];
+
+const VISION_PROVIDER_OPTIONS = [
+  { value: "openai", label: "OpenAI (gpt-4o)" },
+  { value: "google_ai_studio", label: "Google AI Studio (Gemini 2.5 Flash)" },
 ];
 
 interface RAGStepProps {
@@ -62,13 +67,13 @@ export const RAGStep: React.FC<RAGStepProps> = ({
               label="Embeddings provider"
               value={config.rag_embeddings_provider || "openai"}
               onChange={(e) => onUpdate({ rag_embeddings_provider: e.target.value })}
-              options={PROVIDER_OPTIONS}
+              options={EMBEDDINGS_PROVIDER_OPTIONS}
             />
             <Select
               label="Vision provider (image descriptions)"
               value={config.rag_vision_provider || "openai"}
               onChange={(e) => onUpdate({ rag_vision_provider: e.target.value })}
-              options={PROVIDER_OPTIONS}
+              options={VISION_PROVIDER_OPTIONS}
             />
           </div>
           <div className="p-4 bg-gray-50 rounded-sm border border-gray-200">

@@ -23,20 +23,15 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
 }) => {
   // Auto-generate agent_id when clinic_display_name or agent_display_name changes
   useEffect(() => {
-    if (
-      config.clinic_display_name &&
-      config.clinic_display_name.trim() !== ""
-    ) {
+    if (config.clinic_display_name && config.clinic_display_name.trim() !== "") {
       const generatedId = generateAgentId(
         config.clinic_display_name,
         config.agent_display_name
       );
-      // Always update agent_id to ensure it's in sync
       if (!config.agent_id || generatedId !== config.agent_id) {
         onUpdate({ agent_id: generatedId });
       }
     }
-    // Don't generate default ID - wait for clinic name to be entered
   }, [config.clinic_display_name, config.agent_display_name, config.agent_id, onUpdate]);
 
   const languageOptions = [
@@ -48,21 +43,19 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
     { value: "es", label: "Español" },
   ];
 
-      const handleLanguageToggle = (languageValue: string, checked: boolean) => {
-        const currentLanguages = config.languages || ["ru", "en"];
-        if (checked) {
-          // Add language if not already present
-          if (!currentLanguages.includes(languageValue)) {
-            onUpdate({ languages: [...currentLanguages, languageValue] });
-          }
-        } else {
-          // Remove language, but ensure at least one language remains
-          const filtered = currentLanguages.filter((lang) => lang !== languageValue);
-          if (filtered.length > 0) {
-            onUpdate({ languages: filtered });
-          }
-        }
-      };
+  const handleLanguageToggle = (languageValue: string, checked: boolean) => {
+    const currentLanguages = config.languages || ["ru", "en"];
+    if (checked) {
+      if (!currentLanguages.includes(languageValue)) {
+        onUpdate({ languages: [...currentLanguages, languageValue] });
+      }
+    } else {
+      const filtered = currentLanguages.filter((lang) => lang !== languageValue);
+      if (filtered.length > 0) {
+        onUpdate({ languages: filtered });
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -80,9 +73,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
           <Input
             label="Company Display Name"
             value={config.clinic_display_name || ""}
-            onChange={(e) =>
-              onUpdate({ clinic_display_name: e.target.value })
-            }
+            onChange={(e) => onUpdate({ clinic_display_name: e.target.value })}
             error={getFieldError(errors, "clinic_display_name")}
             placeholder="Acme Corp"
             required
@@ -95,18 +86,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
             value={config.agent_display_name || ""}
             onChange={(e) => onUpdate({ agent_display_name: e.target.value })}
             error={getFieldError(errors, "agent_display_name")}
-            placeholder="Dr. John Smith"
-            required
-          />
-        </div>
-
-        <div className="md:col-span-2">
-          <Input
-            label="Specialty"
-            value={config.specialty || ""}
-            onChange={(e) => onUpdate({ specialty: e.target.value })}
-            error={getFieldError(errors, "specialty")}
-            placeholder="General Practitioner"
+            placeholder="Support Agent"
             required
           />
         </div>
@@ -115,7 +95,7 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Languages <span className="text-red-500">*</span>
           </label>
-          <div className="space-y-2 p-4 border border-gray-300 rounded-sm bg-white">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-4 border border-gray-300 rounded-sm bg-white">
             {languageOptions.map((option) => (
               <Checkbox
                 key={option.value}
@@ -137,36 +117,30 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
       </div>
 
       {/* Preview Card */}
-      {(config.clinic_display_name ||
-        config.agent_display_name ||
-        config.specialty) && (
+      {(config.clinic_display_name || config.agent_display_name) && (
         <div className="mt-8 p-6 bg-[#EEEAE7]/10 border border-[#251D1C]/20 rounded-sm">
           <h4 className="text-sm font-medium text-gray-700 mb-4">Preview</h4>
           <div className="bg-white p-4 rounded-sm border border-[#251D1C]/20">
             <div className="flex items-start justify-between mb-2">
-              <div className="flex-1">
-                <h5 className="text-lg font-semibold text-gray-900">
+              <div className="flex-1 min-w-0">
+                <h5 className="text-lg font-semibold text-gray-900 truncate">
                   {config.clinic_display_name || "Company Name"}
                 </h5>
                 {config.agent_display_name && (
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 truncate">
                     {config.agent_display_name}
                   </p>
                 )}
               </div>
-              <div className="text-3xl">👨‍⚕️</div>
             </div>
-            {config.specialty && (
-              <p className="text-sm text-gray-500">{config.specialty}</p>
-            )}
             {config.languages && config.languages.length > 0 && (
               <p className="text-xs text-gray-500 mt-2">
                 Languages: {config.languages.join(", ")}
               </p>
             )}
             {config.agent_id && (
-              <p className="text-xs text-gray-400 mt-1">
-                Agent ID: {config.agent_id}
+              <p className="text-xs text-gray-400 mt-1 font-mono break-all">
+                ID: {config.agent_id}
               </p>
             )}
             <div className="mt-3">
@@ -180,5 +154,3 @@ export const BasicInfoStep: React.FC<BasicInfoStepProps> = ({
     </div>
   );
 };
-
-

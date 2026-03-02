@@ -7,28 +7,34 @@ export interface ConversationExample {
   category?: "booking" | "info" | "hours" | "custom";
 }
 
+export interface EscalationRule {
+  id: string;
+  name: string;        // short label, e.g. "Urgent request"
+  description: string; // what the agent should do, e.g. "Transfer to human immediately"
+}
+
 // Standard examples (pre-filled)
 export const DEFAULT_EXAMPLES: ConversationExample[] = [
   {
+    id: "example_pricing",
+    category: "info",
+    user_message: "How much does this service cost?",
+    agent_response:
+      "Thank you for your question! Pricing depends on the specific service and your individual needs. To give you accurate information, I'd recommend scheduling a consultation — our team will walk you through all available options and costs. Would you like me to help you set that up? Just leave your phone number and we'll be in touch shortly.",
+  },
+  {
     id: "example_booking",
     category: "booking",
-    user_message: "How can I book an appointment?",
+    user_message: "How do I book a service?",
     agent_response:
-      "Of course! I'd be happy to help you schedule an appointment. To proceed, could you please provide your phone number? Our administrator will contact you shortly to confirm the details and find a convenient time that works for you.",
+      "Booking is simple! Please share your phone number (or WhatsApp), and our team will contact you to confirm the details, check availability, and find a time that works best for you. We typically respond within a few hours during business hours.",
   },
   {
-    id: "example_services",
-    category: "info",
-    user_message: "What services do you provide?",
+    id: "example_choice",
+    category: "custom",
+    user_message: "Can you help me choose the right option for me?",
     agent_response:
-      "We offer a comprehensive range of medical services tailored to meet your healthcare needs. Our company specializes in [specialty], and we provide consultations, diagnostic services, and follow-up care. Would you like more details about any specific service, or would you prefer to schedule a consultation to discuss your needs?",
-  },
-  {
-    id: "example_hours",
-    category: "hours",
-    user_message: "What are your working hours?",
-    agent_response:
-      "Our company is open Monday through Friday from 9:00 AM to 6:00 PM. We're closed on weekends. If you need to reach us outside of these hours, please leave your contact information and we'll get back to you as soon as possible. Would you like to schedule an appointment?",
+      "Of course, I'd be happy to help guide you! To point you in the right direction, could you tell me a bit more about what you're looking for or what your main concern is? Once I understand your situation better, I can suggest the most suitable option — or connect you with our specialist directly.",
   },
 ];
 
@@ -37,7 +43,6 @@ export interface AgentConfigFormData {
   agent_id: string;
   agent_display_name: string;
   clinic_display_name: string;
-  specialty: string;
   languages?: string[]; // Languages the agent can communicate in
 
   // Style (Step 2)
@@ -58,13 +63,16 @@ export interface AgentConfigFormData {
     content: string;
   }>;
 
-  // Escalation (Step 4) - Only policies, no keywords
+  // Escalation - legacy policy fields (kept at defaults, not shown in UI)
   medical_question_policy?: string;
   urgent_case_policy?: string;
   repeat_patient_policy?: string;
   pre_procedure_policy?: string;
 
-  // LLM Settings (Step 5)
+  // Escalation - free-form custom rules (Step 5)
+  escalation_rules?: EscalationRule[];
+
+  // LLM Settings (Step 6)
   llm_provider?: string;
   llm_model?: string;
   llm_temperature?: number;
@@ -73,8 +81,10 @@ export interface AgentConfigFormData {
   // Examples (Step 3)
   examples?: ConversationExample[];
 
-  // System Prompt (Step 7)
-  system_persona?: string; // Editable system persona prompt
+  // System Prompts (Step 7)
+  system_persona?: string;
+  system_hard_rules?: string;
+  system_goal?: string;
 }
 
 /**
@@ -86,7 +96,7 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     rag_embeddings_provider: "openai",
     rag_vision_provider: "openai",
     rag_documents: [],
-    languages: ["ru", "en"], // Default languages
+    languages: ["ru", "en"],
     // Style defaults
     tone: "friendly_professional",
     formality: "semi_formal",
@@ -96,23 +106,27 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     persuasion: "soft",
     // Examples defaults
     examples: [...DEFAULT_EXAMPLES],
-    // Escalation defaults
+    // Escalation legacy defaults (not shown in UI)
     medical_question_policy: "handoff_or_book",
     urgent_case_policy: "advise_emergency_and_handoff",
     repeat_patient_policy: "handoff_only",
     pre_procedure_policy: "handoff_only",
+    // Escalation free-form rules
+    escalation_rules: [],
     // LLM defaults
     llm_provider: "openai",
     llm_model: "gpt-4o-mini",
     llm_temperature: 0.2,
     llm_max_tokens: 600,
-    // System prompt default
+    // System prompt defaults (empty — user fills in)
     system_persona: "",
+    system_hard_rules: "",
+    system_goal: "",
   };
 }
 
 /**
- * Convert existing agent config to form data (for cloning).
+ * Convert existing agent config to form data (for cloning/editing).
  */
 export function agentConfigToFormData(
   agentConfig: Record<string, any>
@@ -122,7 +136,6 @@ export function agentConfigToFormData(
     agent_id: agentConfig.agent_id || "",
     agent_display_name: agentConfig.profile?.agent_display_name || agentConfig.profile?.doctor_display_name || "",
     clinic_display_name: agentConfig.profile?.clinic_display_name || "",
-    specialty: agentConfig.profile?.specialty || "",
 
     // Style
     tone: agentConfig.style?.tone,
@@ -141,11 +154,18 @@ export function agentConfigToFormData(
         content: source.content || "",
       })) || [],
 
-    // Escalation - only policies
+    // Escalation legacy policies
     medical_question_policy: agentConfig.escalation?.medical_question_policy,
     urgent_case_policy: agentConfig.escalation?.urgent_case_policy,
     repeat_patient_policy: agentConfig.escalation?.repeat_patient_policy,
     pre_procedure_policy: agentConfig.escalation?.pre_procedure_policy,
+
+    // Escalation free-form rules
+    escalation_rules: agentConfig.escalation?.custom_rules?.map((r: any, i: number) => ({
+      id: r.id || `rule_${i}`,
+      name: r.name || "",
+      description: r.description || "",
+    })) || [],
 
     // Languages
     languages: agentConfig.profile?.languages || ["ru", "en"],
@@ -161,8 +181,10 @@ export function agentConfigToFormData(
           }))
         : DEFAULT_EXAMPLES,
 
-    // System prompt
-    system_persona: agentConfig.prompts?.system?.persona,
+    // System prompts
+    system_persona: agentConfig.prompts?.system?.persona || "",
+    system_hard_rules: agentConfig.prompts?.system?.hard_rules || "",
+    system_goal: agentConfig.prompts?.system?.goal || "",
 
     // LLM
     llm_provider: agentConfig.llm?.provider || "openai",
@@ -178,19 +200,34 @@ export function agentConfigToFormData(
 }
 
 /**
+ * Default prompt templates used when user leaves fields empty.
+ */
+const DEFAULT_PERSONA = `You are an agent named {agent_display_name} representing {clinic_display_name}.
+Your style is friendly and professional. You help users with information and bookings.
+You do NOT conduct consultations in chat — you guide users toward scheduling an appointment.`;
+
+const DEFAULT_HARD_RULES = `Never provide diagnoses, treatment plans, drug recommendations, or test interpretations.
+For any medical questions, redirect the user to book an in-person appointment or transfer to a human.
+In urgent cases, advise emergency services and stop independent communication.
+Returning patients — transfer to a human agent only.
+After receiving contact info: pass to administrator and end the conversation.
+Do not promise outcomes. Do not claim that a specialist is personally reading messages right now.`;
+
+const DEFAULT_GOAL = `Primary goal: quickly and politely assist, qualify the request, and guide toward booking without pressure.
+If the specialty does not match — suggest another direction and offer to book.`;
+
+/**
  * Convert form data to agent config object (for API).
  */
 export function formDataToAgentConfig(
   formData: AgentConfigFormData
 ): Record<string, any> {
-  // Minimal configuration - only fields that are actually used in the code
   const config: Record<string, any> = {
     agent_id: formData.agent_id,
-    project: formData.clinic_display_name || "Default Project", // Required by backend model
+    project: formData.clinic_display_name || "Default Project",
     profile: {
       agent_display_name: formData.agent_display_name,
       clinic_display_name: formData.clinic_display_name,
-      specialty: formData.specialty,
       languages: formData.languages || ["ru", "en"],
     },
     style: {
@@ -211,18 +248,9 @@ export function formDataToAgentConfig(
     },
     prompts: {
       system: {
-        persona: formData.system_persona || `Ты общаешься от лица агента {agent_display_name} из компании {clinic_display_name}.
-Твоя специализация: {specialty}.
-Твой стиль — дружелюбный и профессиональный. Ты помогаешь с информацией и записью.
-Ты НЕ ведёшь медицинскую консультацию в чате.`,
-        hard_rules: `Запрещено: диагнозы, лечение, рекомендации препаратов, интерпретация анализов.
-Любые медицинские вопросы переводишь в запись на очный приём или передаёшь человеку.
-В срочных случаях рекомендуешь экстренную помощь и прекращаешь самостоятельное общение.
-Повторные пациенты — только человек.
-После получения телефона/контакта: передай администратору и прекрати диалог.
-Не обещай результатов. Не утверждай, что врач лично читает прямо сейчас.`,
-        goal: `Главная цель — быстро и вежливо помочь, квалифицировать запрос и привести к записи без давления.
-Если специализация не подходит — предложи другого врача/направление и запись.`,
+        persona: formData.system_persona || DEFAULT_PERSONA,
+        hard_rules: formData.system_hard_rules || DEFAULT_HARD_RULES,
+        goal: formData.system_goal || DEFAULT_GOAL,
       },
       examples:
         formData.examples && formData.examples.length > 0
@@ -266,13 +294,19 @@ export function formDataToAgentConfig(
       urgent_case_policy: formData.urgent_case_policy || "advise_emergency_and_handoff",
       repeat_patient_policy: formData.repeat_patient_policy || "handoff_only",
       pre_procedure_policy: formData.pre_procedure_policy || "handoff_only",
+      custom_rules: (formData.escalation_rules || []).map((rule) => ({
+        id: rule.id,
+        name: rule.name,
+        description: rule.description,
+      })),
     },
   };
 
-  // Embeddings config (for RAG - synced with rag.embeddings_provider)
+  // Embeddings config (for RAG)
+  const embeddingsProvider = formData.rag_embeddings_provider || formData.llm_provider || "openai";
   config.embeddings = {
-    provider: formData.rag_embeddings_provider || formData.llm_provider || "openai",
-    model: formData.rag_embeddings_provider === "google_ai_studio" ? "text-embedding-004" : "text-embedding-3-small",
+    provider: embeddingsProvider,
+    model: embeddingsProvider === "google_ai_studio" ? "text-embedding-004" : "text-embedding-3-small",
     dimensions: 1536,
   };
 
@@ -281,10 +315,8 @@ export function formDataToAgentConfig(
 
 /**
  * Transliterate Russian/Cyrillic characters to Latin.
- * Handles both uppercase and lowercase Cyrillic characters.
  */
 function transliterate(text: string): string {
-  // Map for lowercase Cyrillic characters
   const lowercaseMap: Record<string, string> = {
     а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "zh",
     з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o",
@@ -292,8 +324,6 @@ function transliterate(text: string): string {
     ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu",
     я: "ya",
   };
-
-  // Map for uppercase Cyrillic characters (same transliteration, but we'll lowercase later)
   const uppercaseMap: Record<string, string> = {
     А: "a", Б: "b", В: "v", Г: "g", Д: "d", Е: "e", Ё: "yo", Ж: "zh",
     З: "z", И: "i", Й: "y", К: "k", Л: "l", М: "m", Н: "n", О: "o",
@@ -301,10 +331,7 @@ function transliterate(text: string): string {
     Ч: "ch", Ш: "sh", Щ: "shch", Ъ: "", Ы: "y", Ь: "", Э: "e", Ю: "yu",
     Я: "ya",
   };
-
-  // Combine both maps
   const transliterationMap = { ...lowercaseMap, ...uppercaseMap };
-
   return text
     .split("")
     .map((char) => transliterationMap[char] || char)
@@ -313,20 +340,13 @@ function transliterate(text: string): string {
 
 /**
  * Generate agent ID from clinic name and agent name.
- * Transliterates Cyrillic characters to Latin and creates a safe ID.
  */
 export function generateAgentId(clinicName: string, doctorName?: string): string {
   let combined = clinicName.trim();
-  
   if (doctorName && doctorName.trim()) {
-    // Combine clinic and doctor names
     combined = `${clinicName.trim()}_${doctorName.trim()}`;
   }
-  
-  // Transliterate Cyrillic to Latin
   const transliterated = transliterate(combined);
-  
-  // Convert to lowercase and replace non-alphanumeric with underscores
   return transliterated
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
