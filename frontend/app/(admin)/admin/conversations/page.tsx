@@ -288,7 +288,10 @@ export default function ConversationsPage() {
               {filteredConversations.map((conv) => {
                 const needsAttention = isNeedsHuman(conv.status);
                 const agent = agents.get(conv.agent_id);
-                const agentDisplayName = agent ? getAgentDisplayName(agent) : conv.agent_id;
+                const agentName = agent
+                  ? (agent.config?.profile?.agent_display_name || agent.config?.profile?.doctor_display_name || conv.agent_id)
+                  : conv.agent_id;
+                const agentCompany = agent?.config?.profile?.company_display_name || null;
 
                 return (
                   <tr
@@ -341,9 +344,14 @@ export default function ConversationsPage() {
                       {isLoadingAgents ? (
                         <span className="text-sm text-gray-400">Loading...</span>
                       ) : (
-                        <span className="text-sm text-gray-700" title={conv.agent_id}>
-                          {agentDisplayName}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-sm text-gray-900 font-medium" title={conv.agent_id}>
+                            {agentName}
+                          </span>
+                          {agentCompany && (
+                            <span className="text-xs text-gray-500">{agentCompany}</span>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
