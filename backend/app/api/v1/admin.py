@@ -22,7 +22,7 @@ from app.services.channel_sender import get_channel_sender
 from app.services.instagram_service import InstagramService
 from app.services.telegram_service import TelegramService
 from app.storage.resolver import get_secrets_manager
-from app.utils.datetime_utils import to_utc_iso_string, utc_now
+from app.utils.datetime_utils import parse_utc_datetime, to_utc_iso_string, utc_now
 from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
