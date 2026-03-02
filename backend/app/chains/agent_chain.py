@@ -3,8 +3,8 @@
 import logging
 from typing import Optional
 
-from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_classic.agents import AgentExecutor, create_openai_tools_agent
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from app.models.agent_config import AgentConfig
 from app.services.llm_factory import LLMFactory

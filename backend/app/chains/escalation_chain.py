@@ -2,9 +2,9 @@
 
 from typing import Optional
 
-from langchain.chains import LLMChain
-from langchain.prompts import ChatPromptTemplate
-from langchain.output_parsers import PydanticOutputParser
+from langchain_classic.chains import LLMChain
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_classic.output_parsers import PydanticOutputParser
 
 from app.config import get_settings
 from app.models.agent_config import AgentConfig
