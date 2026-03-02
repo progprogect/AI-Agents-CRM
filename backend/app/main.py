@@ -24,6 +24,7 @@ from app.config import get_settings
 from app.utils.logging_config import setup_logging, get_logger
 from app.api.v1 import chat, agents, admin, channel_bindings, instagram, telegram, rag
 from app.api.v1 import instagram_test, debug, webhook_test, webhook_events, notifications
+from app.api.v1 import auth_router
 from app.api import websocket, admin_websocket
 
 # Setup logging
@@ -207,6 +208,9 @@ def create_app() -> FastAPI:
         }
 
     # API routes
+    # Auth routes (public — no auth required)
+    app.include_router(auth_router.router, prefix="/api/v1/admin/auth", tags=["auth"])
+
     # Register more specific routes first to avoid conflicts
     app.include_router(
         channel_bindings.router, prefix="/api/v1", tags=["channel-bindings"]

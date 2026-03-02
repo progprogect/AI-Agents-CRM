@@ -125,11 +125,36 @@ class Settings(BaseSettings):
     )
 
     # Redis
+    redis_url: Optional[str] = Field(
+        default=None,
+        description="Redis connection URL (e.g. from Railway). Takes priority over individual fields.",
+        alias="REDIS_URL",
+    )
     redis_host: str = Field(default="localhost", description="Redis host")
     redis_port: int = Field(default=6379, description="Redis port")
     redis_db: int = Field(default=0, description="Redis database number")
     redis_password: Optional[str] = Field(default=None, description="Redis password")
     redis_ssl: bool = Field(default=False, description="Use SSL for Redis")
+
+    # Auth / JWT
+    jwt_secret_key: Optional[str] = Field(
+        default=None, description="Secret key for signing JWT tokens"
+    )
+    jwt_expires_hours: int = Field(default=8, description="JWT token expiry in hours")
+    allowed_admin_emails: Optional[str] = Field(
+        default=None, description="Comma-separated list of allowed admin emails"
+    )
+
+    # Resend (email)
+    resend_api_key: Optional[str] = Field(
+        default=None, description="Resend API key for sending emails"
+    )
+    email_from: str = Field(
+        default="onboarding@resend.dev",
+        description="From address for outgoing emails",
+    )
+    otp_ttl_minutes: int = Field(default=10, description="OTP validity in minutes")
+    otp_rate_limit: int = Field(default=3, description="Max OTP requests per window")
 
     # Secrets Manager
     secrets_manager_region: Optional[str] = Field(

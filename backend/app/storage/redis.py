@@ -18,16 +18,20 @@ class RedisClient:
         self.client: Optional[redis.Redis] = None
 
     async def connect(self) -> None:
-        """Connect to Redis."""
+        """Connect to Redis. Prefers REDIS_URL if set (Railway), falls back to individual fields."""
         if self.client is None:
-            self.client = redis.Redis(
-                host=self.settings.redis_host,
-                port=self.settings.redis_port,
-                db=self.settings.redis_db,
-                password=self.settings.redis_password,
-                ssl=self.settings.redis_ssl,
-                decode_responses=True,
-            )
+            url = self.settings.redis_url
+            if url:
+                self.client = redis.from_url(url, decode_responses=True)
+            else:
+                self.client = redis.Redis(
+                    host=self.settings.redis_host,
+                    port=self.settings.redis_port,
+                    db=self.settings.redis_db,
+                    password=self.settings.redis_password,
+                    ssl=self.settings.redis_ssl,
+                    decode_responses=True,
+                )
 
     async def disconnect(self) -> None:
         """Disconnect from Redis."""
