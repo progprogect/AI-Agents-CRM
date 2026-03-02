@@ -750,9 +750,11 @@ async def get_stats(
         )
 
     # Calculate date range based on period
+    from datetime import timezone as tz
     now = utc_now()
     if period == "today":
-        start_date = datetime(now.year, now.month, now.day, 0, 0, 0)
+        # Use timezone-aware datetime to avoid comparison errors with PostgreSQL timestamps
+        start_date = datetime(now.year, now.month, now.day, 0, 0, 0, tzinfo=tz.utc)
         end_date = now
     elif period == "last_7_days":
         start_date = now - timedelta(days=7)
@@ -765,6 +767,7 @@ async def get_stats(
     all_conversations = await deps.dynamodb.list_conversations(limit=1000)
     
     # Filter conversations by date range (handle both datetime and string formats)
+    from datetime import timezone as tz
     period_conversations = []
     for c in all_conversations:
         if not c.created_at:
@@ -777,7 +780,14 @@ async def get_stats(
                 created_dt = parse_utc_datetime(c.created_at)
             except (ValueError, AttributeError):
                 continue
-        if created_dt and start_date <= created_dt <= end_date:
+        if created_dt is None:
+            continue
+        # Normalise to UTC-aware to avoid naive/aware comparison errors
+        if created_dt.tzinfo is None:
+            created_dt = created_dt.replace(tzinfo=tz.utc)
+        _start = start_date.replace(tzinfo=tz.utc) if start_date.tzinfo is None else start_date
+        _end = end_date.replace(tzinfo=tz.utc) if end_date.tzinfo is None else end_date
+        if _start <= created_dt <= _end:
             period_conversations.append(c)
 
     # Calculate technical status metrics
@@ -853,7 +863,13 @@ async def get_stats(
                     created_dt = parse_utc_datetime(c.created_at)
                 except (ValueError, AttributeError):
                     continue
-            if created_dt and prev_start <= created_dt < prev_end:
+            if created_dt is None:
+                continue
+            if created_dt.tzinfo is None:
+                created_dt = created_dt.replace(tzinfo=tz.utc)
+            _ps = prev_start.replace(tzinfo=tz.utc) if prev_start.tzinfo is None else prev_start
+            _pe = prev_end.replace(tzinfo=tz.utc) if prev_end.tzinfo is None else prev_end
+            if _ps <= created_dt < _pe:
                 prev_conversations.append(c)
 
         prev_stats = {
