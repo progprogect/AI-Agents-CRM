@@ -31,7 +31,7 @@ export const Header: React.FC = () => {
           )}
           <button
             onClick={handleLogout}
-            className="text-sm text-[#251D1C] hover:text-[#443C3C] transition-colors duration-200"
+            className="text-sm text-[#251D1C] px-3 py-1.5 rounded-sm border border-[#BEBAB7] hover:bg-[#EEEAE7] hover:border-[#251D1C] active:bg-[#D0CBC8] transition-all duration-150 cursor-pointer"
             aria-label="Logout from admin panel"
           >
             Logout
