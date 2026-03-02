@@ -12,6 +12,15 @@ export type MarketingStatus =
   | "NO_RESPONSE"
   | "REJECTED";
 
+export interface CRMStage {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
+  is_default: boolean;
+  created_at: string;
+}
+
 export interface Conversation {
   conversation_id: string;
   agent_id: string;
@@ -30,6 +39,7 @@ export interface Conversation {
   external_user_profile_pic?: string | null;
   marketing_status?: MarketingStatus | null;
   rejection_reason?: string | null;
+  crm_stage_id?: string | null;
 }
 
 export interface CreateConversationRequest {

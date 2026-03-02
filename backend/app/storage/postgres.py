@@ -63,6 +63,9 @@ def _row_to_conv(row: asyncpg.Record) -> dict:
             d[k] = to_utc_iso_string(d[k])
     if "marketing_status" not in d or d["marketing_status"] is None:
         d["marketing_status"] = MarketingStatus.NEW.value
+    # Serialize UUID to string
+    if "crm_stage_id" in d and d["crm_stage_id"] is not None:
+        d["crm_stage_id"] = str(d["crm_stage_id"])
     return d
 
 
@@ -268,6 +271,7 @@ class PostgreSQLClient:
         agent_id: Optional[str] = None,
         status: Optional[ConversationStatus] = None,
         marketing_status: Optional[str] = None,
+        crm_stage_id: Optional[str] = None,
         limit: int = 100,
     ) -> list[Conversation]:
         where = []
@@ -284,6 +288,10 @@ class PostgreSQLClient:
         if marketing_status:
             where.append(f"marketing_status = ${i}")
             params.append(marketing_status)
+            i += 1
+        if crm_stage_id:
+            where.append(f"crm_stage_id = ${i}")
+            params.append(crm_stage_id)
             i += 1
         params.append(limit)
         clause = " AND ".join(where) if where else "TRUE"

@@ -12,6 +12,7 @@ interface UseConversationsListOptions {
   filter?: ConversationFilter;
   agentId?: string;
   marketingStatus?: string;
+  crmStageId?: string;
   limit?: number;
   enablePolling?: boolean; // Fallback if WebSocket is not available
   pollingInterval?: number; // Polling interval in ms (default: 5000)
@@ -22,6 +23,7 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
     filter = "all",
     agentId,
     marketingStatus,
+    crmStageId,
     limit = 100,
     enablePolling = true,
     pollingInterval = 5000,
@@ -46,6 +48,7 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
         agent_id?: string;
         status?: string;
         marketing_status?: string;
+        crm_stage_id?: string;
         limit?: number;
       } = {
         limit,
@@ -57,6 +60,10 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
 
       if (marketingStatus) {
         params.marketing_status = marketingStatus;
+      }
+
+      if (crmStageId) {
+        params.crm_stage_id = crmStageId;
       }
 
       // Apply filter
@@ -104,7 +111,7 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
     } finally {
       setIsLoading(false);
     }
-  }, [filter, agentId, marketingStatus, limit]);
+  }, [filter, agentId, marketingStatus, crmStageId, limit]);
 
   // Initial load
   useEffect(() => {

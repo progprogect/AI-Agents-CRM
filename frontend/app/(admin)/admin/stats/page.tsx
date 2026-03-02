@@ -1,4 +1,4 @@
-/** Statistics page with marketing metrics, change indicators, chart, and period filter. */
+/** Statistics page with dynamic CRM pipeline metrics and period filter. */
 
 "use client";
 
@@ -8,7 +8,7 @@ import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { StatCardGroup } from "@/components/admin/StatCardGroup";
 import { PeriodComparison } from "@/components/admin/PeriodComparison";
 import { Select } from "@/components/shared/Select";
-import type { Stats, Period } from "@/lib/types/stats";
+import type { Stats, Period, CRMStageStat } from "@/lib/types/stats";
 
 export default function StatsPage() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -162,40 +162,38 @@ export default function StatsPage() {
         columns={4}
       />
 
-      <StatCardGroup
-        title="Marketing Statuses"
-        cards={[
-          {
-            label: "New",
-            value: stats.marketing_new,
-            change: stats.comparison?.marketing_new,
-            icon: "✨",
-            colorClass: "bg-blue-100 text-blue-800 border border-blue-200",
-          },
-          {
-            label: "Booked",
-            value: stats.marketing_booked,
-            change: stats.comparison?.marketing_booked,
-            icon: "✅",
-            colorClass: "bg-green-100 text-green-800 border border-green-200",
-          },
-          {
-            label: "No Response",
-            value: stats.marketing_no_response,
-            change: stats.comparison?.marketing_no_response,
-            icon: "⏳",
-            colorClass: "bg-gray-100 text-gray-800 border border-gray-200",
-          },
-          {
-            label: "Rejected",
-            value: stats.marketing_rejected,
-            change: stats.comparison?.marketing_rejected,
-            icon: "❌",
-            colorClass: "bg-red-100 text-red-800 border border-red-200",
-          },
-        ]}
-        columns={4}
-      />
+      {/* Dynamic CRM Pipeline stats */}
+      {stats.crm_stage_stats && stats.crm_stage_stats.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-base font-semibold text-[#443C3C] mb-3">CRM Pipeline</h2>
+          <div
+            className="grid gap-4"
+            style={{
+              gridTemplateColumns: `repeat(${Math.min(stats.crm_stage_stats.length, 4)}, minmax(0, 1fr))`,
+            }}
+          >
+            {stats.crm_stage_stats.map((stage: CRMStageStat) => (
+              <div
+                key={stage.id}
+                className="bg-white rounded-sm border p-4 flex flex-col gap-1"
+                style={{ borderColor: stage.color, borderLeftWidth: 4 }}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: stage.color }}
+                  />
+                  <span className="text-xs font-medium text-[#443C3C] uppercase tracking-wide truncate">
+                    {stage.name}
+                  </span>
+                </div>
+                <span className="text-2xl font-bold text-[#251D1C]">{stage.count}</span>
+                <span className="text-xs text-[#9A9590]">conversations</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

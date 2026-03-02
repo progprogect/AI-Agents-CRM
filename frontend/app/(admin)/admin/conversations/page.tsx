@@ -11,14 +11,12 @@ import { Select } from "@/components/shared/Select";
 import { Input } from "@/components/shared/Input";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { MarketingStatusBadge } from "@/components/shared/MarketingStatusBadge";
-import { MarketingStatusSelect } from "@/components/shared/MarketingStatusSelect";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Tooltip } from "@/components/shared/Tooltip";
 import { UserAvatar } from "@/components/shared/UserAvatar";
 import { api } from "@/lib/api";
 import Link from "next/link";
-import type { Conversation, MarketingStatus } from "@/lib/types/conversation";
+import type { Conversation, CRMStage } from "@/lib/types/conversation";
 import type { Agent } from "@/lib/types/agent";
 import { getChannelDisplay } from "@/lib/utils/channelDisplay";
 import { getConversationDisplayId } from "@/lib/utils/conversationDisplay";
@@ -26,6 +24,65 @@ import { getAgentDisplayName } from "@/lib/utils/agentDisplay";
 import { getWaitingTime, formatDate } from "@/lib/utils/timeFormat";
 import { toConversationStatus } from "@/lib/utils/statusHelpers";
 import type { ConversationStatus } from "@/lib/types/conversation";
+
+// ── CRM Stage inline selector ──────────────────────────────────────────────────
+
+function CRMStageSelector({
+  stages,
+  currentStageId,
+  conversationId,
+  onChanged,
+}: {
+  stages: CRMStage[];
+  currentStageId?: string | null;
+  conversationId: string;
+  onChanged: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+
+  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const stageId = e.target.value;
+    setLoading(true);
+    try {
+      await api.updateConversationCrmStage(conversationId, stageId);
+      onChanged();
+    } catch {
+      // silently ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const current = stages.find((s) => s.id === currentStageId);
+
+  return (
+    <div className="flex items-center gap-2">
+      {loading ? (
+        <LoadingSpinner size="sm" />
+      ) : (
+        <>
+          {current && (
+            <span
+              className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
+              style={{ backgroundColor: current.color }}
+            />
+          )}
+          <select
+            value={currentStageId ?? ""}
+            onChange={handleChange}
+            className="text-xs border border-[#BEBAB7] rounded px-1.5 py-0.5 text-[#443C3C] bg-white outline-none focus:border-[#251D1C] max-w-[130px]"
+          >
+            {stages.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+    </div>
+  );
+}
 
 const ViewIcon = () => (
   <svg
@@ -52,13 +109,13 @@ const ViewIcon = () => (
 export default function ConversationsPage() {
   const router = useRouter();
   const [filter, setFilter] = useState<ConversationFilter>("all");
-  const [marketingStatusFilter, setMarketingStatusFilter] = useState<string>("all");
+  const [crmStageFilter, setCrmStageFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [takeOverConversationId, setTakeOverConversationId] = useState<string | null>(null);
   const [isTakingOver, setIsTakingOver] = useState(false);
   const [agents, setAgents] = useState<Map<string, Agent>>(new Map());
   const [isLoadingAgents, setIsLoadingAgents] = useState(true);
-  const [updatingStatuses, setUpdatingStatuses] = useState<Set<string>>(new Set());
+  const [crmStages, setCrmStages] = useState<CRMStage[]>([]);
 
   const {
     conversations,
@@ -69,29 +126,31 @@ export default function ConversationsPage() {
     refresh,
   } = useConversationsList({
     filter,
-    marketingStatus: marketingStatusFilter !== "all" ? marketingStatusFilter : undefined,
+    crmStageId: crmStageFilter !== "all" ? crmStageFilter : undefined,
     limit: 100,
     enablePolling: true,
   });
 
-  // Load agents for display names
+  // Load agents and CRM stages
   useEffect(() => {
-    const loadAgents = async () => {
+    const loadData = async () => {
       try {
         setIsLoadingAgents(true);
-        const agentsList = await api.listAgents(false);
+        const [agentsList, stagesList] = await Promise.all([
+          api.listAgents(false),
+          api.listCrmStages().catch(() => []),
+        ]);
         const agentsMap = new Map<string, Agent>();
-        agentsList.forEach((agent) => {
-          agentsMap.set(agent.agent_id, agent);
-        });
+        agentsList.forEach((agent) => agentsMap.set(agent.agent_id, agent));
         setAgents(agentsMap);
+        setCrmStages(stagesList);
       } catch (err) {
-        console.error("Failed to load agents:", err);
+        console.error("Failed to load data:", err);
       } finally {
         setIsLoadingAgents(false);
       }
     };
-    loadAgents();
+    loadData();
   }, []);
 
   // Filter and search conversations
@@ -124,32 +183,6 @@ export default function ConversationsPage() {
       alert("Failed to take over conversation. Please try again.");
     } finally {
       setIsTakingOver(false);
-    }
-  };
-
-  const handleMarketingStatusChange = async (
-    conversationId: string,
-    status: MarketingStatus,
-    rejectionReason?: string
-  ) => {
-    try {
-      setUpdatingStatuses((prev) => new Set(prev).add(conversationId));
-      await api.updateMarketingStatus(
-        conversationId,
-        status,
-        "admin_user",
-        rejectionReason
-      );
-      await refresh();
-    } catch (err) {
-      console.error("Failed to update marketing status:", err);
-      alert("Failed to update marketing status. Please try again.");
-    } finally {
-      setUpdatingStatuses((prev) => {
-        const next = new Set(prev);
-        next.delete(conversationId);
-        return next;
-      });
     }
   };
 
@@ -209,14 +242,11 @@ export default function ConversationsPage() {
             </div>
             <div className="w-48">
               <Select
-                value={marketingStatusFilter}
-                onChange={(e) => setMarketingStatusFilter(e.target.value)}
+                value={crmStageFilter}
+                onChange={(e) => setCrmStageFilter(e.target.value)}
                 options={[
-                  { value: "all", label: "All Marketing Statuses" },
-                  { value: "NEW", label: "New" },
-                  { value: "BOOKED", label: "Booked" },
-                  { value: "NO_RESPONSE", label: "No Response" },
-                  { value: "REJECTED", label: "Rejected" },
+                  { value: "all", label: "All CRM Stages" },
+                  ...crmStages.map((s) => ({ value: s.id, label: s.name })),
                 ]}
               />
             </div>
@@ -269,7 +299,7 @@ export default function ConversationsPage() {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Marketing Status
+                  CRM Stage
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
                   Created
@@ -361,23 +391,16 @@ export default function ConversationsPage() {
                       <StatusBadge status={toConversationStatus(conv.status)} size="sm" />
                     </td>
                     <td className="px-6 py-4">
-                      <div className="min-w-[140px]">
-                        {updatingStatuses.has(conv.conversation_id) ? (
-                          <div className="flex items-center gap-2">
-                            <LoadingSpinner size="sm" />
-                            <span className="text-xs text-gray-500">Updating...</span>
-                          </div>
-                        ) : (
-                          <MarketingStatusSelect
-                            value={conv.marketing_status || "NEW"}
-                            onChange={(status, reason) =>
-                              handleMarketingStatusChange(conv.conversation_id, status, reason)
-                            }
-                            disabled={updatingStatuses.has(conv.conversation_id)}
-                            showRejectionReason={false}
-                            currentRejectionReason={conv.rejection_reason}
-                            className="w-full"
+                      <div className="min-w-[150px]">
+                        {crmStages.length > 0 ? (
+                          <CRMStageSelector
+                            stages={crmStages}
+                            currentStageId={conv.crm_stage_id}
+                            conversationId={conv.conversation_id}
+                            onChanged={refresh}
                           />
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
                         )}
                       </div>
                     </td>

@@ -51,7 +51,8 @@ class HandoffResponse(BaseModel):
 async def list_conversations(
     agent_id: Optional[str] = Query(None, description="Filter by agent ID"),
     status: Optional[str] = Query(None, description="Filter by conversation status"),
-    marketing_status: Optional[str] = Query(None, description="Filter by marketing status"),
+    marketing_status: Optional[str] = Query(None, description="Filter by marketing status (legacy)"),
+    crm_stage_id: Optional[str] = Query(None, description="Filter by CRM stage UUID"),
     limit: int = Query(default=100, ge=1, le=1000, description="Maximum number of conversations"),
     deps: CommonDependencies = Depends(),
     _admin: str = require_admin(),
@@ -79,6 +80,7 @@ async def list_conversations(
         agent_id=agent_id,
         status=status_enum,
         marketing_status=marketing_status,
+        crm_stage_id=crm_stage_id,
         limit=limit,
     )
     return conversations
@@ -836,6 +838,13 @@ async def get_stats(
         ),
         "period": period,
     }
+
+    # Add dynamic CRM stage stats using SQL aggregation
+    from app.storage.postgres_crm import PostgresCRMStorage
+    crm_storage = PostgresCRMStorage()
+    stats["crm_stage_stats"] = await crm_storage.get_stage_counts(
+        start_date=start_date, end_date=end_date
+    )
 
     # Calculate comparison if requested
     if include_comparison:

@@ -67,12 +67,15 @@ class Conversation(BaseModel):
     external_user_profile_pic: Optional[str] = Field(
         None, description="Instagram profile picture URL"
     )
-    # Marketing status fields for CRM tracking
+    # Marketing status fields for CRM tracking (legacy — use crm_stage_id)
     marketing_status: Optional[MarketingStatus] = Field(
-        default=MarketingStatus.NEW, description="Marketing status for CRM tracking"
+        default=MarketingStatus.NEW, description="Marketing status for CRM tracking (legacy)"
     )
     rejection_reason: Optional[str] = Field(
         None, description="Reason for rejection (required when marketing_status is REJECTED)"
+    )
+    crm_stage_id: Optional[str] = Field(
+        None, description="CRM pipeline stage UUID"
     )
 
     class Config:

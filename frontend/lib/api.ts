@@ -300,6 +300,7 @@ export const api = {
     agent_id?: string;
     status?: string;
     marketing_status?: string;
+    crm_stage_id?: string;
     limit?: number;
   }): Promise<Conversation[]> {
     const queryParams = new URLSearchParams();
@@ -307,12 +308,14 @@ export const api = {
     if (params?.status) queryParams.append("status", params.status);
     if (params?.marketing_status)
       queryParams.append("marketing_status", params.marketing_status);
+    if (params?.crm_stage_id)
+      queryParams.append("crm_stage_id", params.crm_stage_id);
     if (params?.limit) queryParams.append("limit", params.limit.toString());
 
     return request<Conversation[]>(
       `/api/v1/admin/conversations?${queryParams.toString()}`,
       {},
-      true // require auth
+      true
     );
   },
 
@@ -755,7 +758,58 @@ export const api = {
           admin_id: adminId,
         }),
       },
-      true // require auth
+      true
+    );
+  },
+
+  // ── CRM Stages ──────────────────────────────────────────────────────────────
+
+  async listCrmStages(): Promise<import("./types/conversation").CRMStage[]> {
+    return request<import("./types/conversation").CRMStage[]>(
+      "/api/v1/crm/stages",
+      {},
+      true
+    );
+  },
+
+  async createCrmStage(
+    name: string,
+    color: string
+  ): Promise<import("./types/conversation").CRMStage> {
+    return request<import("./types/conversation").CRMStage>(
+      "/api/v1/crm/stages",
+      { method: "POST", body: JSON.stringify({ name, color }) },
+      true
+    );
+  },
+
+  async updateCrmStage(
+    stageId: string,
+    data: { name?: string; color?: string; position?: number }
+  ): Promise<import("./types/conversation").CRMStage> {
+    return request<import("./types/conversation").CRMStage>(
+      `/api/v1/crm/stages/${stageId}`,
+      { method: "PUT", body: JSON.stringify(data) },
+      true
+    );
+  },
+
+  async deleteCrmStage(stageId: string): Promise<void> {
+    return request<void>(
+      `/api/v1/crm/stages/${stageId}`,
+      { method: "DELETE" },
+      true
+    );
+  },
+
+  async updateConversationCrmStage(
+    conversationId: string,
+    crmStageId: string
+  ): Promise<{ conversation_id: string; crm_stage_id: string; stage_name: string; message: string }> {
+    return request<{ conversation_id: string; crm_stage_id: string; stage_name: string; message: string }>(
+      `/api/v1/crm/conversations/${conversationId}/crm-stage`,
+      { method: "PATCH", body: JSON.stringify({ crm_stage_id: crmStageId }) },
+      true
     );
   },
 };

@@ -1,5 +1,13 @@
 /** Statistics types. */
 
+export interface CRMStageStat {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
+  count: number;
+}
+
 export interface Stats {
   total_conversations: number;
   ai_active: number;
@@ -11,6 +19,7 @@ export interface Stats {
   marketing_no_response: number;
   marketing_rejected: number;
   period: string;
+  crm_stage_stats?: CRMStageStat[];
   comparison?: StatsComparison;
 }
 

@@ -10,14 +10,15 @@ import { useAdminWebSocket } from "@/lib/hooks/useAdminWebSocket";
 import { api } from "@/lib/api";
 import { isSuperAdmin } from "@/lib/auth";
 
-import { Bot, MessageSquare, Bell, ClipboardList, BarChart3, FlaskConical, Users } from "lucide-react";
+import { Bot, MessageSquare, Bell, ClipboardList, BarChart3, FlaskConical, Users, Kanban } from "lucide-react";
 
 const baseNavigation = [
   { name: "Agents", href: "/admin/agents", icon: <Bot size={20} /> },
   { name: "Conversations", href: "/admin/conversations", icon: <MessageSquare size={20} /> },
+  { name: "CRM", href: "/admin/crm", icon: <Kanban size={20} /> },
   { name: "Notifications", href: "/admin/notifications", icon: <Bell size={20} /> },
   { name: "Audit", href: "/admin/audit", icon: <ClipboardList size={20} /> },
-  { name: "Stats", href: "/admin/stats", icon: <BarChart3 size={20} /> },
+  { name: "Statistics", href: "/admin/stats", icon: <BarChart3 size={20} /> },
   { name: "Instagram Test", href: "/admin/instagram-test", icon: <FlaskConical size={20} /> },
 ];
 
