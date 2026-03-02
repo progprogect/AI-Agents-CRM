@@ -16,7 +16,7 @@ from app.utils.llm_provider import _get_vision_provider
 logger = logging.getLogger(__name__)
 
 OPENAI_VISION_MODEL = "gpt-4o"
-GEMINI_VISION_MODEL = "gemini-1.5-flash"
+GEMINI_VISION_MODEL = "gemini-2.0-flash"  # gemini-1.5-flash deprecated/unavailable via v1beta
 
 
 class ImageProcessorService:
