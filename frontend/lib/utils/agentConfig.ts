@@ -214,7 +214,7 @@ After receiving contact info: pass to administrator and end the conversation.
 Do not promise outcomes. Do not claim that a specialist is personally reading messages right now.`;
 
 const DEFAULT_GOAL = `Primary goal: quickly and politely assist, qualify the request, and guide toward booking without pressure.
-If the specialty does not match — suggest another direction and offer to book.`;
+If the service does not match the user's needs — suggest an alternative and offer to book.`;
 
 /**
  * Convert form data to agent config object (for API).
