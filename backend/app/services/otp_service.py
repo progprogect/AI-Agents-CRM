@@ -3,7 +3,6 @@
 import hashlib
 import logging
 import secrets
-from typing import Optional
 
 from app.config import get_settings
 from app.storage.redis import get_redis_client
@@ -19,20 +18,43 @@ def _hash_code(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 
-def get_allowed_emails() -> list[str]:
-    """Return the list of allowed admin emails from config."""
+def get_super_admin_emails() -> list[str]:
+    """Return the list of super admin emails from env vars (ALLOWED_ADMIN_EMAILS)."""
     settings = get_settings()
     raw = settings.allowed_admin_emails or ""
     return [e.strip().lower() for e in raw.split(",") if e.strip()]
 
 
-def is_allowed_email(email: str) -> bool:
-    """Check whether the given email is in the allowed admin list."""
-    allowed = get_allowed_emails()
-    if not allowed:
-        # No list configured — allow all (dev mode)
+async def is_allowed_email(email: str) -> bool:
+    """Check whether the given email may log in.
+
+    Priority:
+    1. Super admins from ALLOWED_ADMIN_EMAILS env var — always allowed.
+    2. If env var is not configured — dev mode, allow all.
+    3. Otherwise check admin_users table in PostgreSQL.
+    """
+    email = email.strip().lower()
+    super_admins = get_super_admin_emails()
+
+    if email in super_admins:
         return True
-    return email.strip().lower() in allowed
+
+    if not super_admins:
+        # No list configured — dev mode, allow all
+        return True
+
+    # Check the database for regular users
+    try:
+        from app.storage.postgres import get_pool
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            "SELECT 1 FROM admin_users WHERE email=$1 AND is_active=true",
+            email,
+        )
+        return row is not None
+    except Exception as e:
+        logger.error(f"DB check for allowed email failed: {e}", exc_info=True)
+        return False
 
 
 async def check_rate_limit(email: str) -> bool:
@@ -49,7 +71,6 @@ async def check_rate_limit(email: str) -> bool:
         if count >= settings.otp_rate_limit:
             return False
 
-        # Increment and set TTL only on first request in window
         if count == 0:
             await redis.set(key, "1", ttl=ttl)
         else:
@@ -87,7 +108,6 @@ async def verify_otp(email: str, code: str) -> bool:
             logger.warning(f"OTP verify: invalid code for {email}")
             return False
 
-        # One-time use — delete immediately after success
         await redis.delete(key)
         logger.info(f"OTP verified successfully for {email}")
         return True

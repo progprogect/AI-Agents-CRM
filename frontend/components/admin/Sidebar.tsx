@@ -8,10 +8,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAdminWebSocket } from "@/lib/hooks/useAdminWebSocket";
 import { api } from "@/lib/api";
+import { isSuperAdmin } from "@/lib/auth";
 
-import { Bot, MessageSquare, Bell, ClipboardList, BarChart3, FlaskConical } from "lucide-react";
+import { Bot, MessageSquare, Bell, ClipboardList, BarChart3, FlaskConical, Users } from "lucide-react";
 
-const navigation = [
+const baseNavigation = [
   { name: "Agents", href: "/admin/agents", icon: <Bot size={20} /> },
   { name: "Conversations", href: "/admin/conversations", icon: <MessageSquare size={20} /> },
   { name: "Notifications", href: "/admin/notifications", icon: <Bell size={20} /> },
@@ -24,6 +25,14 @@ export const Sidebar: React.FC = () => {
   const pathname = usePathname();
   const [needsHumanCount, setNeedsHumanCount] = useState(0);
   const { onStatsUpdate, onNewEscalation } = useAdminWebSocket();
+
+  // Build navigation dynamically — super admin gets Users link
+  const navigation = [
+    ...baseNavigation,
+    ...(isSuperAdmin()
+      ? [{ name: "Users", href: "/admin/users", icon: <Users size={20} /> }]
+      : []),
+  ];
 
   // Load initial stats
   useEffect(() => {
@@ -47,7 +56,6 @@ export const Sidebar: React.FC = () => {
     });
 
     const unsubscribeEscalation = onNewEscalation(() => {
-      // Reload stats when new escalation occurs
       api.getStats()
         .then((stats) => {
           setNeedsHumanCount(stats.needs_human || 0);
@@ -105,6 +113,3 @@ export const Sidebar: React.FC = () => {
     </aside>
   );
 };
-
-
-
