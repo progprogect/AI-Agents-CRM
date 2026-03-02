@@ -41,9 +41,10 @@ class EscalationService:
             )
 
             # Process extracted contacts from LLM
+            detect_contact = config.escalation.detect_contact if config else True
             if decision.extracted_contacts:
                 contacts = decision.extracted_contacts
-                
+
                 # Log extracted contacts if any found
                 if contacts.phone_numbers or contacts.emails:
                     logger.info(
@@ -55,25 +56,26 @@ class EscalationService:
                         },
                     )
 
-                # If phone numbers found but no escalation yet, trigger booking escalation
-                if contacts.phone_numbers and not decision.needs_escalation:
-                    decision.needs_escalation = True
-                    decision.escalation_type = EscalationType.BOOKING
-                    decision.confidence = max(decision.confidence, 0.9)
-                    decision.reason = f"Phone number(s) detected: {', '.join(contacts.phone_numbers)}"
-                    decision.suggested_action = "handoff_for_booking"
-                    logger.info(
-                        f"Escalation triggered by phone number detection",
-                        extra={
-                            "agent_id": agent_id,
-                            "phone_numbers": contacts.phone_numbers,
-                        },
-                    )
-                # If escalation already detected and phone numbers found, enhance reason
-                elif contacts.phone_numbers and decision.needs_escalation:
-                    if decision.escalation_type == EscalationType.BOOKING:
-                        decision.reason = f"{decision.reason} (Phone: {', '.join(contacts.phone_numbers)})"
-                        decision.confidence = min(decision.confidence + 0.1, 1.0)  # Boost confidence slightly
+                if detect_contact:
+                    # If phone numbers found but no escalation yet, trigger booking escalation
+                    if contacts.phone_numbers and not decision.needs_escalation:
+                        decision.needs_escalation = True
+                        decision.escalation_type = EscalationType.BOOKING
+                        decision.confidence = max(decision.confidence, 0.9)
+                        decision.reason = f"Phone number(s) detected: {', '.join(contacts.phone_numbers)}"
+                        decision.suggested_action = "handoff_for_booking"
+                        logger.info(
+                            f"Escalation triggered by phone number detection",
+                            extra={
+                                "agent_id": agent_id,
+                                "phone_numbers": contacts.phone_numbers,
+                            },
+                        )
+                    # If escalation already detected and phone numbers found, enhance reason
+                    elif contacts.phone_numbers and decision.needs_escalation:
+                        if decision.escalation_type == EscalationType.BOOKING:
+                            decision.reason = f"{decision.reason} (Phone: {', '.join(contacts.phone_numbers)})"
+                            decision.confidence = min(decision.confidence + 0.1, 1.0)
 
             if decision.needs_escalation:
                 logger.info(

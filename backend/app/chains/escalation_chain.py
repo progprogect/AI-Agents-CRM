@@ -25,11 +25,18 @@ class EscalationChain:
         """Build system prompt from agent config instructions or use default."""
         config = agent_config or self.agent_config
 
-        # Base escalation types
-        base_types = """Escalation types:
-- booking: User shares a phone number or email address (contact info detected) — always escalate
-- custom: Custom escalation rule defined by the agent configuration
-- none: No escalation needed, AI can handle"""
+        detect_contact = config.escalation.detect_contact if config else True
+
+        # Build escalation types based on config
+        escalation_type_lines = []
+        if detect_contact:
+            escalation_type_lines.append(
+                "- booking: User shares a phone number or email address (contact info detected) — always escalate"
+            )
+        escalation_type_lines.append("- custom: Custom escalation rule defined by the agent configuration")
+        escalation_type_lines.append("- none: No escalation needed, AI can handle")
+
+        base_types = "Escalation types:\n" + "\n".join(escalation_type_lines)
 
         # If no config or no instructions, use default prompt
         if not config or not config.escalation.instructions:
@@ -38,7 +45,7 @@ Your task is to analyze user messages and determine if they require human interv
 
 {base_types}
 
-IMPORTANT: Only escalate based on the rules above. Do NOT escalate for medical questions, urgency, or any other reason unless a custom rule explicitly defines it.
+IMPORTANT: Only escalate based on the rules above. Do NOT escalate for any other reason unless a custom rule explicitly defines it.
 
 Contact Information Extraction:
 When analyzing messages, also extract contact information:
@@ -59,7 +66,15 @@ Return a structured response with:
         instructions_section = []
         escalation_config = config.escalation
 
-        # Add instructions for each escalation type
+        # Add free-form custom rules (new format)
+        if escalation_config.custom_rules:
+            for rule in escalation_config.custom_rules:
+                name = rule.get("name", "").strip()
+                description = rule.get("description", "").strip()
+                if name and description:
+                    instructions_section.append(f"- {name}: {description}")
+
+        # Add structured instructions (legacy format)
         for esc_type, instruction in escalation_config.instructions.items():
             examples_text = ""
             if instruction.examples:
@@ -116,7 +131,7 @@ Your task is to analyze user messages and determine if they require human interv
 
 {base_types}{instructions_text}{policies_section}{triggers_section}
 
-IMPORTANT: Only escalate based on contact info detection or the custom rules defined above. Do NOT escalate for reasons not listed.
+IMPORTANT: Only escalate based on the rules defined above. Do NOT escalate for reasons not listed.
 
 Contact Information Extraction:
 When analyzing messages, also extract contact information:

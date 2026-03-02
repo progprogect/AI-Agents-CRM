@@ -63,11 +63,8 @@ export interface AgentConfigFormData {
     content: string;
   }>;
 
-  // Escalation - legacy policy fields (kept at defaults, not shown in UI)
-  medical_question_policy?: string;
-  urgent_case_policy?: string;
-  repeat_patient_policy?: string;
-  pre_procedure_policy?: string;
+  // Escalation - contact detection toggle (Step 5)
+  escalation_detect_contact?: boolean;
 
   // Escalation - free-form custom rules (Step 5)
   escalation_rules?: EscalationRule[];
@@ -106,12 +103,8 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     persuasion: "soft",
     // Examples defaults
     examples: [...DEFAULT_EXAMPLES],
-    // Escalation legacy defaults (not shown in UI)
-    medical_question_policy: "handoff_or_book",
-    urgent_case_policy: "advise_emergency_and_handoff",
-    repeat_patient_policy: "handoff_only",
-    pre_procedure_policy: "handoff_only",
-    // Escalation free-form rules
+    // Escalation
+    escalation_detect_contact: true,
     escalation_rules: [],
     // LLM defaults
     llm_provider: "openai",
@@ -154,13 +147,8 @@ export function agentConfigToFormData(
         content: source.content || "",
       })) || [],
 
-    // Escalation legacy policies
-    medical_question_policy: agentConfig.escalation?.medical_question_policy,
-    urgent_case_policy: agentConfig.escalation?.urgent_case_policy,
-    repeat_patient_policy: agentConfig.escalation?.repeat_patient_policy,
-    pre_procedure_policy: agentConfig.escalation?.pre_procedure_policy,
-
-    // Escalation free-form rules
+    // Escalation
+    escalation_detect_contact: agentConfig.escalation?.detect_contact ?? true,
     escalation_rules: agentConfig.escalation?.custom_rules?.map((r: any, i: number) => ({
       id: r.id || `rule_${i}`,
       name: r.name || "",
@@ -290,10 +278,7 @@ export function formDataToAgentConfig(
       mode: "pre_and_post",
     },
     escalation: {
-      medical_question_policy: formData.medical_question_policy || "handoff_or_book",
-      urgent_case_policy: formData.urgent_case_policy || "advise_emergency_and_handoff",
-      repeat_patient_policy: formData.repeat_patient_policy || "handoff_only",
-      pre_procedure_policy: formData.pre_procedure_policy || "handoff_only",
+      detect_contact: formData.escalation_detect_contact ?? true,
       custom_rules: (formData.escalation_rules || []).map((rule) => ({
         id: rule.id,
         name: rule.name,

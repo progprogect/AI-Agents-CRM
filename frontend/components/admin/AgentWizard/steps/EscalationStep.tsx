@@ -1,4 +1,4 @@
-/** Step 5: Escalation Rules — free-form custom rules. */
+/** Step 5: Escalation Rules — contact detection toggle + free-form custom rules. */
 
 "use client";
 
@@ -7,6 +7,7 @@ import { Plus, X } from "lucide-react";
 import { Input } from "@/components/shared/Input";
 import { Textarea } from "@/components/shared/Textarea";
 import { Button } from "@/components/shared/Button";
+import { Toggle } from "@/components/shared/Toggle";
 import type { AgentConfigFormData, EscalationRule } from "@/lib/utils/agentConfig";
 import type { ValidationError } from "@/lib/utils/validation";
 
@@ -23,6 +24,7 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
   onUpdate,
 }) => {
   const rules: EscalationRule[] = config.escalation_rules || [];
+  const detectContact = config.escalation_detect_contact ?? true;
 
   const handleAddRule = useCallback(() => {
     if (rules.length >= MAX_RULES) return;
@@ -59,17 +61,47 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
           Escalation Rules
         </h3>
         <p className="text-sm text-gray-600">
-          Define custom rules for when the agent should escalate to a human. All rules are optional — the AI will still detect urgent or sensitive situations automatically.
+          Configure when the agent should hand off a conversation to a human operator.
         </p>
       </div>
 
-      {/* Rules list */}
+      {/* Built-in: contact detection */}
+      <div className="p-4 border border-[#BEBAB7] rounded-sm bg-white space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-900">Contact info detection</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Escalate automatically when the user shares a phone number or email address.
+            </p>
+          </div>
+          <div className="flex-shrink-0">
+            <Toggle
+              checked={detectContact}
+              onChange={(v) => onUpdate({ escalation_detect_contact: v })}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-200" />
+        </div>
+        <div className="relative flex justify-center">
+          <span className="bg-white px-3 text-xs text-gray-400 uppercase tracking-wider">
+            Custom rules
+          </span>
+        </div>
+      </div>
+
+      {/* Custom rules list */}
       <div className="space-y-4">
         {rules.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 border border-dashed border-gray-300 rounded-sm bg-gray-50 text-center px-4">
-            <p className="text-sm text-gray-500 mb-1">No escalation rules added.</p>
+          <div className="flex flex-col items-center justify-center py-8 border border-dashed border-gray-300 rounded-sm bg-gray-50 text-center px-4">
+            <p className="text-sm text-gray-500 mb-1">No custom rules added.</p>
             <p className="text-xs text-gray-400">
-              Add rules to define when the agent should escalate to a human operator.
+              Add rules to define additional escalation scenarios specific to your business.
             </p>
           </div>
         ) : (
@@ -96,14 +128,14 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
                 label="Rule Name"
                 value={rule.name}
                 onChange={(e) => handleUpdateRule(rule.id, "name", e.target.value)}
-                placeholder="e.g. Urgent health situation"
+                placeholder="e.g. Complaint received"
               />
 
               <Textarea
                 label="Description"
                 value={rule.description}
                 onChange={(e) => handleUpdateRule(rule.id, "description", e.target.value)}
-                placeholder="e.g. When the user mentions pain, emergency, or urgent symptoms — immediately transfer to a human and stop the conversation."
+                placeholder="e.g. When the user expresses strong dissatisfaction or files a complaint — transfer to a human immediately."
                 rows={3}
                 helperText="Describe the situation and what the agent should do."
               />
@@ -131,15 +163,9 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
 
       {rules.length >= MAX_RULES && (
         <p className="text-xs text-gray-500">
-          Maximum of {MAX_RULES} escalation rules reached.
+          Maximum of {MAX_RULES} custom rules reached.
         </p>
       )}
-
-      <div className="p-4 bg-[#EEEAE7] border border-[#D0CBC8] rounded-sm">
-        <p className="text-sm text-[#443C3C]">
-          <strong>Note:</strong> The agent will always escalate when a user shares a phone number or email (contact detected). Add custom rules above to define any additional escalation scenarios specific to your business.
-        </p>
-      </div>
     </div>
   );
 };
