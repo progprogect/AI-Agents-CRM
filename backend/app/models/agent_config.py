@@ -38,7 +38,7 @@ class ProfileConfig(BaseModel):
 
     agent_display_name: str
     company_display_name: str
-    specialty: str
+    specialty: Optional[str] = Field(default="")  # Optional — removed from UI
     languages: list[str] = Field(default_factory=lambda: ["ru", "en"])
 
 
