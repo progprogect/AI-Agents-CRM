@@ -87,6 +87,13 @@ class RedisClient:
         json_value = json.dumps(value)
         return await self.set(key, json_value, ttl)
 
+    async def incr(self, key: str) -> int:
+        """Increment integer value of key by 1. Returns new value."""
+        await self.connect()
+        if not self.client:
+            return 0
+        return int(await self.client.incr(key))
+
     async def exists(self, key: str) -> bool:
         """Check if key exists."""
         await self.connect()

@@ -53,11 +53,7 @@ async def check_rate_limit(email: str) -> bool:
         if count == 0:
             await redis.set(key, "1", ttl=ttl)
         else:
-            client = redis.client
-            if client is None:
-                await redis.connect()
-                client = redis.client
-            await client.incr(key)  # type: ignore[union-attr]
+            await redis.incr(key)
         return True
     except Exception as e:
         logger.error(f"Rate limit check error for {email}: {e}", exc_info=True)
