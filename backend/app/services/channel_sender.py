@@ -10,6 +10,7 @@ from app.storage.dynamodb import DynamoDBClient
 if TYPE_CHECKING:
     from app.services.instagram_service import InstagramService
     from app.services.telegram_service import TelegramService
+    from app.services.whatsapp_service import WhatsAppService
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,66 @@ class TelegramSender(ChannelSender):
 
         # Note: Agent message is already saved in AgentService.process_message
         # before calling ChannelSender.send_message, so we don't save it again here
+
+
+class WhatsAppSender(ChannelSender):
+    """Sender for WhatsApp Cloud API channel."""
+
+    def __init__(
+        self,
+        whatsapp_service: "WhatsAppService",
+        dynamodb: DynamoDBClient,
+    ):
+        self.whatsapp_service = whatsapp_service
+        self.dynamodb = dynamodb
+
+    async def send_message(
+        self,
+        conversation_id: str,
+        message_text: str,
+        binding_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        """Send message via WhatsApp Cloud API."""
+        from app.services.channel_binding_service import ChannelBindingService
+        from app.storage.resolver import get_secrets_manager
+
+        secrets_manager = get_secrets_manager()
+        binding_service = ChannelBindingService(self.dynamodb, secrets_manager)
+
+        if not external_user_id or not binding_id:
+            conversation = await self.dynamodb.get_conversation(conversation_id)
+            if not conversation:
+                raise ValueError(f"Conversation {conversation_id} not found")
+            external_user_id = external_user_id or conversation.external_user_id
+
+            if not binding_id:
+                bindings = await binding_service.get_bindings_by_agent(
+                    agent_id=conversation.agent_id,
+                    channel_type="whatsapp",
+                    active_only=True,
+                )
+                if not bindings:
+                    raise ValueError(
+                        f"No active WhatsApp binding for agent {conversation.agent_id}"
+                    )
+                binding_id = bindings[0].binding_id
+
+        if not external_user_id:
+            raise ValueError("external_user_id (recipient phone) is required for WhatsApp")
+
+        binding = await binding_service.get_binding(binding_id)
+        if not binding:
+            raise ValueError(f"WhatsApp binding {binding_id} not found")
+
+        access_token = await binding_service.get_access_token(binding_id)
+        await self.whatsapp_service.send_message(
+            phone_number_id=binding.channel_account_id,
+            access_token=access_token,
+            to=external_user_id,
+            text=message_text,
+        )
 
 
 def get_channel_sender(

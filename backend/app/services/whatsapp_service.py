@@ -2,12 +2,11 @@
 
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
 from app.config import Settings
-from app.models.channel_binding import ChannelType
 from app.models.conversation import Conversation, ConversationStatus, MarketingStatus
 from app.models.message import Message, MessageChannel, MessageRole
 from app.services.channel_binding_service import ChannelBindingService
@@ -136,25 +135,51 @@ class WhatsAppService:
         )
         await self.dynamodb.create_message(message)
 
-        # Run AI chain and reply
-        try:
-            from app.chains.conversation_chain import ConversationChain
-            chain = ConversationChain(self.dynamodb, self.settings)
-            response_text = await chain.run(
-                conversation_id=conversation_id,
-                agent_id=binding.agent_id,
-                user_message=text_body,
+        # Skip if conversation is handled by a human operator
+        from app.utils.enum_helpers import get_enum_value
+        if get_enum_value(conversation.status) in (
+            ConversationStatus.NEEDS_HUMAN.value,
+            ConversationStatus.HUMAN_ACTIVE.value,
+        ):
+            logger.info(
+                f"Conversation {conversation_id} handled by human — skipping AI"
             )
-            if response_text:
-                access_token = await self.channel_binding_service.get_access_token(
-                    binding.binding_id
-                )
-                await self.send_message(
-                    phone_number_id=binding.channel_account_id,
-                    access_token=access_token,
-                    to=sender_phone,
-                    text=response_text,
-                )
+            return
+
+        # Process through agent and send reply
+        try:
+            from app.models.agent_config import AgentConfig
+            from app.services.agent_service import create_agent_service
+            from app.services.channel_sender import WhatsAppSender
+
+            agent_data = await self.dynamodb.get_agent(binding.agent_id)
+            if not agent_data or "config" not in agent_data:
+                logger.error(f"Agent {binding.agent_id} not found or has no config")
+                return
+
+            agent_config = AgentConfig.from_dict(agent_data["config"])
+
+            history_messages = await self.dynamodb.list_messages(
+                conversation_id=conversation_id, limit=50, reverse=True
+            )
+            conversation_history = [
+                {"role": get_enum_value(msg.role), "content": msg.content}
+                for msg in reversed(history_messages)
+            ]
+            # Exclude the just-saved user message from history
+            if conversation_history and (
+                conversation_history[-1].get("role", "").lower() == "user"
+                and conversation_history[-1].get("content", "").strip() == text_body.strip()
+            ):
+                conversation_history = conversation_history[:-1]
+
+            wa_sender = WhatsAppSender(self, self.dynamodb)
+            agent_service = create_agent_service(agent_config, self.dynamodb, wa_sender)
+            await agent_service.process_message(
+                user_message=text_body,
+                conversation_id=conversation_id,
+                conversation_history=conversation_history,
+            )
         except Exception as exc:
             logger.error(f"WhatsApp AI response error: {exc}", exc_info=True)
 
