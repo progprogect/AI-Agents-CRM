@@ -76,13 +76,12 @@ class WhatsAppService:
                     continue
 
                 for msg in messages:
-                    await self._process_message(msg, binding, value)
+                    await self._process_message(msg, binding)
 
     async def _process_message(
         self,
         msg: dict[str, Any],
         binding: Any,
-        value: dict[str, Any],
     ) -> None:
         """Process a single incoming WhatsApp message."""
         msg_type = msg.get("type")
@@ -163,8 +162,8 @@ class WhatsAppService:
                 conversation_id=conversation_id, limit=50, reverse=True
             )
             conversation_history = [
-                {"role": get_enum_value(msg.role), "content": msg.content}
-                for msg in reversed(history_messages)
+                {"role": get_enum_value(m.role), "content": m.content}
+                for m in reversed(history_messages)
             ]
             # Exclude the just-saved user message from history
             if conversation_history and (
