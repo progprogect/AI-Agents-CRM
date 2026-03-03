@@ -209,3 +209,21 @@ small, .small {
 .transition-smooth {
   transition: all var(--transition-base);
 }
+
+/* CAworks Loader — three bars animation */
+@keyframes caworks-loader {
+  0%   { background-size: 20% 50%, 20% 50%, 20% 50%  }
+  20%  { background-size: 20% 20%, 20% 50%, 20% 50%  }
+  40%  { background-size: 20% 100%,20% 20%, 20% 50%  }
+  60%  { background-size: 20% 50%, 20% 100%,20% 20%  }
+  80%  { background-size: 20% 50%, 20% 50%, 20% 100% }
+  100% { background-size: 20% 50%, 20% 50%, 20% 50%  }
+}
+
+.caworks-loader {
+  --loader-color: var(--color-brand-primary);
+  --c: no-repeat linear-gradient(var(--loader-color) 0 0);
+  background: var(--c) 0% 50%, var(--c) 50% 50%, var(--c) 100% 50%;
+  aspect-ratio: 0.75;
+  animation: caworks-loader 1s infinite linear alternate;
+}
