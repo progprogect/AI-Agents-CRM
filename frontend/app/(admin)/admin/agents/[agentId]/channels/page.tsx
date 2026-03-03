@@ -669,78 +669,191 @@ export default function AgentChannelsPage() {
     );
   }
 
+  // ── Inline token setup (used in guides when verify token is not yet set) ─────
+
+  function InlineTokenSetup({
+    channel,
+    onSave,
+  }: {
+    channel: "instagram" | "whatsapp";
+    onSave: (token: string) => Promise<void>;
+  }) {
+    const [value, setValue] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+
+    const handleSave = async () => {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      setSaving(true);
+      try {
+        await onSave(trimmed);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return (
+      <div className="mt-2 p-3 bg-[#EEEAE7]/50 border border-[#BEBAB7] rounded-md space-y-2">
+        <p className="text-xs text-[#443C3C]">
+          Create a <strong>Verify Token</strong> — choose any password-like phrase
+          (you'll paste it in Meta Console in the next step):
+        </p>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 text-sm px-2.5 py-1.5 border border-[#BEBAB7] rounded outline-none focus:border-[#251D1C] bg-white"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={`e.g. my-${channel}-secret-2024`}
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+          />
+          <button
+            onClick={handleSave}
+            disabled={!value.trim() || saving}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-[#251D1C] rounded hover:bg-[#443C3C] disabled:opacity-50 transition-colors"
+          >
+            {saving ? "Saving..." : saved ? "Saved ✓" : "Save"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Instagram guide ─────────────────────────────────────────────────────────
 
   const instagramGuide = (
     <div className="space-y-4">
+      {/* What you'll need */}
       <div className="text-xs text-[#9A9590] bg-[#EEEAE7]/60 rounded p-3 space-y-1">
         <div className="font-semibold text-[#443C3C] mb-1.5">What you'll need</div>
-        <div>• Facebook Developer Account</div>
-        <div>• Facebook Business Page (linked to Instagram)</div>
-        <div>• Instagram Professional or Business Account</div>
+        <div>• A <strong>Facebook account</strong> with developer access</div>
+        <div>• A <strong>Facebook Business Page</strong> connected to your Instagram</div>
+        <div>• An <strong>Instagram Professional or Business account</strong></div>
       </div>
+
+      {/* Quick intro */}
+      <p className="text-xs text-[#9A9590]">
+        This setup tells Instagram to send all incoming messages to this AI assistant.
+        It takes about 10–15 minutes and is a one-time process.
+      </p>
 
       <div className="space-y-3">
         <Step n={1}>
-          Create a{" "}
+          Go to{" "}
           <ExtLink href="https://developers.facebook.com/apps">
-            Facebook App
+            Meta Developers
           </ExtLink>{" "}
-          — choose <strong>Business</strong> type.
+          and create a new app. When asked for the type, choose <strong>Business</strong>.
+          <div className="text-xs text-[#9A9590] mt-1">
+            You need a Facebook account to log in. If you already have a Meta app, you can use it.
+          </div>
         </Step>
 
         <Step n={2}>
-          Add the <strong>Instagram</strong> product to your app. Under{" "}
-          <em>Instagram → Webhooks</em>, click <strong>Subscribe to messages</strong>.
+          Inside your app, find the <strong>Instagram</strong> product in the left menu and add it.
+          Then go to <em>Instagram → Webhooks</em> and click <strong>Subscribe to messages</strong>.
         </Step>
 
         <Step n={3}>
-          <div>Configure the webhook in your Meta App:</div>
-          <div className="mt-2 space-y-2">
-            <div>
-              <div className="text-xs text-[#9A9590] mb-0.5">Callback URL</div>
-              <CopyField value={config?.instagram_webhook_url ?? ""} />
-            </div>
-            <div>
-              <div className="text-xs text-[#9A9590] mb-0.5">Verify Token</div>
-              {config?.instagram_verify_token ? (
-                <CopyField value={config.instagram_verify_token} masked />
-              ) : (
-                <div className="mt-1 text-xs text-[#9A9590] bg-[#EEEAE7] rounded px-3 py-2">
-                  No verify token set yet. Click the <Settings size={11} className="inline mx-0.5" /> settings icon
-                  in the card header to configure it.
-                </div>
-              )}
-            </div>
+          <div className="font-medium">Connect this system to your Instagram.</div>
+          <div className="text-xs text-[#9A9590] mt-0.5 mb-2">
+            Meta will ask for two values. Copy them from here and paste into Meta Console:
           </div>
-          <div className="text-xs text-[#9A9590] mt-2">
-            After saving the webhook in Meta Console, it will send a verification
-            request — the server responds automatically.
+
+          {/* Callback URL */}
+          <div className="space-y-1 mb-3">
+            <div className="text-xs font-medium text-[#443C3C]">
+              1. Callback URL{" "}
+              <span className="font-normal text-[#9A9590]">— your system's address</span>
+            </div>
+            {config?.instagram_webhook_url ? (
+              <CopyField value={config.instagram_webhook_url} />
+            ) : (
+              <div className="text-xs bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-1.5">
+                <div className="font-medium text-amber-800">Address not configured yet</div>
+                <div className="text-amber-700">
+                  To get this address, add <code className="bg-amber-100 px-1 rounded">APP_URL</code> to
+                  your Railway project:
+                </div>
+                <ol className="text-amber-700 space-y-0.5 list-decimal list-inside ml-1">
+                  <li>Open <ExtLink href="https://railway.app/dashboard">Railway Dashboard</ExtLink></li>
+                  <li>Select your project → click your service</li>
+                  <li>Go to <strong>Settings → Domains</strong> — copy the URL shown there</li>
+                  <li>Go to <strong>Variables</strong> → Add: <code className="bg-amber-100 px-1 rounded">APP_URL = https://your-url.up.railway.app</code></li>
+                  <li>Save and come back here — the address will appear automatically</li>
+                </ol>
+              </div>
+            )}
+          </div>
+
+          {/* Verify Token */}
+          <div className="space-y-1">
+            <div className="text-xs font-medium text-[#443C3C]">
+              2. Verify Token{" "}
+              <span className="font-normal text-[#9A9590]">— a secret password you choose</span>
+            </div>
+            {config?.instagram_verify_token ? (
+              <>
+                <CopyField value={config.instagram_verify_token} masked />
+                <div className="text-xs text-[#9A9590]">
+                  Use this same value in the Meta Console "Verify Token" field.
+                </div>
+              </>
+            ) : (
+              <InlineTokenSetup
+                channel="instagram"
+                onSave={async (token) => {
+                  await api.updateInstagramSettings({ verify_token: token });
+                  const updated = await api.getChannelConfig();
+                  setConfig(updated);
+                }}
+              />
+            )}
+          </div>
+
+          <div className="text-xs text-[#9A9590] mt-3 bg-[#EEEAE7]/60 rounded px-3 py-2">
+            After you enter both values in Meta Console and click <strong>Verify and Save</strong>,
+            Meta sends a test request to your system — it responds automatically.
+            You'll see a green checkmark if it worked.
           </div>
         </Step>
 
         <Step n={4}>
-          Get a <strong>Page Access Token</strong> via{" "}
-          <ExtLink href="https://developers.facebook.com/tools/explorer">
-            Graph API Explorer
-          </ExtLink>
-          . Select your app and page, then generate the token with{" "}
-          <code className="bg-[#EEEAE7] px-1 rounded text-xs">
-            instagram_basic, instagram_manage_messages, pages_manage_metadata
-          </code>{" "}
-          permissions.
+          <div>Get an <strong>Access Token</strong> to allow the AI to send messages back.</div>
+          <div className="text-xs text-[#9A9590] mt-1 mb-1.5">
+            In your Meta App, go to <strong>Tools → Graph API Explorer</strong>:
+          </div>
+          <ol className="text-sm text-[#443C3C] space-y-1 list-decimal list-inside ml-1">
+            <li>Select your app in the top dropdown</li>
+            <li>Click <strong>Generate Access Token</strong> and choose your Facebook Page</li>
+            <li>
+              Make sure these permissions are checked:{" "}
+              <code className="bg-[#EEEAE7] px-1 rounded text-xs">instagram_manage_messages</code>,{" "}
+              <code className="bg-[#EEEAE7] px-1 rounded text-xs">pages_manage_metadata</code>
+            </li>
+            <li>Copy the token shown — you'll need it in the next step</li>
+          </ol>
+          <div className="text-xs text-[#9A9590] mt-1.5">
+            You also need your <strong>Instagram Account ID</strong> — find it in{" "}
+            <ExtLink href="https://www.facebook.com/business/help">Meta Business Suite</ExtLink>{" "}
+            → Settings → Instagram Accounts.
+          </div>
         </Step>
 
-        <Step n={5}>Enter your credentials below and click Connect.</Step>
+        <Step n={5}>
+          Enter your Account ID and Access Token in the form below, then click{" "}
+          <strong>Connect Instagram</strong>.
+        </Step>
       </div>
 
-      {/* Test link */}
       <div className="flex items-center gap-3 pt-1">
         <a
-          href={`/admin/instagram-test`}
+          href="/admin/instagram-test"
           className="text-xs text-[#9A9590] hover:text-[#251D1C] flex items-center gap-1"
         >
-          <ExternalLink size={11} /> Test Instagram connection
+          <ExternalLink size={11} /> Test Instagram connection after connecting
         </a>
       </div>
     </div>
@@ -778,56 +891,116 @@ export default function AgentChannelsPage() {
     <div className="space-y-4">
       <div className="text-xs text-[#9A9590] bg-[#EEEAE7]/60 rounded p-3 space-y-1">
         <div className="font-semibold text-[#443C3C] mb-1.5">What you'll need</div>
-        <div>• Meta Business Account</div>
-        <div>• WhatsApp Business Account (WABA) with an approved phone number</div>
+        <div>• A <strong>Meta Business Account</strong> (facebook.com/business)</div>
+        <div>• A <strong>WhatsApp Business phone number</strong> approved by Meta</div>
       </div>
+
+      <p className="text-xs text-[#9A9590]">
+        This setup lets the AI assistant receive and reply to WhatsApp messages sent to your business number.
+        The process takes about 15 minutes.
+      </p>
 
       <div className="space-y-3">
         <Step n={1}>
-          Create a{" "}
-          <ExtLink href="https://business.facebook.com">
-            Meta Business Account
-          </ExtLink>{" "}
-          if you don't have one.
+          If you don't have a Meta Business Account yet, create one at{" "}
+          <ExtLink href="https://business.facebook.com">business.facebook.com</ExtLink>.
+          It's free and just requires a Facebook account.
         </Step>
 
         <Step n={2}>
           Go to{" "}
-          <ExtLink href="https://developers.facebook.com/apps">
-            Meta Developers
-          </ExtLink>
-          , create a new app (type <strong>Business</strong>), and add the{" "}
-          <strong>WhatsApp</strong> product. Follow the guided setup to link your WABA
-          and phone number.
+          <ExtLink href="https://developers.facebook.com/apps">Meta Developers</ExtLink>,
+          create a new app (choose type <strong>Business</strong>), and add the{" "}
+          <strong>WhatsApp</strong> product. Follow the on-screen setup — it will guide
+          you through linking your WhatsApp Business number.
         </Step>
 
         <Step n={3}>
-          <div>Configure the webhook in your Meta App → <em>WhatsApp → Configuration → Webhooks</em>:</div>
-          <div className="mt-2 space-y-2">
-            <div>
-              <div className="text-xs text-[#9A9590] mb-0.5">Callback URL</div>
-              <CopyField value={config?.whatsapp_webhook_url ?? ""} />
-            </div>
-            <div>
-              <div className="text-xs text-[#9A9590] mb-0.5">Verify Token</div>
-              <CopyField value={config?.whatsapp_verify_token ?? ""} masked />
-            </div>
+          <div className="font-medium">Connect this system to your WhatsApp.</div>
+          <div className="text-xs text-[#9A9590] mt-0.5 mb-2">
+            In your Meta App, go to <strong>WhatsApp → Configuration → Webhooks</strong> and
+            enter these two values:
           </div>
-          <div className="text-xs text-[#9A9590] mt-2">
-            After clicking <strong>Verify and Save</strong>, subscribe to the{" "}
-            <strong>messages</strong> field.
-            You can change the verify token at any time using the settings panel
-            in the WhatsApp card header (gear icon).
+
+          {/* Callback URL */}
+          <div className="space-y-1 mb-3">
+            <div className="text-xs font-medium text-[#443C3C]">
+              1. Callback URL{" "}
+              <span className="font-normal text-[#9A9590]">— your system's address</span>
+            </div>
+            {config?.whatsapp_webhook_url ? (
+              <CopyField value={config.whatsapp_webhook_url} />
+            ) : (
+              <div className="text-xs bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-1.5">
+                <div className="font-medium text-amber-800">Address not configured yet</div>
+                <div className="text-amber-700">
+                  To get this address, add <code className="bg-amber-100 px-1 rounded">APP_URL</code> to
+                  your Railway project:
+                </div>
+                <ol className="text-amber-700 space-y-0.5 list-decimal list-inside ml-1">
+                  <li>Open <ExtLink href="https://railway.app/dashboard">Railway Dashboard</ExtLink></li>
+                  <li>Select your project → click your service</li>
+                  <li>Go to <strong>Settings → Domains</strong> — copy the URL shown there</li>
+                  <li>Go to <strong>Variables</strong> → Add: <code className="bg-amber-100 px-1 rounded">APP_URL = https://your-url.up.railway.app</code></li>
+                  <li>Save and come back — the address will appear automatically</li>
+                </ol>
+              </div>
+            )}
+          </div>
+
+          {/* Verify Token */}
+          <div className="space-y-1">
+            <div className="text-xs font-medium text-[#443C3C]">
+              2. Verify Token{" "}
+              <span className="font-normal text-[#9A9590]">— a secret password you choose</span>
+            </div>
+            {config?.whatsapp_verify_token ? (
+              <>
+                <CopyField value={config.whatsapp_verify_token} masked />
+                <div className="text-xs text-[#9A9590]">
+                  Copy this value and paste it into the "Verify Token" field in Meta Console.
+                </div>
+              </>
+            ) : (
+              <InlineTokenSetup
+                channel="whatsapp"
+                onSave={async (token) => {
+                  await api.updateWhatsAppSettings({ verify_token: token });
+                  const updated = await api.getChannelConfig();
+                  setConfig(updated);
+                }}
+              />
+            )}
+          </div>
+
+          <div className="text-xs text-[#9A9590] mt-3 bg-[#EEEAE7]/60 rounded px-3 py-2">
+            After entering both values in Meta Console and clicking <strong>Verify and Save</strong>,
+            Meta checks your address automatically — you'll see a success message.
+            Then make sure to subscribe to the <strong>messages</strong> field below the webhook section.
           </div>
         </Step>
 
         <Step n={4}>
-          In your Meta App → <em>WhatsApp → Getting Started</em>, copy the{" "}
-          <strong>Phone Number ID</strong> and the <strong>Temporary Access Token</strong>{" "}
-          (or create a permanent System User token for production).
+          <div>Get the credentials to allow the AI to send messages.</div>
+          <div className="text-xs text-[#9A9590] mt-1 mb-1.5">
+            In your Meta App, go to <strong>WhatsApp → Getting Started</strong>:
+          </div>
+          <ol className="text-sm text-[#443C3C] space-y-1 list-decimal list-inside ml-1">
+            <li>Copy the <strong>Phone Number ID</strong> shown on that page</li>
+            <li>
+              Copy the <strong>Temporary access token</strong> (valid 24 hours).
+              For production use, create a permanent token via{" "}
+              <ExtLink href="https://developers.facebook.com/docs/whatsapp/business-management-api/get-started">
+                System User
+              </ExtLink>
+            </li>
+          </ol>
         </Step>
 
-        <Step n={5}>Enter your Phone Number ID and Access Token below and click Connect.</Step>
+        <Step n={5}>
+          Enter your Phone Number ID and Access Token in the form below, then click{" "}
+          <strong>Connect WhatsApp</strong>.
+        </Step>
       </div>
     </div>
   );
