@@ -3,7 +3,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import type { ChannelBinding, ChannelConfig, ChannelType, CreateChannelBindingRequest } from "@/lib/types/channel";
@@ -250,20 +250,21 @@ function ConnectForm({ agentId, channelType, onSuccess, onCancel }: ConnectFormP
               className={inputClass}
               type="password"
               value={form.access_token}
-              onChange={(e) => set("access_token", e.target.value)}
+              onChange={(e) => {
+                const token = e.target.value;
+                set("access_token", token);
+                // Auto-extract Bot ID from token (format: "123456789:ABC...")
+                const numericPart = token.split(":")[0];
+                if (numericPart && /^\d+$/.test(numericPart)) {
+                  set("channel_account_id", numericPart);
+                }
+              }}
               placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
               required
             />
-          </div>
-          <div>
-            <label className={labelClass}>Bot ID (numeric part before colon) *</label>
-            <input
-              className={inputClass}
-              value={form.channel_account_id}
-              onChange={(e) => set("channel_account_id", e.target.value)}
-              placeholder="123456789"
-              required
-            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              Bot ID is extracted from the token automatically.
+            </p>
           </div>
           <div>
             <label className={labelClass}>Bot Username (optional)</label>
@@ -621,7 +622,6 @@ function ChannelCard({
 
 export default function AgentChannelsPage() {
   const params = useParams();
-  const router = useRouter();
   const agentId = params.agentId as string;
 
   const [bindings, setBindings] = useState<ChannelBinding[]>([]);
@@ -686,7 +686,7 @@ export default function AgentChannelsPage() {
         </Step>
 
         <Step n={3}>
-          <div>Configure the webhook:</div>
+          <div>Configure the webhook in your Meta App:</div>
           <div className="mt-2 space-y-2">
             <div>
               <div className="text-xs text-[#9A9590] mb-0.5">Callback URL</div>
@@ -694,11 +694,22 @@ export default function AgentChannelsPage() {
             </div>
             <div>
               <div className="text-xs text-[#9A9590] mb-0.5">Verify Token</div>
-              <CopyField value={config?.instagram_verify_token ?? ""} masked />
+              {config?.instagram_verify_token ? (
+                <CopyField value={config.instagram_verify_token} masked />
+              ) : (
+                <div className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                  <strong>Not configured.</strong> Add the{" "}
+                  <code className="bg-amber-100 px-1 rounded">INSTAGRAM_WEBHOOK_VERIFY_TOKEN</code>{" "}
+                  environment variable in your Railway project settings with any custom string
+                  you choose (e.g. <code className="bg-amber-100 px-1 rounded">my-secret-token-123</code>).
+                  Then use that same string here and in the Meta Console.
+                </div>
+              )}
             </div>
           </div>
           <div className="text-xs text-[#9A9590] mt-2">
-            Meta will send a GET request to verify the URL — the server responds automatically.
+            After saving the webhook in Meta Console, it will send a verification
+            request — the server responds automatically.
           </div>
         </Step>
 
@@ -747,14 +758,9 @@ export default function AgentChannelsPage() {
         </Step>
 
         <Step n={2}>
-          Enter the bot token below and click Connect. The webhook URL is set
-          automatically — no manual configuration needed.
-          {config?.telegram_webhook_base && (
-            <div className="mt-2">
-              <div className="text-xs text-[#9A9590] mb-0.5">Your webhook base URL</div>
-              <CopyField value={`${config.telegram_webhook_base}/<binding_id>`} />
-            </div>
-          )}
+          Enter the bot token below and click Connect. The webhook URL is registered
+          with Telegram automatically — you do not need to configure anything in
+          the Telegram console.
         </Step>
       </div>
     </div>
@@ -790,10 +796,7 @@ export default function AgentChannelsPage() {
         </Step>
 
         <Step n={3}>
-          <div>
-            First, save your <strong>App Settings</strong> using the gear icon above,
-            then configure the webhook in Meta Console:
-          </div>
+          <div>Configure the webhook in your Meta App → <em>WhatsApp → Configuration → Webhooks</em>:</div>
           <div className="mt-2 space-y-2">
             <div>
               <div className="text-xs text-[#9A9590] mb-0.5">Callback URL</div>
@@ -805,7 +808,10 @@ export default function AgentChannelsPage() {
             </div>
           </div>
           <div className="text-xs text-[#9A9590] mt-2">
-            Subscribe to the <strong>messages</strong> webhook field.
+            After clicking <strong>Verify and Save</strong>, subscribe to the{" "}
+            <strong>messages</strong> field.
+            You can change the verify token at any time using the settings panel
+            in the WhatsApp card header (gear icon).
           </div>
         </Step>
 
