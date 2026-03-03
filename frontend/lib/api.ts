@@ -521,6 +521,27 @@ export const api = {
     );
   },
 
+  // ── Channel config ────────────────────────────────────────────────────────
+
+  async getChannelConfig(): Promise<import("./types/channel").ChannelConfig> {
+    return request<import("./types/channel").ChannelConfig>(
+      "/api/v1/admin/channel-config",
+      {},
+      true
+    );
+  },
+
+  async updateWhatsAppSettings(data: {
+    verify_token?: string;
+    app_secret?: string;
+  }): Promise<{ message: string }> {
+    return request<{ message: string }>(
+      "/api/v1/admin/whatsapp-settings",
+      { method: "PUT", body: JSON.stringify(data) },
+      true
+    );
+  },
+
   // Notification configs endpoints
   async listNotificationConfigs(
     activeOnly: boolean = false

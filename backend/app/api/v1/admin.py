@@ -940,3 +940,56 @@ async def get_stats(
 
     return stats
 
+
+# ── Channel configuration ─────────────────────────────────────────────────────
+
+@router.get("/channel-config")
+async def get_channel_config(_admin: str = require_admin()):
+    """Return webhook URLs and verify tokens for all supported channels (admin only)."""
+    from app.storage.postgres_secrets import get_postgres_secrets_manager
+    import uuid as _uuid
+
+    settings = get_settings()
+    base = settings.app_url.rstrip("/") if settings.app_url else ""
+    mgr = get_postgres_secrets_manager()
+
+    # Auto-generate WhatsApp verify token on first access
+    wa_verify_token = await mgr.get_global_setting("whatsapp_verify_token")
+    if not wa_verify_token:
+        wa_verify_token = f"caworks-wa-{_uuid.uuid4().hex[:12]}"
+        await mgr.set_global_setting("whatsapp_verify_token", wa_verify_token)
+
+    wa_app_secret_set = (await mgr.get_global_setting("whatsapp_app_secret")) is not None
+
+    return {
+        "app_url": base,
+        "instagram_webhook_url": f"{base}/api/v1/instagram/webhook",
+        "instagram_verify_token": settings.instagram_webhook_verify_token or "",
+        "telegram_webhook_base": f"{base}/api/v1/telegram/webhook",
+        "whatsapp_webhook_url": f"{base}/api/v1/whatsapp/webhook",
+        "whatsapp_verify_token": wa_verify_token,
+        "whatsapp_app_secret_configured": wa_app_secret_set,
+    }
+
+
+class WhatsAppSettingsRequest(BaseModel):
+    verify_token: Optional[str] = Field(None, min_length=4, max_length=256)
+    app_secret: Optional[str] = Field(None, max_length=512)
+
+
+@router.put("/whatsapp-settings")
+async def update_whatsapp_settings(
+    body: WhatsAppSettingsRequest,
+    _admin: str = require_admin(),
+):
+    """Save WhatsApp app-level settings (verify token + app secret) to the DB."""
+    from app.storage.postgres_secrets import get_postgres_secrets_manager
+    mgr = get_postgres_secrets_manager()
+
+    if body.verify_token is not None:
+        await mgr.set_global_setting("whatsapp_verify_token", body.verify_token)
+    if body.app_secret is not None:
+        await mgr.set_global_setting("whatsapp_app_secret", body.app_secret)
+
+    return {"message": "WhatsApp settings updated successfully"}
+

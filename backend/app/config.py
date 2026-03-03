@@ -248,6 +248,12 @@ class Settings(BaseSettings):
         default="rag", description="Cloudinary base folder for RAG", alias="CLOUDINARY_FOLDER"
     )
 
+    # App URL (public base URL for webhook configuration)
+    app_url: str = Field(
+        default="",
+        description="Public base URL of the app, e.g. https://your-app.up.railway.app (no trailing slash). Required for webhook URLs.",
+    )
+
     # Instagram
     instagram_webhook_verify_token: Optional[str] = Field(
         default=None, description="Token for Instagram webhook verification"

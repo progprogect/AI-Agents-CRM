@@ -15,6 +15,7 @@ class ChannelType(str, Enum):
     WEB_CHAT = "web_chat"
     INSTAGRAM = "instagram"
     TELEGRAM = "telegram"
+    WHATSAPP = "whatsapp"
 
 
 class ChannelBinding(BaseModel):

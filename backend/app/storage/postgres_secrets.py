@@ -190,6 +190,44 @@ class PostgresSecretsManager:
             await conn.execute("DELETE FROM secrets WHERE key = $1", secret_name)
         self.clear_cache(secret_name)
 
+    # ── Global app settings (stored encrypted, not per-binding) ──────────────
+
+    async def get_global_setting(self, key: str) -> Optional[str]:
+        """Read a global app setting by key. Returns None if not set."""
+        secret_name = f"__app_setting__:{key}"
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT value_encrypted FROM secrets WHERE key = $1", secret_name
+            )
+        if not row:
+            return None
+        try:
+            decrypted = self._get_fernet().decrypt(row["value_encrypted"].encode()).decode()
+            data = json.loads(decrypted)
+            return data.get("value")
+        except (InvalidToken, Exception):
+            return None
+
+    async def set_global_setting(self, key: str, value: str) -> None:
+        """Persist a global app setting, encrypted."""
+        secret_name = f"__app_setting__:{key}"
+        encrypted = self._get_fernet().encrypt(
+            json.dumps({"value": value}).encode()
+        ).decode()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO secrets (key, value_encrypted, created_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (key) DO UPDATE SET value_encrypted = EXCLUDED.value_encrypted
+                """,
+                secret_name,
+                encrypted,
+            )
+        self.clear_cache(secret_name)
+
 
 @lru_cache()
 def get_postgres_secrets_manager() -> PostgresSecretsManager:
