@@ -159,6 +159,17 @@ class AgentService:
                 rag_context=rag_context,
             )
 
+            # Normalize: some LLM backends (e.g. Claude via LangChain) return a list
+            # of content blocks instead of a plain string.
+            if isinstance(response, list):
+                parts = []
+                for item in response:
+                    if isinstance(item, dict):
+                        parts.append(item.get("text", ""))
+                    elif isinstance(item, str):
+                        parts.append(item)
+                response = "".join(parts).strip()
+
             if not response or not response.strip():
                 logger.warning(
                     f"Empty response generated for conversation {conversation_id}",
