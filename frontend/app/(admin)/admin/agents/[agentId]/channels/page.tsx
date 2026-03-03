@@ -638,6 +638,20 @@ export default function AgentChannelsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Derive the public base URL: use config value if available,
+  // otherwise fall back to window.location.origin (works on same-domain Railway deployments)
+  const appBase =
+    config?.app_url ||
+    (typeof window !== "undefined" ? window.location.origin : "");
+
+  // Webhook URLs — always available even if config endpoint fails
+  const igWebhookUrl =
+    config?.instagram_webhook_url ||
+    (appBase ? `${appBase}/api/v1/instagram/webhook` : "");
+  const waWebhookUrl =
+    config?.whatsapp_webhook_url ||
+    (appBase ? `${appBase}/api/v1/whatsapp/webhook` : "");
+
   const load = useCallback(async () => {
     try {
       setError(null);
@@ -768,8 +782,8 @@ export default function AgentChannelsPage() {
               1. Callback URL{" "}
               <span className="font-normal text-[#9A9590]">— your system's address</span>
             </div>
-            {config?.instagram_webhook_url ? (
-              <CopyField value={config.instagram_webhook_url} />
+            {igWebhookUrl ? (
+              <CopyField value={igWebhookUrl} />
             ) : (
               <div className="text-xs bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-1.5">
                 <div className="font-medium text-amber-800">Address not configured yet</div>
@@ -928,8 +942,8 @@ export default function AgentChannelsPage() {
               1. Callback URL{" "}
               <span className="font-normal text-[#9A9590]">— your system's address</span>
             </div>
-            {config?.whatsapp_webhook_url ? (
-              <CopyField value={config.whatsapp_webhook_url} />
+            {waWebhookUrl ? (
+              <CopyField value={waWebhookUrl} />
             ) : (
               <div className="text-xs bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-1.5">
                 <div className="font-medium text-amber-800">Address not configured yet</div>
