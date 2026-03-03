@@ -262,6 +262,14 @@ class Settings(BaseSettings):
         default=None, description="Instagram app secret for webhook signature verification"
     )
 
+    # WhatsApp (fallback env vars — can also be set via UI in Channel Settings)
+    whatsapp_verify_token: Optional[str] = Field(
+        default=None, description="WhatsApp webhook verify token (fallback if not set via UI)"
+    )
+    whatsapp_app_secret: Optional[str] = Field(
+        default=None, description="WhatsApp app secret for webhook signature verification"
+    )
+
 
 @lru_cache()
 def get_settings() -> Settings:

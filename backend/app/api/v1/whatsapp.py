@@ -21,11 +21,29 @@ _WHATSAPP_APP_SECRET_KEY = "whatsapp_app_secret"
 
 
 async def _get_whatsapp_settings() -> dict[str, str | None]:
-    """Read WhatsApp app-level settings from the secrets table."""
-    from app.storage.postgres_secrets import get_postgres_secrets_manager
-    mgr = get_postgres_secrets_manager()
-    verify_token = await mgr.get_global_setting(_WHATSAPP_VERIFY_TOKEN_KEY)
-    app_secret = await mgr.get_global_setting(_WHATSAPP_APP_SECRET_KEY)
+    """Read WhatsApp settings: DB takes priority, env var is the fallback."""
+    from app.config import get_settings
+    settings = get_settings()
+
+    verify_token: str | None = None
+    app_secret: str | None = None
+
+    # Try DB first (UI-configured values)
+    if settings.secret_encryption_key:
+        try:
+            from app.storage.postgres_secrets import get_postgres_secrets_manager
+            mgr = get_postgres_secrets_manager()
+            verify_token = await mgr.get_global_setting(_WHATSAPP_VERIFY_TOKEN_KEY)
+            app_secret = await mgr.get_global_setting(_WHATSAPP_APP_SECRET_KEY)
+        except Exception as exc:
+            logger.warning(f"WhatsApp: could not read DB settings: {exc}")
+
+    # Fall back to env vars (WHATSAPP_VERIFY_TOKEN / WHATSAPP_APP_SECRET)
+    if not verify_token:
+        verify_token = settings.whatsapp_verify_token or None
+    if not app_secret:
+        app_secret = settings.whatsapp_app_secret or None
+
     return {"verify_token": verify_token, "app_secret": app_secret}
 
 
