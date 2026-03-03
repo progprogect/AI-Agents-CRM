@@ -946,28 +946,40 @@ async def get_stats(
 @router.get("/channel-config")
 async def get_channel_config(_admin: str = require_admin()):
     """Return webhook URLs and verify tokens for all supported channels (admin only)."""
-    from app.storage.postgres_secrets import get_postgres_secrets_manager
     import uuid as _uuid
 
     settings = get_settings()
     base = settings.app_url.rstrip("/") if settings.app_url else ""
-    mgr = get_postgres_secrets_manager()
 
-    # Instagram: DB takes priority, fall back to env var for backward compat
-    ig_verify_token = await mgr.get_global_setting("instagram_verify_token")
-    if not ig_verify_token:
-        ig_verify_token = settings.instagram_webhook_verify_token or ""
-    ig_app_secret_set = (
-        (await mgr.get_global_setting("instagram_app_secret")) is not None
-        or bool(settings.instagram_app_secret)
-    )
+    # Attempt to read from encrypted DB store.
+    # If SECRET_ENCRYPTION_KEY is not set, fall back to env vars gracefully.
+    ig_verify_token = settings.instagram_webhook_verify_token or ""
+    ig_app_secret_set = bool(settings.instagram_app_secret)
+    wa_verify_token = ""
+    wa_app_secret_set = False
 
-    # WhatsApp: auto-generate verify token on first access
-    wa_verify_token = await mgr.get_global_setting("whatsapp_verify_token")
-    if not wa_verify_token:
-        wa_verify_token = f"caworks-wa-{_uuid.uuid4().hex[:12]}"
-        await mgr.set_global_setting("whatsapp_verify_token", wa_verify_token)
-    wa_app_secret_set = (await mgr.get_global_setting("whatsapp_app_secret")) is not None
+    if settings.secret_encryption_key:
+        try:
+            from app.storage.postgres_secrets import get_postgres_secrets_manager
+            mgr = get_postgres_secrets_manager()
+
+            # Instagram: DB takes priority, fall back to env var
+            db_ig_token = await mgr.get_global_setting("instagram_verify_token")
+            if db_ig_token:
+                ig_verify_token = db_ig_token
+            ig_app_secret_set = (
+                (await mgr.get_global_setting("instagram_app_secret")) is not None
+                or bool(settings.instagram_app_secret)
+            )
+
+            # WhatsApp: auto-generate verify token on first access
+            wa_verify_token = await mgr.get_global_setting("whatsapp_verify_token") or ""
+            if not wa_verify_token:
+                wa_verify_token = f"caworks-wa-{_uuid.uuid4().hex[:12]}"
+                await mgr.set_global_setting("whatsapp_verify_token", wa_verify_token)
+            wa_app_secret_set = (await mgr.get_global_setting("whatsapp_app_secret")) is not None
+        except Exception as e:
+            logger.warning(f"channel-config: could not read DB settings: {e}")
 
     return {
         "app_url": base,

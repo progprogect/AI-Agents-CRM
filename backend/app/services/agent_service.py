@@ -170,6 +170,15 @@ class AgentService:
                         parts.append(item)
                 response = "".join(parts).strip()
 
+            # Strip internal Claude safety/processing markers that leak into output
+            import re as _re
+            response = _re.sub(
+                r"^\[(?:SAFETY_HANDLER|THINKING|INTERNAL|SYSTEM|TOOL_USE)\][^\n]*\n?",
+                "",
+                response,
+                flags=_re.IGNORECASE,
+            ).strip()
+
             if not response or not response.strip():
                 logger.warning(
                     f"Empty response generated for conversation {conversation_id}",
