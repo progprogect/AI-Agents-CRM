@@ -340,15 +340,24 @@ function ConnectForm({ agentId, channelType, onSuccess, onCancel }: ConnectFormP
   );
 }
 
-// ── WhatsApp app settings form ────────────────────────────────────────────────
+// ── Channel app settings form (Instagram / WhatsApp) ─────────────────────────
 
-interface WASettingsFormProps {
-  config: ChannelConfig;
-  onSaved: (config: ChannelConfig) => void;
+interface ChannelSettingsFormProps {
+  title: string;
+  currentVerifyToken: string;
+  appSecretConfigured: boolean;
+  verifyTokenHint?: string;
+  onSave: (data: { verify_token?: string; app_secret?: string }) => Promise<void>;
 }
 
-function WASettingsForm({ config, onSaved }: WASettingsFormProps) {
-  const [verifyToken, setVerifyToken] = useState(config.whatsapp_verify_token);
+function ChannelSettingsForm({
+  title,
+  currentVerifyToken,
+  appSecretConfigured,
+  verifyTokenHint,
+  onSave,
+}: ChannelSettingsFormProps) {
+  const [verifyToken, setVerifyToken] = useState(currentVerifyToken);
   const [appSecret, setAppSecret] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -362,9 +371,7 @@ function WASettingsForm({ config, onSaved }: WASettingsFormProps) {
       const payload: { verify_token?: string; app_secret?: string } = {};
       if (verifyToken.trim()) payload.verify_token = verifyToken.trim();
       if (appSecret.trim()) payload.app_secret = appSecret.trim();
-      await api.updateWhatsAppSettings(payload);
-      const updated = await api.getChannelConfig();
-      onSaved(updated);
+      await onSave(payload);
       setSaved(true);
       setAppSecret("");
       setTimeout(() => setSaved(false), 3000);
@@ -382,7 +389,7 @@ function WASettingsForm({ config, onSaved }: WASettingsFormProps) {
   return (
     <form onSubmit={handleSave} className="p-4 bg-[#FAFAFA] border border-[#BEBAB7] rounded-md space-y-3">
       <div className="text-xs font-semibold text-[#443C3C] flex items-center gap-1.5">
-        <Settings size={12} /> WhatsApp App Settings
+        <Settings size={12} /> {title} App Settings
       </div>
       {err && (
         <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{err}</div>
@@ -393,23 +400,27 @@ function WASettingsForm({ config, onSaved }: WASettingsFormProps) {
           className={inputClass}
           value={verifyToken}
           onChange={(e) => setVerifyToken(e.target.value)}
-          placeholder="Auto-generated if left empty"
+          placeholder={verifyTokenHint ?? "Enter a custom string of your choice"}
         />
         <p className="text-xs text-[#9A9590] mt-1">
-          Paste this in the Meta Console when configuring the webhook.
+          Paste this exact value in the Meta Console when configuring the webhook.
         </p>
       </div>
       <div>
-        <label className={labelClass}>App Secret (optional)</label>
+        <label className={labelClass}>App Secret <span className="font-normal text-[#9A9590]">(optional)</span></label>
         <input
           className={inputClass}
           type="password"
           value={appSecret}
           onChange={(e) => setAppSecret(e.target.value)}
-          placeholder={config.whatsapp_app_secret_configured ? "Already set — enter new value to update" : "From Meta App → Settings → Basic"}
+          placeholder={
+            appSecretConfigured
+              ? "Already set — enter a new value to update"
+              : "From Meta App → Settings → Basic"
+          }
         />
         <p className="text-xs text-[#9A9590] mt-1">
-          Used to verify the signature of incoming webhook requests. Recommended for production.
+          Enables signature verification of incoming webhook requests. Recommended for production.
         </p>
       </div>
       <button
@@ -484,8 +495,7 @@ interface ChannelCardProps {
   channelType: ChannelType;
   onBindingsChange: () => void;
   guide: React.ReactNode;
-  showWASettings?: boolean;
-  onConfigSaved?: (c: ChannelConfig) => void;
+  settingsForm?: React.ReactNode;
 }
 
 function ChannelCard({
@@ -497,11 +507,10 @@ function ChannelCard({
   channelType,
   onBindingsChange,
   guide,
-  showWASettings,
-  onConfigSaved,
+  settingsForm,
 }: ChannelCardProps) {
   const [formOpen, setFormOpen] = useState(false);
-  const [waSettingsOpen, setWaSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(bindings.length === 0);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -546,11 +555,11 @@ function ChannelCard({
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge binding={activeBinding} />
-          {showWASettings && config && (
+          {settingsForm && (
             <button
-              onClick={() => setWaSettingsOpen((o) => !o)}
-              className="text-[#9A9590] hover:text-[#443C3C] p-1"
-              title="WhatsApp App Settings"
+              onClick={() => setSettingsOpen((o) => !o)}
+              className={`p-1 transition-colors ${settingsOpen ? "text-[#251D1C]" : "text-[#9A9590] hover:text-[#443C3C]"}`}
+              title="App Settings"
             >
               <Settings size={16} />
             </button>
@@ -558,10 +567,10 @@ function ChannelCard({
         </div>
       </div>
 
-      {/* WhatsApp app settings panel */}
-      {showWASettings && waSettingsOpen && config && onConfigSaved && (
+      {/* App settings panel */}
+      {settingsForm && settingsOpen && (
         <div className="px-5 py-4 border-b border-[#BEBAB7] bg-[#FAFAFA]">
-          <WASettingsForm config={config} onSaved={onConfigSaved} />
+          {settingsForm}
         </div>
       )}
 
@@ -697,12 +706,9 @@ export default function AgentChannelsPage() {
               {config?.instagram_verify_token ? (
                 <CopyField value={config.instagram_verify_token} masked />
               ) : (
-                <div className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                  <strong>Not configured.</strong> Add the{" "}
-                  <code className="bg-amber-100 px-1 rounded">INSTAGRAM_WEBHOOK_VERIFY_TOKEN</code>{" "}
-                  environment variable in your Railway project settings with any custom string
-                  you choose (e.g. <code className="bg-amber-100 px-1 rounded">my-secret-token-123</code>).
-                  Then use that same string here and in the Meta Console.
+                <div className="mt-1 text-xs text-[#9A9590] bg-[#EEEAE7] rounded px-3 py-2">
+                  No verify token set yet. Click the <Settings size={11} className="inline mx-0.5" /> settings icon
+                  in the card header to configure it.
                 </div>
               )}
             </div>
@@ -858,6 +864,21 @@ export default function AgentChannelsPage() {
           channelType="instagram"
           onBindingsChange={load}
           guide={instagramGuide}
+          settingsForm={
+            config ? (
+              <ChannelSettingsForm
+                title="Instagram"
+                currentVerifyToken={config.instagram_verify_token}
+                appSecretConfigured={config.instagram_app_secret_configured}
+                verifyTokenHint="e.g. my-instagram-token-2024"
+                onSave={async (data) => {
+                  await api.updateInstagramSettings(data);
+                  const updated = await api.getChannelConfig();
+                  setConfig(updated);
+                }}
+              />
+            ) : undefined
+          }
         />
 
         <ChannelCard
@@ -880,8 +901,21 @@ export default function AgentChannelsPage() {
           channelType="whatsapp"
           onBindingsChange={load}
           guide={whatsappGuide}
-          showWASettings
-          onConfigSaved={(c) => setConfig(c)}
+          settingsForm={
+            config ? (
+              <ChannelSettingsForm
+                title="WhatsApp"
+                currentVerifyToken={config.whatsapp_verify_token}
+                appSecretConfigured={config.whatsapp_app_secret_configured}
+                verifyTokenHint="Auto-generated — you can change it"
+                onSave={async (data) => {
+                  await api.updateWhatsAppSettings(data);
+                  const updated = await api.getChannelConfig();
+                  setConfig(updated);
+                }}
+              />
+            ) : undefined
+          }
         />
       </div>
     </div>

@@ -6,6 +6,7 @@ export interface ChannelConfig {
   app_url: string;
   instagram_webhook_url: string;
   instagram_verify_token: string;
+  instagram_app_secret_configured: boolean;
   telegram_webhook_base: string;
   whatsapp_webhook_url: string;
   whatsapp_verify_token: string;

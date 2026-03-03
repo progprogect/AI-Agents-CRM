@@ -531,6 +531,17 @@ export const api = {
     );
   },
 
+  async updateInstagramSettings(data: {
+    verify_token?: string;
+    app_secret?: string;
+  }): Promise<{ message: string }> {
+    return request<{ message: string }>(
+      "/api/v1/admin/instagram-settings",
+      { method: "PUT", body: JSON.stringify(data) },
+      true
+    );
+  },
+
   async updateWhatsAppSettings(data: {
     verify_token?: string;
     app_secret?: string;

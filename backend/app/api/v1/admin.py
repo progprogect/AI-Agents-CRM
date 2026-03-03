@@ -953,18 +953,27 @@ async def get_channel_config(_admin: str = require_admin()):
     base = settings.app_url.rstrip("/") if settings.app_url else ""
     mgr = get_postgres_secrets_manager()
 
-    # Auto-generate WhatsApp verify token on first access
+    # Instagram: DB takes priority, fall back to env var for backward compat
+    ig_verify_token = await mgr.get_global_setting("instagram_verify_token")
+    if not ig_verify_token:
+        ig_verify_token = settings.instagram_webhook_verify_token or ""
+    ig_app_secret_set = (
+        (await mgr.get_global_setting("instagram_app_secret")) is not None
+        or bool(settings.instagram_app_secret)
+    )
+
+    # WhatsApp: auto-generate verify token on first access
     wa_verify_token = await mgr.get_global_setting("whatsapp_verify_token")
     if not wa_verify_token:
         wa_verify_token = f"caworks-wa-{_uuid.uuid4().hex[:12]}"
         await mgr.set_global_setting("whatsapp_verify_token", wa_verify_token)
-
     wa_app_secret_set = (await mgr.get_global_setting("whatsapp_app_secret")) is not None
 
     return {
         "app_url": base,
         "instagram_webhook_url": f"{base}/api/v1/instagram/webhook",
-        "instagram_verify_token": settings.instagram_webhook_verify_token or "",
+        "instagram_verify_token": ig_verify_token,
+        "instagram_app_secret_configured": ig_app_secret_set,
         "telegram_webhook_base": f"{base}/api/v1/telegram/webhook",
         "whatsapp_webhook_url": f"{base}/api/v1/whatsapp/webhook",
         "whatsapp_verify_token": wa_verify_token,
@@ -972,14 +981,31 @@ async def get_channel_config(_admin: str = require_admin()):
     }
 
 
-class WhatsAppSettingsRequest(BaseModel):
+class ChannelSettingsRequest(BaseModel):
     verify_token: Optional[str] = Field(None, min_length=4, max_length=256)
     app_secret: Optional[str] = Field(None, max_length=512)
 
 
+@router.put("/instagram-settings")
+async def update_instagram_settings(
+    body: ChannelSettingsRequest,
+    _admin: str = require_admin(),
+):
+    """Save Instagram app-level settings (verify token + app secret) to the DB."""
+    from app.storage.postgres_secrets import get_postgres_secrets_manager
+    mgr = get_postgres_secrets_manager()
+
+    if body.verify_token is not None:
+        await mgr.set_global_setting("instagram_verify_token", body.verify_token)
+    if body.app_secret is not None:
+        await mgr.set_global_setting("instagram_app_secret", body.app_secret)
+
+    return {"message": "Instagram settings updated successfully"}
+
+
 @router.put("/whatsapp-settings")
 async def update_whatsapp_settings(
-    body: WhatsAppSettingsRequest,
+    body: ChannelSettingsRequest,
     _admin: str = require_admin(),
 ):
     """Save WhatsApp app-level settings (verify token + app secret) to the DB."""

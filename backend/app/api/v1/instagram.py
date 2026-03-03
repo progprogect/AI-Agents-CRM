@@ -26,39 +26,65 @@ def get_instagram_service(
     return InstagramService(binding_service, deps.dynamodb, settings)
 
 
+async def _get_instagram_verify_token() -> str:
+    """Read Instagram verify token: DB takes priority over env var."""
+    from app.storage.postgres_secrets import get_postgres_secrets_manager
+    mgr = get_postgres_secrets_manager()
+    db_token = await mgr.get_global_setting("instagram_verify_token")
+    if db_token:
+        return db_token
+    settings = get_settings()
+    return settings.instagram_webhook_verify_token or ""
+
+
+async def _get_instagram_app_secret() -> str:
+    """Read Instagram app secret: DB takes priority over env var."""
+    from app.storage.postgres_secrets import get_postgres_secrets_manager
+    mgr = get_postgres_secrets_manager()
+    db_secret = await mgr.get_global_setting("instagram_app_secret")
+    if db_secret:
+        return db_secret
+    settings = get_settings()
+    return settings.instagram_app_secret or ""
+
+
 @router.get("/instagram/webhook")
 async def verify_webhook(
     mode: str = Query(..., alias="hub.mode", description="Webhook verification mode"),
     token: str = Query(..., alias="hub.verify_token", description="Verification token"),
     challenge: str = Query(..., alias="hub.challenge", description="Challenge string"),
-    instagram_service: InstagramService = Depends(get_instagram_service),
 ):
     """
     Verify Instagram webhook (GET request for webhook setup).
-    
+
     Meta/Facebook sends GET request with:
     - hub.mode=subscribe
     - hub.verify_token=<your_token>
     - hub.challenge=<random_string>
-    
+
     Server MUST return HTTP 200 with challenge string as plain text response body.
     Instagram requires EXACT challenge string, nothing else.
     """
-    logger.info(f"Webhook verification request: mode={mode}, token={'*' * len(token) if token else None}, challenge={challenge}")
-    
-    result = instagram_service.verify_webhook(mode=mode, token=token, challenge=challenge)
-    if result is None:
-        logger.warning(f"Webhook verification failed: mode={mode}, token mismatch")
+    logger.info(f"Webhook verification request: mode={mode}, challenge={challenge}")
+
+    verify_token = await _get_instagram_verify_token()
+    if not verify_token:
+        logger.warning("Instagram verify token not configured")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Webhook verification failed",
+            detail="Instagram not configured. Set verify token in Channel Settings.",
         )
-    
-    logger.info(f"Webhook verification successful, returning challenge: {challenge}")
-    # CRITICAL: Instagram requires EXACT challenge string as plain text
-    # Must return HTTP 200 with challenge string ONLY (no JSON, no extra content)
-    from fastapi.responses import PlainTextResponse
-    return PlainTextResponse(content=challenge, status_code=200)
+
+    if mode == "subscribe" and token == verify_token:
+        logger.info("Instagram webhook verified successfully")
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(content=challenge, status_code=200)
+
+    logger.warning(f"Instagram webhook verification failed: mode={mode}, token mismatch")
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Webhook verification failed",
+    )
 
 
 @router.post("/instagram/webhook")
@@ -70,13 +96,12 @@ async def handle_webhook(
     ),
 ):
     """Handle Instagram webhook events (POST request for incoming messages)."""
-    settings = get_settings()
-
     # Get request body
     body = await request.body()
 
-    # Verify webhook signature if app secret is configured
-    if settings.instagram_app_secret and x_hub_signature_256:
+    # Verify webhook signature if app secret is configured (DB takes priority over env var)
+    app_secret = await _get_instagram_app_secret()
+    if app_secret and x_hub_signature_256:
         if not instagram_service.verify_webhook_signature(body, x_hub_signature_256):
             logger.warning("Instagram webhook signature verification failed")
             raise HTTPException(
