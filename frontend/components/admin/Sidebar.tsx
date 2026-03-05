@@ -10,7 +10,7 @@ import { useAdminWebSocket } from "@/lib/hooks/useAdminWebSocket";
 import { api } from "@/lib/api";
 import { isSuperAdmin } from "@/lib/auth";
 
-import { Bot, MessageSquare, Bell, ClipboardList, BarChart3, FlaskConical, Users, Kanban } from "lucide-react";
+import { Bot, MessageSquare, Bell, ClipboardList, BarChart3, FlaskConical, Users, Kanban, MessageCircle } from "lucide-react";
 
 const baseNavigation = [
   { name: "Agents", href: "/admin/agents", icon: <Bot size={20} /> },
@@ -20,6 +20,7 @@ const baseNavigation = [
   { name: "Audit", href: "/admin/audit", icon: <ClipboardList size={20} /> },
   { name: "Statistics", href: "/admin/stats", icon: <BarChart3 size={20} /> },
   { name: "Instagram Test", href: "/admin/instagram-test", icon: <FlaskConical size={20} /> },
+  { name: "WhatsApp Test", href: "/admin/whatsapp-test", icon: <MessageCircle size={20} /> },
 ];
 
 export const Sidebar: React.FC = () => {

@@ -117,6 +117,30 @@ async def handle_webhook(
         extra={"payload_keys": list(payload.keys())},
     )
 
+    # Store event for the test/debug page
+    try:
+        from app.services.webhook_event_store import add_webhook_event
+        # Extract useful info for the test UI
+        extracted: dict[str, Any] = {"channel": "whatsapp"}
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                if change.get("field") == "messages":
+                    value = change.get("value", {})
+                    meta = value.get("metadata", {})
+                    if meta.get("phone_number_id"):
+                        extracted["phone_number_id"] = meta["phone_number_id"]
+                        extracted["display_phone"] = meta.get("display_phone_number", "")
+                    for msg in value.get("messages", []):
+                        extracted["sender_phone"] = msg.get("from", "")
+                        extracted["message_text"] = msg.get("text", {}).get("body", "")
+                        extracted["message_type"] = msg.get("type", "")
+                    for status_item in value.get("statuses", []):
+                        extracted["status_update"] = status_item.get("status", "")
+                        extracted["status_recipient"] = status_item.get("recipient_id", "")
+        add_webhook_event("whatsapp_webhook", payload)
+    except Exception as store_exc:
+        logger.debug(f"WhatsApp: could not store event: {store_exc}")
+
     # Route each entry to the matching channel binding
     secrets_manager = get_secrets_manager()
     binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
