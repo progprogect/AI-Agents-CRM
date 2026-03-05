@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from app.dependencies import CommonDependencies
 from app.services.twilio_service import TwilioWhatsAppService
-from app.services.webhook_event_store import webhook_event_store
+from app.services.webhook_event_store import add_webhook_event
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +33,7 @@ async def twilio_whatsapp_webhook(
     form_data = dict(await request.form())
 
     # Store raw event for debugging (mirrors whatsapp.py behaviour)
-    await webhook_event_store.store(
-        channel="twilio_whatsapp",
-        event_type="incoming_message",
-        payload=form_data,
-    )
+    add_webhook_event("twilio_whatsapp", form_data)
 
     secrets_manager = get_secrets_manager()
     binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
