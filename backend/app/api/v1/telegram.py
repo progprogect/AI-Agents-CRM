@@ -57,12 +57,10 @@ async def handle_webhook(
             detail="Invalid JSON payload",
         )
 
-    # Log webhook event for debugging
-    logger.info("=" * 80)
-    logger.info("📨 TELEGRAM WEBHOOK EVENT RECEIVED")
-    logger.info("=" * 80)
-    logger.info(f"Binding ID: {binding_id}")
-    logger.info(f"Full payload: {json.dumps(payload, indent=2, ensure_ascii=False)}")
+    logger.info(
+        "Telegram webhook event received",
+        extra={"binding_id": binding_id, "payload_keys": list(payload.keys())},
+    )
 
     # Store event for testing/debugging (optional)
     try:
@@ -121,12 +119,12 @@ async def set_webhook(
             detail=f"Binding {binding_id} is not a Telegram binding",
         )
 
-    # Construct webhook URL
+    # Construct webhook URL from configured app_url
     from app.config import get_settings
 
     settings = get_settings()
-    # Use the domain from CORS origins or construct from request
-    webhook_url = f"https://agents.elemental.ae/api/v1/telegram/webhook/{binding_id}"
+    base_url = settings.app_url.rstrip("/") if settings.app_url else "https://agents.elemental.ae"
+    webhook_url = f"{base_url}/api/v1/telegram/webhook/{binding_id}"
 
     # Set webhook via Telegram API
     success = await telegram_service.set_webhook(binding_id, webhook_url)
@@ -201,10 +199,13 @@ async def get_webhook_status(
 
             if result.get("ok"):
                 webhook_info = result.get("result", {})
+                from app.config import get_settings as _get_settings
+                _s = _get_settings()
+                _base = _s.app_url.rstrip("/") if _s.app_url else "https://agents.elemental.ae"
                 return {
                     "status": "ok",
                     "webhook_info": webhook_info,
-                    "expected_url": f"https://agents.elemental.ae/api/v1/telegram/webhook/{binding_id}",
+                    "expected_url": f"{_base}/api/v1/telegram/webhook/{binding_id}",
                 }
             else:
                 raise HTTPException(
