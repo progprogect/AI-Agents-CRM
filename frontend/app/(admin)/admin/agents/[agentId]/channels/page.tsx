@@ -130,6 +130,173 @@ function ExtLink({ href, children }: { href: string; children: React.ReactNode }
   );
 }
 
+// ── WhatsApp provider-specific form fields ────────────────────────────────────
+
+type WaProvider = "meta" | "twilio";
+
+function WhatsAppFormFields({
+  form,
+  set,
+  setMeta,
+  firstInput,
+  inputClass,
+  labelClass,
+}: {
+  form: CreateChannelBindingRequest;
+  set: (field: string, value: string) => void;
+  setMeta: (key: string, value: string) => void;
+  firstInput: React.RefObject<HTMLInputElement>;
+  inputClass: string;
+  labelClass: string;
+}) {
+  const provider: WaProvider = (form.metadata?.provider as WaProvider) || "meta";
+
+  const handleProviderChange = (p: WaProvider) => {
+    set("channel_account_id", "");
+    set("access_token", "");
+    set("channel_username", "");
+    setMeta("provider", p);
+    setMeta("account_sid", "");
+  };
+
+  return (
+    <>
+      {/* Provider selector */}
+      <div>
+        <label className={labelClass}>Provider</label>
+        <div className="flex gap-2 mt-1">
+          {(["meta", "twilio"] as WaProvider[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => handleProviderChange(p)}
+              className={`flex-1 py-1.5 text-xs font-medium rounded border transition-colors ${
+                provider === p
+                  ? "bg-[#251D1C] text-white border-[#251D1C]"
+                  : "bg-white text-[#443C3C] border-[#BEBAB7] hover:border-[#251D1C]"
+              }`}
+            >
+              {p === "meta" ? "Meta (Direct)" : "Twilio"}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-[#9A9590] mt-1">
+          {provider === "meta"
+            ? "Connect directly via Meta WhatsApp Cloud API — requires a Meta Business Account."
+            : "Connect via Twilio — simpler setup, no Meta Developer account required for sandbox testing."}
+        </p>
+      </div>
+
+      {provider === "meta" && (
+        <>
+          <div>
+            <label className={labelClass}>Phone Number ID *</label>
+            <input
+              ref={firstInput}
+              className={inputClass}
+              value={form.channel_account_id}
+              onChange={(e) => set("channel_account_id", e.target.value)}
+              placeholder="123456789012345"
+              required
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              From Meta App → WhatsApp → Getting Started
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>System User Access Token *</label>
+            <input
+              className={inputClass}
+              type="password"
+              value={form.access_token}
+              onChange={(e) => set("access_token", e.target.value)}
+              placeholder="EAAx..."
+              required
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              Use a permanent System User token from Meta Business Manager for production.
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Display Name (optional)</label>
+            <input
+              className={inputClass}
+              value={form.channel_username ?? ""}
+              onChange={(e) => set("channel_username", e.target.value)}
+              placeholder="+1 555 000 0000"
+            />
+          </div>
+        </>
+      )}
+
+      {provider === "twilio" && (
+        <>
+          <div>
+            <label className={labelClass}>WhatsApp From Number *</label>
+            <input
+              ref={firstInput}
+              className={inputClass}
+              value={form.channel_account_id}
+              onChange={(e) => set("channel_account_id", e.target.value)}
+              placeholder="+14155238886"
+              required
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              Your Twilio WhatsApp-enabled number in E.164 format.
+              For sandbox: <code className="bg-[#EEEAE7] px-1 rounded">+14155238886</code>
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Account SID *</label>
+            <input
+              className={inputClass}
+              value={(form.metadata?.account_sid as string) ?? ""}
+              onChange={(e) => setMeta("account_sid", e.target.value)}
+              placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              required
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              From{" "}
+              <a
+                href="https://console.twilio.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                Twilio Console
+              </a>{" "}
+              → main dashboard
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Auth Token *</label>
+            <input
+              className={inputClass}
+              type="password"
+              value={form.access_token}
+              onChange={(e) => set("access_token", e.target.value)}
+              placeholder="••••••••••••••••••••••••••••••••"
+              required
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              From Twilio Console → main dashboard (below Account SID)
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Display Name (optional)</label>
+            <input
+              className={inputClass}
+              value={form.channel_username ?? ""}
+              onChange={(e) => set("channel_username", e.target.value)}
+              placeholder="My Business"
+            />
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 // ── Inline connection form ────────────────────────────────────────────────────
 
 interface ConnectFormProps {
@@ -166,8 +333,10 @@ function ConnectForm({ agentId, channelType, onSuccess, onCancel }: ConnectFormP
     setSubmitting(true);
     try {
       const binding = await api.createChannelBinding(agentId, form);
-      // Auto-verify Telegram (sets webhook automatically)
-      if (channelType === "telegram" && binding.binding_id) {
+      // Auto-verify Telegram (sets webhook automatically) and Twilio (validates credentials)
+      const isTwilio =
+        channelType === "whatsapp" && form.metadata?.provider === "twilio";
+      if ((channelType === "telegram" || isTwilio) && binding.binding_id) {
         await api.verifyChannelBinding(binding.binding_id).catch(() => {});
       }
       onSuccess(binding);
@@ -282,42 +451,14 @@ function ConnectForm({ agentId, channelType, onSuccess, onCancel }: ConnectFormP
       )}
 
       {channelType === "whatsapp" && (
-        <>
-          <div>
-            <label className={labelClass}>Phone Number ID *</label>
-            <input
-              ref={firstInput}
-              className={inputClass}
-              value={form.channel_account_id}
-              onChange={(e) => set("channel_account_id", e.target.value)}
-              placeholder="123456789012345"
-              required
-            />
-            <p className="text-xs text-[#9A9590] mt-1">
-              From Meta App → WhatsApp → Getting Started
-            </p>
-          </div>
-          <div>
-            <label className={labelClass}>Access Token *</label>
-            <input
-              className={inputClass}
-              type="password"
-              value={form.access_token}
-              onChange={(e) => set("access_token", e.target.value)}
-              placeholder="EAAx..."
-              required
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Display Name (optional)</label>
-            <input
-              className={inputClass}
-              value={form.channel_username ?? ""}
-              onChange={(e) => set("channel_username", e.target.value)}
-              placeholder="+1 555 000 0000"
-            />
-          </div>
-        </>
+        <WhatsAppFormFields
+          form={form}
+          set={set}
+          setMeta={setMeta}
+          firstInput={firstInput}
+          inputClass={inputClass}
+          labelClass={labelClass}
+        />
       )}
 
       <div className="flex gap-2 pt-1">
@@ -450,8 +591,13 @@ function BindingRow({
   return (
     <div className="flex items-center gap-3 p-3 bg-white border border-[#BEBAB7] rounded-md text-sm">
       <div className="flex-1 min-w-0">
-        <div className="font-medium text-[#251D1C] truncate">
+        <div className="font-medium text-[#251D1C] truncate flex items-center gap-2">
           {binding.channel_username || binding.channel_account_id}
+          {binding.channel_type === "whatsapp" && binding.metadata?.provider === "twilio" && (
+            <span className="text-[10px] font-medium bg-[#EEEAE7] text-[#443C3C] px-1.5 py-0.5 rounded">
+              Twilio
+            </span>
+          )}
         </div>
         <div className="text-xs text-[#9A9590]">ID: {binding.channel_account_id}</div>
       </div>
@@ -627,6 +773,245 @@ function ChannelCard({
   );
 }
 
+// ── Inline token setup ────────────────────────────────────────────────────────
+
+function InlineTokenSetup({
+  channel,
+  onSave,
+}: {
+  channel: "instagram" | "whatsapp";
+  onSave: (token: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    try {
+      await onSave(trimmed);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 p-3 bg-[#EEEAE7]/50 border border-[#BEBAB7] rounded-md space-y-2">
+      <p className="text-xs text-[#443C3C]">
+        Create a <strong>Verify Token</strong> — choose any password-like phrase
+        (you'll paste it in Meta Console in the next step):
+      </p>
+      <div className="flex gap-2">
+        <input
+          className="flex-1 text-sm px-2.5 py-1.5 border border-[#BEBAB7] rounded outline-none focus:border-[#251D1C] bg-white"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={`e.g. my-${channel}-secret-2024`}
+          onKeyDown={(e) => e.key === "Enter" && handleSave()}
+        />
+        <button
+          onClick={handleSave}
+          disabled={!value.trim() || saving}
+          className="px-3 py-1.5 text-sm font-medium text-white bg-[#251D1C] rounded hover:bg-[#443C3C] disabled:opacity-50 transition-colors"
+        >
+          {saving ? "Saving..." : saved ? "Saved ✓" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── WhatsApp guide (Meta + Twilio tabs) ──────────────────────────────────────
+
+function WhatsAppGuide({
+  waWebhookUrl,
+  twilioWebhookUrl,
+  config,
+  setConfig,
+}: {
+  waWebhookUrl: string;
+  twilioWebhookUrl: string;
+  config: ChannelConfig | null;
+  setConfig: (c: ChannelConfig) => void;
+}) {
+  const [tab, setTab] = useState<"meta" | "twilio">("meta");
+
+  const tabClass = (active: boolean) =>
+    `px-4 py-1.5 text-xs font-medium rounded-t border-b-2 transition-colors ${
+      active
+        ? "border-[#251D1C] text-[#251D1C]"
+        : "border-transparent text-[#9A9590] hover:text-[#443C3C]"
+    }`;
+
+  return (
+    <div className="space-y-4">
+      {/* Tab switcher */}
+      <div className="flex gap-1 border-b border-[#BEBAB7]">
+        <button className={tabClass(tab === "meta")} onClick={() => setTab("meta")}>
+          Meta (Direct)
+        </button>
+        <button className={tabClass(tab === "twilio")} onClick={() => setTab("twilio")}>
+          Via Twilio
+        </button>
+      </div>
+
+      {/* ── Meta guide ── */}
+      {tab === "meta" && (
+        <div className="space-y-4">
+          <div className="text-xs text-[#9A9590] bg-[#EEEAE7]/60 rounded p-3 space-y-1">
+            <div className="font-semibold text-[#443C3C] mb-1.5">What you'll need</div>
+            <div>• A <strong>Meta Business Account</strong> (business.facebook.com)</div>
+            <div>• A <strong>WhatsApp Business phone number</strong> approved by Meta</div>
+          </div>
+
+          <p className="text-xs text-[#9A9590]">
+            Direct integration via Meta WhatsApp Cloud API. No third-party service — messages go straight from Meta to your AI.
+          </p>
+
+          <div className="space-y-3">
+            <Step n={1}>
+              If you don't have a Meta Business Account yet, create one at{" "}
+              <ExtLink href="https://business.facebook.com">business.facebook.com</ExtLink>.
+            </Step>
+
+            <Step n={2}>
+              Go to{" "}
+              <ExtLink href="https://developers.facebook.com/apps">Meta Developers</ExtLink>,
+              create a new app (type: <strong>Business</strong>), and add the{" "}
+              <strong>WhatsApp</strong> product.
+            </Step>
+
+            <Step n={3}>
+              <div className="font-medium">Configure the webhook.</div>
+              <div className="text-xs text-[#9A9590] mt-0.5 mb-2">
+                Go to <strong>WhatsApp → Configuration → Webhooks</strong> and enter:
+              </div>
+
+              <div className="space-y-1 mb-3">
+                <div className="text-xs font-medium text-[#443C3C]">1. Callback URL</div>
+                {waWebhookUrl ? (
+                  <CopyField value={waWebhookUrl} />
+                ) : (
+                  <div className="text-xs bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    <div className="font-medium text-amber-800">APP_URL not configured</div>
+                    <div className="text-amber-700 mt-1">
+                      Add <code className="bg-amber-100 px-1 rounded">APP_URL</code> to your Railway Variables and reload.
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-[#443C3C]">2. Verify Token</div>
+                {config?.whatsapp_verify_token ? (
+                  <>
+                    <CopyField value={config.whatsapp_verify_token} masked />
+                    <div className="text-xs text-[#9A9590]">Paste this into the Verify Token field in Meta Console.</div>
+                  </>
+                ) : (
+                  <InlineTokenSetup
+                    channel="whatsapp"
+                    onSave={async (token) => {
+                      await api.updateWhatsAppSettings({ verify_token: token });
+                      const updated = await api.getChannelConfig();
+                      setConfig(updated);
+                    }}
+                  />
+                )}
+              </div>
+
+              <div className="text-xs text-[#9A9590] mt-3 bg-[#EEEAE7]/60 rounded px-3 py-2">
+                After saving in Meta Console, subscribe to the <strong>messages</strong> field in the webhook section.
+              </div>
+            </Step>
+
+            <Step n={4}>
+              In your Meta App go to <strong>WhatsApp → Getting Started</strong>:
+              <ol className="text-sm text-[#443C3C] space-y-1 list-decimal list-inside ml-1 mt-1.5">
+                <li>Copy the <strong>Phone Number ID</strong></li>
+                <li>
+                  For production create a permanent <strong>System User Access Token</strong> via{" "}
+                  <ExtLink href="https://business.facebook.com/settings/system-users">
+                    Meta Business Manager → System Users
+                  </ExtLink>
+                  {" "}with scopes <code className="bg-[#EEEAE7] px-1 rounded text-xs">whatsapp_business_messaging</code> and <code className="bg-[#EEEAE7] px-1 rounded text-xs">whatsapp_business_management</code>.
+                </li>
+              </ol>
+            </Step>
+
+            <Step n={5}>
+              Select <strong>Meta (Direct)</strong> in the form below, enter Phone Number ID and Access Token, then click <strong>Connect</strong>.
+            </Step>
+          </div>
+        </div>
+      )}
+
+      {/* ── Twilio guide ── */}
+      {tab === "twilio" && (
+        <div className="space-y-4">
+          <div className="text-xs text-[#9A9590] bg-[#EEEAE7]/60 rounded p-3 space-y-1">
+            <div className="font-semibold text-[#443C3C] mb-1.5">What you'll need</div>
+            <div>• A <ExtLink href="https://twilio.com">Twilio account</ExtLink> (free tier works for sandbox)</div>
+          </div>
+
+          <p className="text-xs text-[#9A9590]">
+            Twilio acts as a bridge to WhatsApp. Easier to set up for testing — no Meta Business verification needed for the sandbox.
+          </p>
+
+          <div className="space-y-3">
+            <Step n={1}>
+              Sign up or log in at{" "}
+              <ExtLink href="https://console.twilio.com">console.twilio.com</ExtLink>.
+              On the dashboard you'll see your <strong>Account SID</strong> and <strong>Auth Token</strong> — copy both.
+            </Step>
+
+            <Step n={2}>
+              <div className="font-medium">For testing (Sandbox):</div>
+              <ol className="text-sm text-[#443C3C] space-y-1 list-decimal list-inside ml-1 mt-1">
+                <li>Go to <strong>Messaging → Try it out → Send a WhatsApp message</strong></li>
+                <li>Follow the instructions to join the sandbox from your phone</li>
+                <li>Under <strong>Sandbox settings</strong>, paste the webhook URL below into the "When a message comes in" field</li>
+              </ol>
+              <div className="mt-2">
+                <div className="text-xs font-medium text-[#443C3C] mb-1">Twilio Webhook URL</div>
+                {twilioWebhookUrl ? (
+                  <CopyField value={twilioWebhookUrl} />
+                ) : (
+                  <div className="text-xs bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    <span className="font-medium text-amber-800">APP_URL not configured</span>
+                    <span className="text-amber-700"> — add it to Railway Variables and reload.</span>
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-[#9A9590] mt-1.5">
+                Sandbox From number: <code className="bg-[#EEEAE7] px-1 rounded">+14155238886</code>
+              </div>
+            </Step>
+
+            <Step n={3}>
+              <div className="font-medium">For production:</div>
+              <ol className="text-sm text-[#443C3C] space-y-1 list-decimal list-inside ml-1 mt-1">
+                <li>Go to <strong>Messaging → Senders → WhatsApp Senders</strong></li>
+                <li>Add and verify your business phone number</li>
+                <li>On the sender page set the webhook URL to the address shown above</li>
+              </ol>
+            </Step>
+
+            <Step n={4}>
+              Select <strong>Twilio</strong> in the form below, enter Account SID, Auth Token, and the WhatsApp From Number, then click <strong>Connect</strong>.
+              The credentials are verified automatically.
+            </Step>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function AgentChannelsPage() {
@@ -679,58 +1064,6 @@ export default function AgentChannelsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <LoadingSpinner size="lg" />
-      </div>
-    );
-  }
-
-  // ── Inline token setup (used in guides when verify token is not yet set) ─────
-
-  function InlineTokenSetup({
-    channel,
-    onSave,
-  }: {
-    channel: "instagram" | "whatsapp";
-    onSave: (token: string) => Promise<void>;
-  }) {
-    const [value, setValue] = useState("");
-    const [saving, setSaving] = useState(false);
-    const [saved, setSaved] = useState(false);
-
-    const handleSave = async () => {
-      const trimmed = value.trim();
-      if (!trimmed) return;
-      setSaving(true);
-      try {
-        await onSave(trimmed);
-        setSaved(true);
-        setTimeout(() => setSaved(false), 3000);
-      } finally {
-        setSaving(false);
-      }
-    };
-
-    return (
-      <div className="mt-2 p-3 bg-[#EEEAE7]/50 border border-[#BEBAB7] rounded-md space-y-2">
-        <p className="text-xs text-[#443C3C]">
-          Create a <strong>Verify Token</strong> — choose any password-like phrase
-          (you'll paste it in Meta Console in the next step):
-        </p>
-        <div className="flex gap-2">
-          <input
-            className="flex-1 text-sm px-2.5 py-1.5 border border-[#BEBAB7] rounded outline-none focus:border-[#251D1C] bg-white"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={`e.g. my-${channel}-secret-2024`}
-            onKeyDown={(e) => e.key === "Enter" && handleSave()}
-          />
-          <button
-            onClick={handleSave}
-            disabled={!value.trim() || saving}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-[#251D1C] rounded hover:bg-[#443C3C] disabled:opacity-50 transition-colors"
-          >
-            {saving ? "Saving..." : saved ? "Saved ✓" : "Save"}
-          </button>
-        </div>
       </div>
     );
   }
@@ -901,122 +1234,15 @@ export default function AgentChannelsPage() {
 
   // ── WhatsApp guide ───────────────────────────────────────────────────────────
 
+  const twilioWebhookUrl = appBase ? `${appBase}/api/v1/twilio/whatsapp/webhook` : "";
+
   const whatsappGuide = (
-    <div className="space-y-4">
-      <div className="text-xs text-[#9A9590] bg-[#EEEAE7]/60 rounded p-3 space-y-1">
-        <div className="font-semibold text-[#443C3C] mb-1.5">What you'll need</div>
-        <div>• A <strong>Meta Business Account</strong> (facebook.com/business)</div>
-        <div>• A <strong>WhatsApp Business phone number</strong> approved by Meta</div>
-      </div>
-
-      <p className="text-xs text-[#9A9590]">
-        This setup lets the AI assistant receive and reply to WhatsApp messages sent to your business number.
-        The process takes about 15 minutes.
-      </p>
-
-      <div className="space-y-3">
-        <Step n={1}>
-          If you don't have a Meta Business Account yet, create one at{" "}
-          <ExtLink href="https://business.facebook.com">business.facebook.com</ExtLink>.
-          It's free and just requires a Facebook account.
-        </Step>
-
-        <Step n={2}>
-          Go to{" "}
-          <ExtLink href="https://developers.facebook.com/apps">Meta Developers</ExtLink>,
-          create a new app (choose type <strong>Business</strong>), and add the{" "}
-          <strong>WhatsApp</strong> product. Follow the on-screen setup — it will guide
-          you through linking your WhatsApp Business number.
-        </Step>
-
-        <Step n={3}>
-          <div className="font-medium">Connect this system to your WhatsApp.</div>
-          <div className="text-xs text-[#9A9590] mt-0.5 mb-2">
-            In your Meta App, go to <strong>WhatsApp → Configuration → Webhooks</strong> and
-            enter these two values:
-          </div>
-
-          {/* Callback URL */}
-          <div className="space-y-1 mb-3">
-            <div className="text-xs font-medium text-[#443C3C]">
-              1. Callback URL{" "}
-              <span className="font-normal text-[#9A9590]">— your system's address</span>
-            </div>
-            {waWebhookUrl ? (
-              <CopyField value={waWebhookUrl} />
-            ) : (
-              <div className="text-xs bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-1.5">
-                <div className="font-medium text-amber-800">Address not configured yet</div>
-                <div className="text-amber-700">
-                  To get this address, add <code className="bg-amber-100 px-1 rounded">APP_URL</code> to
-                  your Railway project:
-                </div>
-                <ol className="text-amber-700 space-y-0.5 list-decimal list-inside ml-1">
-                  <li>Open <ExtLink href="https://railway.app/dashboard">Railway Dashboard</ExtLink></li>
-                  <li>Select your project → click your service</li>
-                  <li>Go to <strong>Settings → Domains</strong> — copy the URL shown there</li>
-                  <li>Go to <strong>Variables</strong> → Add: <code className="bg-amber-100 px-1 rounded">APP_URL = https://your-url.up.railway.app</code></li>
-                  <li>Save and come back — the address will appear automatically</li>
-                </ol>
-              </div>
-            )}
-          </div>
-
-          {/* Verify Token */}
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-[#443C3C]">
-              2. Verify Token{" "}
-              <span className="font-normal text-[#9A9590]">— a secret password you choose</span>
-            </div>
-            {config?.whatsapp_verify_token ? (
-              <>
-                <CopyField value={config.whatsapp_verify_token} masked />
-                <div className="text-xs text-[#9A9590]">
-                  Copy this value and paste it into the "Verify Token" field in Meta Console.
-                </div>
-              </>
-            ) : (
-              <InlineTokenSetup
-                channel="whatsapp"
-                onSave={async (token) => {
-                  await api.updateWhatsAppSettings({ verify_token: token });
-                  const updated = await api.getChannelConfig();
-                  setConfig(updated);
-                }}
-              />
-            )}
-          </div>
-
-          <div className="text-xs text-[#9A9590] mt-3 bg-[#EEEAE7]/60 rounded px-3 py-2">
-            After entering both values in Meta Console and clicking <strong>Verify and Save</strong>,
-            Meta checks your address automatically — you'll see a success message.
-            Then make sure to subscribe to the <strong>messages</strong> field below the webhook section.
-          </div>
-        </Step>
-
-        <Step n={4}>
-          <div>Get the credentials to allow the AI to send messages.</div>
-          <div className="text-xs text-[#9A9590] mt-1 mb-1.5">
-            In your Meta App, go to <strong>WhatsApp → Getting Started</strong>:
-          </div>
-          <ol className="text-sm text-[#443C3C] space-y-1 list-decimal list-inside ml-1">
-            <li>Copy the <strong>Phone Number ID</strong> shown on that page</li>
-            <li>
-              Copy the <strong>Temporary access token</strong> (valid 24 hours).
-              For production use, create a permanent token via{" "}
-              <ExtLink href="https://developers.facebook.com/docs/whatsapp/business-management-api/get-started">
-                System User
-              </ExtLink>
-            </li>
-          </ol>
-        </Step>
-
-        <Step n={5}>
-          Enter your Phone Number ID and Access Token in the form below, then click{" "}
-          <strong>Connect WhatsApp</strong>.
-        </Step>
-      </div>
-    </div>
+    <WhatsAppGuide
+      waWebhookUrl={waWebhookUrl}
+      twilioWebhookUrl={twilioWebhookUrl}
+      config={config}
+      setConfig={setConfig}
+    />
   );
 
   return (

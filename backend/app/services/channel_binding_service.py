@@ -252,6 +252,31 @@ class ChannelBindingService:
                 await self.update_binding(binding_id, is_verified=False)
                 return False
 
+        # For WhatsApp: distinguish provider
+        elif binding.channel_type == ChannelType.WHATSAPP:
+            provider = (binding.metadata or {}).get("provider", "meta")
+            if provider == "twilio":
+                try:
+                    from app.services.twilio_service import TwilioWhatsAppService
+
+                    # channel_account_id = from_number; account_sid is in metadata
+                    account_sid = (binding.metadata or {}).get("account_sid", "")
+                    if not account_sid:
+                        logger.error(f"Twilio binding {binding_id} missing metadata.account_sid")
+                        return False
+                    auth_token = await self.get_access_token(binding_id)
+                    twilio_service = TwilioWhatsAppService(self.dynamodb)
+                    is_valid = await twilio_service.verify_credentials(account_sid, auth_token)
+                    await self.update_binding(binding_id, is_verified=is_valid)
+                    return is_valid
+                except Exception as e:
+                    logger.error(f"Failed to verify Twilio binding {binding_id}: {e}")
+                    await self.update_binding(binding_id, is_verified=False)
+                    return False
+            # Meta WhatsApp: no simple verification API without sending a message,
+            # mark as verified if token exists and binding is active
+            return binding.is_active
+
         # For other channels, return True if binding exists and is active
         return binding.is_active
 

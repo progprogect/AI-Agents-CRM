@@ -109,7 +109,7 @@ class WhatsAppService:
             conversation = Conversation(
                 conversation_id=conversation_id,
                 agent_id=binding.agent_id,
-                channel=MessageChannel.WEB_CHAT,  # placeholder — will be whatsapp once enum updated
+                channel=MessageChannel.WHATSAPP,
                 external_conversation_id=sender_phone,
                 external_user_id=sender_phone,
                 status=ConversationStatus.AI_ACTIVE,
@@ -126,7 +126,7 @@ class WhatsAppService:
             agent_id=binding.agent_id,
             role=MessageRole.USER,
             content=text_body,
-            channel=MessageChannel.WEB_CHAT,
+            channel=MessageChannel.WHATSAPP,
             external_message_id=wa_message_id,
             external_user_id=sender_phone,
             timestamp=utc_now(),
@@ -172,7 +172,7 @@ class WhatsAppService:
             ):
                 conversation_history = conversation_history[:-1]
 
-            wa_sender = WhatsAppSender(self, self.dynamodb)
+            wa_sender = WhatsAppSender(self, self.dynamodb, twilio_service=None)
             agent_service = create_agent_service(agent_config, self.dynamodb, wa_sender)
             await agent_service.process_message(
                 user_message=text_body,

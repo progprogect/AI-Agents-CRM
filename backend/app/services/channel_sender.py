@@ -10,6 +10,7 @@ from app.storage.dynamodb import DynamoDBClient
 if TYPE_CHECKING:
     from app.services.instagram_service import InstagramService
     from app.services.telegram_service import TelegramService
+    from app.services.twilio_service import TwilioWhatsAppService
     from app.services.whatsapp_service import WhatsAppService
 
 logger = logging.getLogger(__name__)
@@ -188,14 +189,16 @@ class TelegramSender(ChannelSender):
 
 
 class WhatsAppSender(ChannelSender):
-    """Sender for WhatsApp Cloud API channel."""
+    """Sender for WhatsApp channel — supports both Meta Cloud API and Twilio providers."""
 
     def __init__(
         self,
-        whatsapp_service: "WhatsAppService",
+        whatsapp_service: Optional["WhatsAppService"],
         dynamodb: DynamoDBClient,
+        twilio_service: Optional["TwilioWhatsAppService"] = None,
     ):
         self.whatsapp_service = whatsapp_service
+        self.twilio_service = twilio_service
         self.dynamodb = dynamodb
 
     async def send_message(
@@ -206,7 +209,7 @@ class WhatsAppSender(ChannelSender):
         external_user_id: Optional[str] = None,
         **kwargs,
     ) -> None:
-        """Send message via WhatsApp Cloud API."""
+        """Send message via the appropriate WhatsApp provider (Meta or Twilio)."""
         from app.services.channel_binding_service import ChannelBindingService
         from app.storage.resolver import get_secrets_manager
 
@@ -239,12 +242,46 @@ class WhatsAppSender(ChannelSender):
             raise ValueError(f"WhatsApp binding {binding_id} not found")
 
         access_token = await binding_service.get_access_token(binding_id)
-        await self.whatsapp_service.send_message(
-            phone_number_id=binding.channel_account_id,
-            access_token=access_token,
-            to=external_user_id,
-            text=message_text,
-        )
+        provider = (binding.metadata or {}).get("provider", "meta")
+
+        if provider == "twilio":
+            from app.services.twilio_service import TwilioWhatsAppService
+
+            twilio_svc = self.twilio_service or TwilioWhatsAppService(self.dynamodb)
+            # For Twilio bindings:
+            #   channel_account_id = from_number (WhatsApp-enabled Twilio number)
+            #   metadata.account_sid = Twilio Account SID
+            from_number = binding.channel_account_id
+            account_sid = (binding.metadata or {}).get("account_sid", "")
+            if not account_sid:
+                raise ValueError(
+                    f"Twilio binding {binding_id} is missing metadata.account_sid"
+                )
+            await twilio_svc.send_message(
+                account_sid=account_sid,
+                auth_token=access_token,
+                from_number=from_number,
+                to=external_user_id,
+                text=message_text,
+            )
+        else:
+            # Default: Meta Cloud API
+            if not self.whatsapp_service:
+                from app.services.whatsapp_service import WhatsAppService
+                from app.services.channel_binding_service import ChannelBindingService
+                from app.config import get_settings
+                from app.storage.resolver import get_secrets_manager as _gsm
+
+                _sm = _gsm()
+                _bs = ChannelBindingService(self.dynamodb, _sm)
+                self.whatsapp_service = WhatsAppService(_bs, self.dynamodb, get_settings())
+
+            await self.whatsapp_service.send_message(
+                phone_number_id=binding.channel_account_id,
+                access_token=access_token,
+                to=external_user_id,
+                text=message_text,
+            )
 
 
 def get_channel_sender(
@@ -252,6 +289,8 @@ def get_channel_sender(
     dynamodb: DynamoDBClient,
     instagram_service: Optional["InstagramService"] = None,
     telegram_service: Optional["TelegramService"] = None,
+    whatsapp_service: Optional["WhatsAppService"] = None,
+    twilio_service: Optional["TwilioWhatsAppService"] = None,
 ) -> ChannelSender:
     """Get appropriate channel sender for the given channel."""
     if channel == MessageChannel.WEB_CHAT:
@@ -264,6 +303,8 @@ def get_channel_sender(
         if not telegram_service:
             raise ValueError("TelegramService is required for Telegram channel")
         return TelegramSender(telegram_service, dynamodb)
+    elif channel == MessageChannel.WHATSAPP:
+        return WhatsAppSender(whatsapp_service, dynamodb, twilio_service=twilio_service)
     else:
         raise ValueError(f"Unsupported channel: {channel}")
 
