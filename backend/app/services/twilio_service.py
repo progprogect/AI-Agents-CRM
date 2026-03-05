@@ -6,7 +6,6 @@ import hmac
 import logging
 import uuid
 from typing import Any, Optional
-from urllib.parse import urlencode
 
 import httpx
 
@@ -23,10 +22,10 @@ class TwilioWhatsAppService:
     """Service for Twilio WhatsApp messaging integration.
 
     Credentials stored in ChannelBinding:
-      channel_account_id  → Twilio Account SID
+      channel_account_id  → WhatsApp-enabled Twilio number, e.g. "+14155238886"
       access_token        → Twilio Auth Token (via SecretsManager)
       metadata.provider   → "twilio"
-      metadata.from_number → WhatsApp-enabled Twilio number, e.g. "+14155238886"
+      metadata.account_sid → Twilio Account SID (ACxxx...)
     """
 
     def __init__(self, dynamodb: Any) -> None:
@@ -246,7 +245,7 @@ class TwilioWhatsAppService:
 
     # ── Credentials verification ──────────────────────────────────────────────
 
-    async def verify_credentials(self, account_sid: str, auth_token: str) -> bool:  # noqa: E501
+    async def verify_credentials(self, account_sid: str, auth_token: str) -> bool:
         """Verify Twilio Account SID + Auth Token by calling the Accounts API."""
         url = f"{TWILIO_API_BASE}/Accounts/{account_sid}.json"
         async with httpx.AsyncClient(timeout=15.0) as client:

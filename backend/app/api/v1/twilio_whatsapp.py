@@ -27,6 +27,9 @@ async def twilio_whatsapp_webhook(
     We return an empty TwiML response — the AI reply is sent via the REST API,
     not via TwiML, to keep the architecture consistent with the Meta flow.
     """
+    from app.services.channel_binding_service import ChannelBindingService
+    from app.storage.resolver import get_secrets_manager
+
     form_data = dict(await request.form())
 
     # Store raw event for debugging (mirrors whatsapp.py behaviour)
@@ -36,30 +39,25 @@ async def twilio_whatsapp_webhook(
         payload=form_data,
     )
 
-    # Optional signature validation
+    secrets_manager = get_secrets_manager()
+    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+    twilio_service = TwilioWhatsAppService(deps.dynamodb)
+
+    # Optional signature validation.
     # We validate only when we can resolve the binding's auth token, which requires
     # knowing the To number first — extracted from form_data.
     twilio_signature = request.headers.get("X-Twilio-Signature", "")
-    raw_to = form_data.get("To", "")
-    to_number = raw_to.replace("whatsapp:", "")
+    to_number = form_data.get("To", "").replace("whatsapp:", "")
 
     if twilio_signature and to_number:
         try:
-            from app.services.channel_binding_service import ChannelBindingService
-            from app.storage.resolver import get_secrets_manager
-
-            secrets_manager = get_secrets_manager()
-            binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
-
-            twilio_svc = TwilioWhatsAppService(deps.dynamodb)
-            binding = await twilio_svc._find_binding_by_to_number(
+            binding = await twilio_service._find_binding_by_to_number(
                 binding_service, to_number
             )
             if binding:
                 auth_token = await binding_service.get_access_token(binding.binding_id)
-                url = str(request.url)
-                valid = twilio_svc.validate_signature(
-                    auth_token, url, dict(form_data), twilio_signature
+                valid = twilio_service.validate_signature(
+                    auth_token, str(request.url), form_data, twilio_signature
                 )
                 if not valid:
                     logger.warning(
@@ -72,18 +70,10 @@ async def twilio_whatsapp_webhook(
 
     # Process message
     try:
-        from app.services.channel_binding_service import ChannelBindingService
-        from app.storage.resolver import get_secrets_manager
-
-        secrets_manager = get_secrets_manager()
-        binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
-
-        twilio_service = TwilioWhatsAppService(deps.dynamodb)
         await twilio_service.handle_webhook(form_data, binding_service)
     except Exception as exc:
         logger.error(f"Twilio webhook processing error: {exc}", exc_info=True)
         # Still return 200 so Twilio doesn't retry indefinitely
-        return Response(content="", media_type="text/xml", status_code=200)
 
-    # Empty TwiML — we send the reply via REST API asynchronously
+    # Empty TwiML — the AI reply is sent via REST API asynchronously
     return Response(content="<?xml version='1.0' encoding='UTF-8'?><Response/>", media_type="text/xml")
