@@ -145,7 +145,7 @@ function WhatsAppFormFields({
   form: CreateChannelBindingRequest;
   set: (field: string, value: string) => void;
   setMeta: (key: string, value: string) => void;
-  firstInput: React.RefObject<HTMLInputElement>;
+  firstInput: React.RefObject<HTMLInputElement | null>;
   inputClass: string;
   labelClass: string;
 }) {
