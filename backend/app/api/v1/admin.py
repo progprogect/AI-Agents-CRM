@@ -107,7 +107,6 @@ async def get_conversation(
         raise ConversationNotFoundError(conversation_id)
     
     # If this is an Instagram conversation, try to fetch profile data
-    from app.utils.enum_helpers import get_enum_value
     conversation_channel = get_enum_value(conversation.channel)
     if conversation_channel == MessageChannel.INSTAGRAM.value and conversation.external_user_id:
         profile = await deps.dynamodb.get_instagram_profile(conversation.external_user_id)
@@ -374,21 +373,7 @@ async def send_admin_message(
             timestamp=utc_now(),
         )
 
-        logger.info(f"Creating admin message: conversation_id={conversation_id}, message_id={message_id}, content_len={len(request.content)}")
         await deps.dynamodb.create_message(admin_message)
-        logger.info(f"Admin message created successfully: message_id={message_id}")
-        
-        # Verify message was saved by reading it back
-        verify_msg = await deps.dynamodb.get_message(conversation_id, message_id)
-        if verify_msg:
-            logger.info(f"Message verification: message_id={message_id}, found=True, role={get_enum_value(verify_msg.role)}")
-        else:
-            logger.error(f"Message verification FAILED: message_id={message_id}, found=False")
-        
-        # Check messages list immediately after save
-        msgs_after_save = await deps.dynamodb.list_messages(conversation_id, limit=100, reverse=False)
-        contains_new = message_id in [m.message_id for m in msgs_after_save]
-        logger.info(f"Messages list after save: conversation_id={conversation_id}, count={len(msgs_after_save)}, contains_new={contains_new}, message_ids={[m.message_id for m in msgs_after_save[:5]]}")
 
         # Determine channel and send message accordingly
         conversation_channel = get_enum_value(conversation.channel)
@@ -769,7 +754,6 @@ async def get_stats(
     all_conversations = await deps.dynamodb.list_conversations(limit=1000)
     
     # Filter conversations by date range (handle both datetime and string formats)
-    from datetime import timezone as tz
     period_conversations = []
     for c in all_conversations:
         if not c.created_at:

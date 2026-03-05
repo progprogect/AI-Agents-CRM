@@ -1,6 +1,8 @@
 """Agent service - LangChain orchestrator."""
 
 import logging
+import re
+import uuid
 from functools import lru_cache
 from typing import Optional
 
@@ -15,7 +17,7 @@ from app.services.llm_factory import LLMFactory, get_llm_factory
 from app.services.moderation_service import ModerationService, get_moderation_service
 from app.services.rag_service import RAGService, get_rag_service
 from app.storage.dynamodb import DynamoDBClient
-from app.utils.datetime_utils import to_utc_iso_string
+from app.utils.datetime_utils import to_utc_iso_string, utc_now
 from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
@@ -171,12 +173,11 @@ class AgentService:
                 response = "".join(parts).strip()
 
             # Strip internal Claude safety/processing markers that leak into output
-            import re as _re
-            response = _re.sub(
+            response = re.sub(
                 r"^\[(?:SAFETY_HANDLER|THINKING|INTERNAL|SYSTEM|TOOL_USE)\][^\n]*\n?",
                 "",
                 response,
-                flags=_re.IGNORECASE,
+                flags=re.IGNORECASE,
             ).strip()
 
             if not response or not response.strip():
@@ -239,10 +240,6 @@ class AgentService:
                 }
 
         # Save agent message to database first
-        import uuid
-
-        from app.utils.datetime_utils import utc_now
-
         conversation = await self.dynamodb.get_conversation(conversation_id)
         agent_message_id = None
         if conversation:

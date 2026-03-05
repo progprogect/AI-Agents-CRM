@@ -1,9 +1,6 @@
 """Chat API endpoints."""
 
 import uuid
-from datetime import datetime
-from typing import Optional
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -11,7 +8,6 @@ from pydantic import BaseModel, Field
 from app.api.exceptions import AgentNotFoundError, ConversationNotFoundError
 from app.api.schemas import (
     AgentIDValidator,
-    ConversationIDValidator,
     MessageContentValidator,
 )
 from app.dependencies import CommonDependencies
@@ -26,7 +22,7 @@ from app.services.telegram_service import TelegramService
 from app.config import get_settings
 from app.storage.resolver import get_secrets_manager
 from app.utils.enum_helpers import get_enum_value
-from app.utils.datetime_utils import utc_now
+from app.utils.datetime_utils import utc_now, to_utc_iso_string
 
 router = APIRouter()
 
@@ -264,7 +260,8 @@ async def send_message(
     # Use the message_id from result if available, otherwise create new one
     agent_response = result.get("response", "I apologize, but I couldn't generate a response.")
     agent_message_id = result.get("agent_message_id")
-    
+    agent_message_timestamp = utc_now()
+
     # If message wasn't created in agent_service (shouldn't happen, but handle gracefully)
     if not agent_message_id:
         agent_message_id = str(uuid.uuid4())
@@ -276,10 +273,11 @@ async def send_message(
             content=agent_response,
             channel=conversation.channel,
             external_user_id=conversation.external_user_id,
-            timestamp=utc_now(),
+            timestamp=agent_message_timestamp,
             metadata={"rag_context_used": result.get("rag_context_used", False)},
         )
         await deps.dynamodb.create_message(agent_message)
+        agent_message_timestamp = agent_message.timestamp
 
     # Update conversation status if needed
     # Handle both enum and string status (from DynamoDB)
@@ -290,13 +288,11 @@ async def send_message(
             status=ConversationStatus.AI_ACTIVE,
         )
 
-    # Handle both enum and string role (from DynamoDB)
-    role_value = get_enum_value(agent_message.role)
     return SendMessageResponse(
         message_id=agent_message_id,
-        role=role_value,
-        content=agent_message.content,
-        timestamp=to_utc_iso_string(agent_message.timestamp),
+        role=get_enum_value(MessageRole.AGENT),
+        content=agent_response,
+        timestamp=to_utc_iso_string(agent_message_timestamp),
     )
 
 
@@ -321,35 +317,6 @@ async def get_messages(
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
-    # #region agent log
-    try:
-        import json
-        import os
-        log_path = '/Users/mikitavalkunovich/Desktop/Doctor Agent/doctor-agent/.cursor/debug.log'
-        if os.path.exists(os.path.dirname(log_path)) or os.path.exists('/Users/mikitavalkunovich'):
-            with open(log_path, 'a') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A,C","location":"chat.py:314","message":"Before list_messages","data":{"conversation_id":conversation_id,"limit":limit},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-    except Exception:
-        pass
-    # #endregion
     messages = await deps.dynamodb.list_messages(conversation_id, limit=limit, reverse=False)
-    # #region agent log
-    try:
-        import json
-        import os
-        from app.utils.enum_helpers import get_enum_value
-        log_path = '/Users/mikitavalkunovich/Desktop/Doctor Agent/doctor-agent/.cursor/debug.log'
-        if os.path.exists(os.path.dirname(log_path)) or os.path.exists('/Users/mikitavalkunovich'):
-            roles_list = []
-            for m in messages[:5]:
-                try:
-                    roles_list.append(get_enum_value(m.role))
-                except:
-                    roles_list.append(str(m.role) if hasattr(m, 'role') else 'unknown')
-            with open(log_path, 'a') as f:
-                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A,C","location":"chat.py:317","message":"After list_messages","data":{"conversation_id":conversation_id,"count":len(messages),"message_ids":[m.message_id for m in messages[:5]],"roles":roles_list},"timestamp":int(__import__('time').time()*1000)}) + '\n')
-    except Exception:
-        pass
-    # #endregion
     return messages
 
