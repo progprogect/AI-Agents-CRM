@@ -3,7 +3,6 @@
 import logging
 import re
 import uuid
-from functools import lru_cache
 from typing import Optional
 
 from app.api.exceptions import MessageProcessingError

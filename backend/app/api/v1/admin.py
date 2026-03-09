@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 
 from app.api.auth import require_admin
 from app.api.exceptions import ConversationNotFoundError
-from app.api.schemas import ConversationIDValidator
 from app.api.websocket import connection_manager
 from app.config import get_settings
 from app.dependencies import CommonDependencies
