@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
@@ -56,7 +56,7 @@ export default function ConversationDetailPage() {
   const [isUpdatingMarketingStatus, setIsUpdatingMarketingStatus] = useState(false);
   const [pendingMedia, setPendingMedia] = useState<{ url: string; type: string; name: string } | null>(null);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isLoading = conversationLoading || messagesLoading;
   const isRefreshing = conversationRefreshing || messagesRefreshing;

@@ -382,8 +382,3 @@ class TelegramService:
             logger.error(f"Error setting Telegram webhook: {e}", exc_info=True)
             return False
 
-    async def get_message_sender_from_api(
-        self, account_id: str, message_id: str
-    ) -> Optional[str]:
-        """Placeholder for Instagram compatibility (not used in Telegram)."""
-        return None
