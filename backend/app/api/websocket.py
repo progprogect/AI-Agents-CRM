@@ -9,7 +9,6 @@ from typing import Dict, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
-from app.api.exceptions import ConversationNotFoundError
 from app.dependencies import CommonDependencies
 from app.models.agent_config import AgentConfig
 from app.models.conversation import ConversationStatus
