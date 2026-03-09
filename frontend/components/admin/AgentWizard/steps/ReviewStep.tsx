@@ -3,6 +3,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/shared/Button";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { YAMLEditor } from "@/components/shared/YAMLEditor";
@@ -48,6 +49,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
   onBack,
   hasDraft = false,
 }) => {
+  const t = useTranslations("Wizard");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editMode, setEditMode] = useState<"form" | "yaml" | "prompt">("form");
@@ -128,13 +130,13 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     }
 
     if (!agentId) {
-      setError("Agent ID is required. Please fill in the company name.");
+      setError(t("agentIdRequired"));
       return;
     }
 
     if (editMode === "yaml") {
       if (!editedConfig || jsonError) {
-        setError(`Invalid JSON configuration. Please fix the errors before ${isEditMode ? "updating" : "creating"} the agent.`);
+        setError(isEditMode ? t("invalidJsonUpdate") : t("invalidJsonCreate"));
         return;
       }
     }
@@ -185,12 +187,12 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             } else {
               if (err instanceof ApiError) {
                 if (isConflictError && attempts >= maxAttempts - 1) {
-                  setError(`Agent ID "${finalAgentId}" already exists. Please edit the Agent ID manually in the JSON Editor.`);
+                  setError(t("agentExists", { id: finalAgentId }));
                 } else {
                   setError(err.message);
                 }
               } else {
-                setError("Failed to create agent. Please try again.");
+                setError(t("createFailed"));
               }
               return;
             }
@@ -208,7 +210,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError(`Failed to ${isEditMode ? "update" : "create"} agent. Please try again.`);
+        setError(isEditMode ? t("updateFailed") : t("createFailed"));
       }
     } finally {
       setIsSubmitting(false);
@@ -223,7 +225,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       setError(null);
     } catch {
       setEditedConfig(null);
-      setJsonError("Invalid JSON syntax");
+      setJsonError(t("invalidJsonSyntax"));
     }
   };
 
@@ -249,57 +251,55 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          {isEditMode ? "Review and Update Configuration" : "Review Configuration"}
+          {isEditMode ? t("reviewUpdateTitle") : t("reviewTitle")}
         </h3>
         <p className="text-sm text-gray-600 mb-6">
-          {isEditMode
-            ? "Review your agent configuration before updating."
-            : "Review your agent configuration before creating."}
+          {isEditMode ? t("reviewUpdateDesc") : t("reviewDesc")}
         </p>
       </div>
 
       {/* Summary */}
       <div className="bg-gray-50 rounded-sm border border-gray-200 p-6">
-        <h4 className="text-md font-medium text-gray-900 mb-4">Summary</h4>
+        <h4 className="text-md font-medium text-gray-900 mb-4">{t("summary")}</h4>
         <div className="space-y-2 text-sm">
           <div className="flex justify-between gap-4">
-            <span className="text-gray-600 shrink-0">Agent ID:</span>
+            <span className="text-gray-600 shrink-0">{t("agentId")}:</span>
             <span className="font-medium text-gray-900 text-right break-all">
-              {config.agent_id || "Not set"}
+              {config.agent_id || t("notSet")}
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-gray-600 shrink-0">Company:</span>
+            <span className="text-gray-600 shrink-0">{t("company")}:</span>
             <span className="font-medium text-gray-900 text-right">
-              {config.company_display_name || "Not set"}
+              {config.company_display_name || t("notSet")}
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-gray-600 shrink-0">Agent:</span>
+            <span className="text-gray-600 shrink-0">{t("agent")}:</span>
             <span className="font-medium text-gray-900 text-right">
-              {config.agent_display_name || "Not set"}
+              {config.agent_display_name || t("notSet")}
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-gray-600 shrink-0">RAG Enabled:</span>
+            <span className="text-gray-600 shrink-0">{t("ragEnabled")}:</span>
             <span className="font-medium text-gray-900">
-              {config.rag_enabled ? "Yes" : "No"}
+              {config.rag_enabled ? t("yes") : t("no")}
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-gray-600 shrink-0">Examples:</span>
+            <span className="text-gray-600 shrink-0">{t("examples")}:</span>
             <span className="font-medium text-gray-900">
               {config.examples?.length || 0}
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-gray-600 shrink-0">Escalation Rules:</span>
+            <span className="text-gray-600 shrink-0">{t("escalationRules")}:</span>
             <span className="font-medium text-gray-900">
-              {config.escalation_rules?.length || 0} custom
+              {config.escalation_rules?.length || 0} {t("custom")}
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-gray-600 shrink-0">Model:</span>
+            <span className="text-gray-600 shrink-0">{t("model")}:</span>
             <span className="font-medium text-gray-900">
               {config.llm_model || "gpt-4o-mini"}
             </span>
@@ -311,12 +311,12 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h4 className="text-md font-medium text-gray-900">
-            Configuration
+            {t("configuration")}
           </h4>
           <div className="flex flex-wrap gap-2">
-            {tabButton("form", "Summary")}
-            {tabButton("prompt", "Edit Prompts")}
-            {tabButton("yaml", "JSON Editor")}
+            {tabButton("form", t("summary"))}
+            {tabButton("prompt", t("editPrompts"))}
+            {tabButton("yaml", t("jsonEditor"))}
           </div>
         </div>
 
@@ -331,42 +331,42 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
               error={jsonError || undefined}
             />
             <p className="mt-2 text-xs text-gray-500">
-              You can edit the JSON configuration directly. Changes will be applied when you create the agent.
+              {t("jsonEditorHint")}
             </p>
           </>
         ) : editMode === "prompt" ? (
           <div className="space-y-5">
             <div className="p-3 bg-[#EEEAE7] border border-[#D0CBC8] rounded-sm">
               <p className="text-xs text-[#443C3C]">
-                Customize the system prompts that guide the agent&apos;s behaviour. Leave blank to use the default templates. Available placeholders: <code className="bg-white px-1 rounded">{"{agent_display_name}"}</code>, <code className="bg-white px-1 rounded">{"{company_display_name}"}</code>.
+                {t("promptsHint")}
               </p>
             </div>
 
             <Textarea
-              label="Persona"
+              label={t("persona")}
               value={systemPersona}
               onChange={(e) => setSystemPersona(e.target.value)}
               rows={6}
               placeholder={DEFAULT_PERSONA}
-              helperText="How the agent presents itself — its identity, tone, and role."
+              helperText={t("personaHelper")}
             />
 
             <Textarea
-              label="Hard Rules"
+              label={t("hardRules")}
               value={systemHardRules}
               onChange={(e) => setSystemHardRules(e.target.value)}
               rows={7}
               placeholder={DEFAULT_HARD_RULES}
-              helperText="Absolute boundaries — what the agent must never do, regardless of context."
+              helperText={t("hardRulesHelper")}
             />
 
             <Textarea
-              label="Goal"
+              label={t("goal")}
               value={systemGoal}
               onChange={(e) => setSystemGoal(e.target.value)}
               rows={4}
               placeholder={DEFAULT_GOAL}
-              helperText="The agent's primary objective — what success looks like in each conversation."
+              helperText={t("goalHelper")}
             />
           </div>
         ) : (
@@ -390,7 +390,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
         <div className="flex items-center justify-center py-8">
           <LoadingSpinner size="lg" />
           <span className="ml-3 text-gray-600">
-            {isEditMode ? "Updating agent..." : "Creating agent..."}
+            {isEditMode ? t("updatingAgent") : t("creatingAgent")}
           </span>
         </div>
       )}
@@ -401,7 +401,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
           <div className="flex items-center gap-2">
             {onBack && (
               <Button variant="secondary" onClick={onBack} disabled={submitting}>
-                Back
+                {t("back")}
               </Button>
             )}
             {(hasDraft || onStartOver) && (
@@ -411,12 +411,12 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
                 disabled={submitting}
                 className="text-gray-600 hover:text-gray-900"
               >
-                Start Over
+                {t("startOver")}
               </Button>
             )}
           </div>
           <Button variant="primary" onClick={handleCreate} size="lg">
-            {isEditMode ? "Update Agent" : "Create Agent"}
+            {isEditMode ? t("updateAgent") : t("createAgent")}
           </Button>
         </div>
       )}

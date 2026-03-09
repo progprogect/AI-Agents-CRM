@@ -23,6 +23,7 @@ import {
   MessageCircle,
   X,
 } from "lucide-react";
+import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
 
 function useNavItems() {
   const t = useTranslations("Nav");
@@ -170,6 +171,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           );
         })}
       </nav>
+
+      {/* Language switcher — at bottom for cleaner mobile header */}
+      <div className="flex-shrink-0 p-4 border-t border-[#BEBAB7] [&_button]:w-full [&_button]:justify-center">
+        <LanguageSwitcher />
+      </div>
     </aside>
   );
 };

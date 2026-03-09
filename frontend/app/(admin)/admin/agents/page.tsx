@@ -5,6 +5,7 @@
 import { useEffect, useState, useMemo, memo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { api, ApiError } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/shared/Button";
@@ -79,6 +80,7 @@ const AgentRow = memo(function AgentRow({
   onEdit: (agent: Agent) => void;
   onDelete: (agent: Agent) => void;
 }) {
+  const t = useTranslations("Agents");
   const [channelCount, setChannelCount] = useState<number | null>(null);
   const [isLoadingChannels, setIsLoadingChannels] = useState(true);
 
@@ -124,18 +126,18 @@ const AgentRow = memo(function AgentRow({
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
         <Badge variant={agent.is_active ? "success" : "default"} size="sm">
-          {agent.is_active ? "Active" : "Inactive"}
+          {agent.is_active ? t("active") : t("inactive")}
         </Badge>
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
         {isLoadingChannels ? (
-          <span className="text-gray-400">Loading...</span>
+          <span className="text-gray-400">{t("loading")}</span>
         ) : (
           <Link
             href={`/admin/agents/${agent.agent_id}/channels`}
             className="text-[#251D1C] hover:text-[#443C3C] transition-colors duration-200"
           >
-            {channelCount ?? 0} channel{channelCount !== 1 ? "s" : ""}
+            {t("channelCount", { count: channelCount ?? 0 })}
           </Link>
         )}
       </td>
@@ -144,34 +146,34 @@ const AgentRow = memo(function AgentRow({
           href={`/admin/agents/${agent.agent_id}/rag`}
           className="text-[#251D1C] hover:text-[#443C3C] transition-colors duration-200"
         >
-          RAG
+          {t("rag")}
         </Link>
       </td>
       <td className="px-6 py-4 whitespace-nowrap">
         <div className="flex items-center gap-2">
-          <Tooltip content="Edit agent">
+          <Tooltip content={t("editAgent")}>
             <button
               onClick={() => onEdit(agent)}
               className="inline-flex items-center justify-center w-8 h-8 text-[#251D1C] hover:text-[#443C3C] hover:bg-[#EEEAE7]/10 rounded-sm transition-all duration-200"
-              aria-label="Edit agent"
+              aria-label={t("editAgent")}
             >
               <EditIcon />
             </button>
           </Tooltip>
-          <Tooltip content="Clone agent">
+          <Tooltip content={t("cloneAgent")}>
             <button
               onClick={() => onClone(agent)}
               className="inline-flex items-center justify-center w-8 h-8 text-[#251D1C] hover:text-[#443C3C] hover:bg-[#EEEAE7]/10 rounded-sm transition-all duration-200"
-              aria-label="Clone agent"
+              aria-label={t("cloneAgent")}
             >
               <CloneIcon />
             </button>
           </Tooltip>
-          <Tooltip content="Delete agent">
+          <Tooltip content={t("deleteAgent")}>
             <button
               onClick={() => onDelete(agent)}
               className="inline-flex items-center justify-center w-8 h-8 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-sm transition-all duration-200"
-              aria-label="Delete agent"
+              aria-label={t("deleteAgent")}
             >
               <DeleteIcon />
             </button>
@@ -186,6 +188,8 @@ AgentRow.displayName = "AgentRow";
 
 export default function AgentsPage() {
   const router = useRouter();
+  const t = useTranslations("Agents");
+  const tCommon = useTranslations("Common");
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -207,7 +211,7 @@ export default function AgentsPage() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError("Failed to load agents");
+        setError(t("failedToLoad"));
       }
     } finally {
       setIsLoading(false);
@@ -255,7 +259,7 @@ export default function AgentsPage() {
       router.push("/admin/agents/create");
     } catch (err) {
       console.error("Failed to clone agent:", err);
-      setError("Failed to clone agent. Please try again.");
+      setError(t("failedToClone"));
     }
   }, [router]);
 
@@ -276,7 +280,7 @@ export default function AgentsPage() {
       router.push("/admin/agents/create");
     } catch (err) {
       console.error("Failed to load agent for editing:", err);
-      setError("Failed to load agent for editing. Please try again.");
+      setError(t("failedToLoadForEdit"));
     }
   }, [router]);
 
@@ -302,7 +306,7 @@ export default function AgentsPage() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError("Failed to delete agent. Please try again.");
+        setError(t("failedToDelete"));
       }
     } finally {
       setIsDeleting(false);
@@ -383,19 +387,19 @@ export default function AgentsPage() {
             <thead className="bg-[#EEEAE7]/10">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Agent
+                  {t("agent")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Status
+                  {t("status")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Channels
+                  {t("channels")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  RAG
+                  {t("rag")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Actions
+                  {tCommon("actions")}
                 </th>
               </tr>
             </thead>
@@ -420,14 +424,14 @@ export default function AgentsPage() {
         isOpen={isDeleteModalOpen}
         onClose={closeDeleteModal}
         onConfirm={confirmDeleteAgent}
-        title="Delete Agent"
+        title={t("deleteConfirmTitle")}
         message={
           agentToDelete
-            ? `Are you sure you want to delete agent "${getAgentDisplayName(agentToDelete)}"?\n\nThis action will deactivate the agent. This action cannot be undone.`
+            ? t("deleteConfirmMessage", { name: getAgentDisplayName(agentToDelete) })
             : ""
         }
-        confirmText="Delete"
-        cancelText="Cancel"
+        confirmText={t("delete")}
+        cancelText={tCommon("cancel")}
         variant="danger"
         isLoading={isDeleting}
       />

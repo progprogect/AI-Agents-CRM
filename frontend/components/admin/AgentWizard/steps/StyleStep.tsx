@@ -2,7 +2,8 @@
 
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { Select } from "@/components/shared/Select";
 import { Slider } from "@/components/shared/Slider";
 import type { AgentConfigFormData } from "@/lib/utils/agentConfig";
@@ -15,54 +16,63 @@ interface StyleStepProps {
   onUpdate: (config: Partial<AgentConfigFormData>) => void;
 }
 
-const TONE_OPTIONS = [
-  { value: "friendly_professional", label: "Friendly & Professional" },
-  { value: "formal", label: "Formal" },
-  { value: "casual", label: "Casual" },
-  { value: "warm", label: "Warm" },
-];
-
-const FORMALITY_OPTIONS = [
-  { value: "formal", label: "Formal" },
-  { value: "semi_formal", label: "Semi-Formal" },
-  { value: "casual", label: "Casual" },
-];
-
-const MESSAGE_LENGTH_OPTIONS = [
-  { value: "short", label: "Short" },
-  { value: "short_to_medium", label: "Short to Medium" },
-  { value: "medium", label: "Medium" },
-  { value: "medium_to_long", label: "Medium to Long" },
-  { value: "long", label: "Long" },
-];
-
-const PERSUASION_OPTIONS = [
-  { value: "none", label: "None" },
-  { value: "soft", label: "Soft" },
-  { value: "moderate", label: "Moderate" },
-  { value: "strong", label: "Strong" },
-];
-
 export const StyleStep: React.FC<StyleStepProps> = ({
   config,
   errors,
   onUpdate,
 }) => {
+  const t = useTranslations("Wizard");
+  const TONE_OPTIONS = useMemo(
+    () => [
+      { value: "friendly_professional", label: t("toneFriendly") },
+      { value: "formal", label: t("toneFormal") },
+      { value: "casual", label: t("toneCasual") },
+      { value: "warm", label: t("toneWarm") },
+    ],
+    [t]
+  );
+  const FORMALITY_OPTIONS = useMemo(
+    () => [
+      { value: "formal", label: t("formalityFormal") },
+      { value: "semi_formal", label: t("formalitySemiFormal") },
+      { value: "casual", label: t("formalityCasual") },
+    ],
+    [t]
+  );
+  const MESSAGE_LENGTH_OPTIONS = useMemo(
+    () => [
+      { value: "short", label: t("lengthShort") },
+      { value: "short_to_medium", label: t("lengthShortMedium") },
+      { value: "medium", label: t("lengthMedium") },
+      { value: "medium_to_long", label: t("lengthMediumLong") },
+      { value: "long", label: t("lengthLong") },
+    ],
+    [t]
+  );
+  const PERSUASION_OPTIONS = useMemo(
+    () => [
+      { value: "none", label: t("persuasionNone") },
+      { value: "soft", label: t("persuasionSoft") },
+      { value: "moderate", label: t("persuasionModerate") },
+      { value: "strong", label: t("persuasionStrong") },
+    ],
+    [t]
+  );
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Style & Tone
+          {t("styleTitle")}
         </h3>
         <p className="text-sm text-gray-600 mb-6">
-          Configure the communication style and tone of the agent.
+          {t("styleDesc")}
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <Select
-            label="Tone"
+            label={t("tone")}
             value={config.tone || "friendly_professional"}
             onChange={(e) => onUpdate({ tone: e.target.value })}
             options={TONE_OPTIONS}
@@ -72,7 +82,7 @@ export const StyleStep: React.FC<StyleStepProps> = ({
 
         <div>
           <Select
-            label="Formality Level"
+            label={t("formalityLevel")}
             value={config.formality || "semi_formal"}
             onChange={(e) => onUpdate({ formality: e.target.value })}
             options={FORMALITY_OPTIONS}
@@ -82,7 +92,7 @@ export const StyleStep: React.FC<StyleStepProps> = ({
 
         <div className="md:col-span-2">
           <Slider
-            label="Empathy Level"
+            label={t("empathyLevel")}
             value={config.empathy_level ?? 7}
             min={0}
             max={10}
@@ -92,13 +102,13 @@ export const StyleStep: React.FC<StyleStepProps> = ({
             error={getFieldError(errors, "empathy_level")}
           />
           <p className="mt-1 text-xs text-gray-500">
-            How empathetic and understanding the agent should be (0-10)
+            {t("empathyHint")}
           </p>
         </div>
 
         <div className="md:col-span-2">
           <Slider
-            label="Depth Level"
+            label={t("depthLevel")}
             value={config.depth_level ?? 5}
             min={0}
             max={10}
@@ -108,13 +118,13 @@ export const StyleStep: React.FC<StyleStepProps> = ({
             error={getFieldError(errors, "depth_level")}
           />
           <p className="mt-1 text-xs text-gray-500">
-            How detailed and thorough responses should be (0-10)
+            {t("depthHint")}
           </p>
         </div>
 
         <div>
           <Select
-            label="Message Length"
+            label={t("messageLength")}
             value={config.message_length || "short_to_medium"}
             onChange={(e) => onUpdate({ message_length: e.target.value })}
             options={MESSAGE_LENGTH_OPTIONS}
@@ -124,7 +134,7 @@ export const StyleStep: React.FC<StyleStepProps> = ({
 
         <div>
           <Select
-            label="Persuasion Level"
+            label={t("persuasionLevel")}
             value={config.persuasion || "soft"}
             onChange={(e) => onUpdate({ persuasion: e.target.value })}
             options={PERSUASION_OPTIONS}
@@ -135,22 +145,22 @@ export const StyleStep: React.FC<StyleStepProps> = ({
 
       {/* Preview */}
       <div className="mt-8 p-6 bg-[#EEEAE7]/10 border border-[#251D1C]/20 rounded-sm">
-        <h4 className="text-sm font-medium text-gray-700 mb-4">Style Preview</h4>
+        <h4 className="text-sm font-medium text-gray-700 mb-4">{t("stylePreview")}</h4>
         <div className="bg-white p-4 rounded-sm border border-[#251D1C]/20">
           <p className="text-sm text-gray-600 mb-2">
-            <strong>Tone:</strong> {TONE_OPTIONS.find((o) => o.value === config.tone)?.label || "Friendly & Professional"}
+            <strong>{t("tone")}:</strong> {TONE_OPTIONS.find((o) => o.value === config.tone)?.label || t("toneFriendly")}
           </p>
           <p className="text-sm text-gray-600 mb-2">
-            <strong>Formality:</strong> {FORMALITY_OPTIONS.find((o) => o.value === config.formality)?.label || "Semi-Formal"}
+            <strong>{t("formality")}:</strong> {FORMALITY_OPTIONS.find((o) => o.value === config.formality)?.label || t("formalitySemiFormal")}
           </p>
           <p className="text-sm text-gray-600 mb-2">
-            <strong>Empathy:</strong> {config.empathy_level ?? 7}/10
+            <strong>{t("empathy")}:</strong> {config.empathy_level ?? 7}/10
           </p>
           <p className="text-sm text-gray-600 mb-2">
-            <strong>Depth:</strong> {config.depth_level ?? 5}/10
+            <strong>{t("depth")}:</strong> {config.depth_level ?? 5}/10
           </p>
           <p className="text-sm text-gray-600">
-            <strong>Message Length:</strong> {MESSAGE_LENGTH_OPTIONS.find((o) => o.value === config.message_length)?.label || "Short to Medium"}
+            <strong>{t("messageLength")}:</strong> {MESSAGE_LENGTH_OPTIONS.find((o) => o.value === config.message_length)?.label || t("lengthShortMedium")}
           </p>
         </div>
       </div>

@@ -3,6 +3,7 @@
 "use client";
 
 import React, { useMemo, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import { Textarea } from "@/components/shared/Textarea";
 import { Button } from "@/components/shared/Button";
 import type { AgentConfigFormData, ConversationExample } from "@/lib/utils/agentConfig";
@@ -21,6 +22,7 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
   errors,
   onUpdate,
 }) => {
+  const t = useTranslations("Wizard");
   // Initialize examples with defaults if not present
   useEffect(() => {
     if (!config.examples || config.examples.length === 0) {
@@ -74,12 +76,10 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          Communication Examples
+          {t("examplesTitle")}
         </h3>
         <p className="text-sm text-gray-600 mb-6">
-          Provide examples of how you want the agent to communicate. These examples
-          will guide the agent's style and tone. Examples should be in English, but
-          the agent will respond in the user's language.
+          {t("examplesDesc")}
         </p>
       </div>
 
@@ -87,11 +87,10 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
       <div className="space-y-6">
         <div>
           <h4 className="text-md font-medium text-gray-900 mb-2">
-            Standard Examples (Editable)
+            {t("standardExamples")}
           </h4>
           <p className="text-xs text-gray-500 mb-4">
-            These are common questions patients ask. You can edit them to match your
-            preferred style.
+            {t("standardExamplesHint")}
           </p>
         </div>
 
@@ -102,13 +101,13 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
           >
             <div className="flex items-center justify-between mb-2">
               <h5 className="text-sm font-medium text-gray-900">
-                Example {index + 1}: {example.category === "booking" && "Booking"}
-                {example.category === "info" && "Services Information"}
-                {example.category === "hours" && "Working Hours"}
+                {t("exampleN", { n: index + 1 })}: {example.category === "booking" && t("exampleBooking")}
+                {example.category === "info" && t("exampleInfo")}
+                {example.category === "hours" && t("exampleHours")}
               </h5>
             </div>
             <Textarea
-              label="User Message"
+              label={t("userMessage")}
               value={example.user_message}
               onChange={(e) =>
                 handleUpdateExample(index, "user_message", e.target.value)
@@ -120,7 +119,7 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
               helperText={`${example.user_message.length}/500 characters`}
             />
             <Textarea
-              label="Agent Response"
+              label={t("agentResponse")}
               value={example.agent_response}
               onChange={(e) =>
                 handleUpdateExample(index, "agent_response", e.target.value)
@@ -140,11 +139,10 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
         <div className="flex items-center justify-between">
           <div>
             <h4 className="text-md font-medium text-gray-900">
-              Custom Examples
+              {t("customExamples")}
             </h4>
             <p className="text-xs text-gray-500 mt-1">
-              Add your own examples to demonstrate specific communication scenarios.
-              Maximum 4 custom examples.
+              {t("customExamplesHint")}
             </p>
           </div>
           <Button
@@ -153,17 +151,17 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
             onClick={handleAddCustomExample}
             disabled={examples.length >= 7}
           >
-            Add Custom Example
+            {t("addCustomExample")}
           </Button>
         </div>
 
         {customExamples.length === 0 ? (
           <div className="text-center py-8 bg-gray-50 rounded-sm border border-gray-200">
             <p className="text-sm text-gray-600 mb-4">
-              No custom examples added yet.
+              {t("noCustomExamples")}
             </p>
             <p className="text-xs text-gray-500">
-              Click "Add Custom Example" to add your own communication examples.
+              {t("addCustomExampleHint")}
             </p>
           </div>
         ) : (
@@ -177,18 +175,18 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
                 >
                   <div className="flex items-center justify-between mb-2">
                     <h5 className="text-sm font-medium text-gray-900">
-                      Custom Example {index + 1}
+                      {t("customExample", { n: index + 1 })}
                     </h5>
                     <Button
                       variant="danger"
                       size="sm"
                       onClick={() => handleRemoveCustomExample(actualIndex)}
                     >
-                      Remove
+                      {t("remove")}
                     </Button>
                   </div>
                   <Textarea
-                    label="User Message"
+                    label={t("userMessage")}
                     value={example.user_message}
                     onChange={(e) =>
                       handleUpdateExample(actualIndex, "user_message", e.target.value)
@@ -203,7 +201,7 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
                     helperText={`${example.user_message.length}/500 characters`}
                   />
                   <Textarea
-                    label="Agent Response"
+                    label={t("agentResponse")}
                     value={example.agent_response}
                     onChange={(e) =>
                       handleUpdateExample(
@@ -231,10 +229,7 @@ export const ExamplesStep: React.FC<ExamplesStepProps> = ({
       {/* Info Box */}
       <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-sm">
         <p className="text-sm text-blue-800">
-          <strong>Tip:</strong> These examples demonstrate the desired communication
-          style. The agent will learn from these examples to match your preferred
-          tone, formality level, and response style. Make sure examples reflect the
-          style settings you configured in the previous step.
+          <strong>Tip:</strong> {t("examplesTip")}
         </p>
       </div>
 

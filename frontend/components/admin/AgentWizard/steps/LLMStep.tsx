@@ -3,6 +3,7 @@
 "use client";
 
 import React from "react";
+import { useTranslations } from "next-intl";
 import { Select } from "@/components/shared/Select";
 import { Slider } from "@/components/shared/Slider";
 import { Input } from "@/components/shared/Input";
@@ -46,6 +47,7 @@ export const LLMStep: React.FC<LLMStepProps> = ({
   errors,
   onUpdate,
 }) => {
+  const t = useTranslations("Wizard");
   const provider = config.llm_provider || "openai";
   const modelOptions = provider === "google_ai_studio" ? GEMINI_MODELS : OPENAI_MODELS;
   const defaultModel = provider === "google_ai_studio" ? "gemini-2.5-flash" : "gpt-4o-mini";
@@ -61,17 +63,17 @@ export const LLMStep: React.FC<LLMStepProps> = ({
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">
-          LLM Settings
+          {t("llmTitle")}
         </h3>
         <p className="text-sm text-gray-600 mb-6">
-          Configure the language model parameters for agent responses.
+          {t("llmDesc")}
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="md:col-span-2">
           <Select
-            label="Provider"
+            label={t("provider")}
             value={provider}
             onChange={(e) => handleProviderChange(e.target.value)}
             options={PROVIDER_OPTIONS}
@@ -80,7 +82,7 @@ export const LLMStep: React.FC<LLMStepProps> = ({
 
         <div className="md:col-span-2">
           <Select
-            label="Model"
+            label={t("model")}
             value={currentModel}
             onChange={(e) => onUpdate({ llm_model: e.target.value })}
             options={modelOptions.map(({ value, label }) => ({ value, label }))}
@@ -93,14 +95,14 @@ export const LLMStep: React.FC<LLMStepProps> = ({
           )}
           {provider === "google_ai_studio" && (
             <p className="mt-1 text-xs text-gray-500">
-              Requires <code className="bg-gray-100 px-1 rounded">GOOGLE_AI_STUDIO_API</code> environment variable.
+              {t("googleEnvHint")}
             </p>
           )}
         </div>
 
         <div className="md:col-span-2">
           <Slider
-            label="Temperature"
+            label={t("temperature")}
             value={config.llm_temperature ?? 0.2}
             min={0}
             max={2}
@@ -109,20 +111,20 @@ export const LLMStep: React.FC<LLMStepProps> = ({
             error={getFieldError(errors, "llm_temperature")}
           />
           <p className="mt-1 text-xs text-gray-500">
-            Controls randomness (0 = deterministic, 2 = very creative). Recommended: 0.2 for consistent responses.
+            {t("temperatureHint")}
           </p>
         </div>
 
         <div className="md:col-span-2">
           <Input
             type="number"
-            label="Max Output Tokens"
+            label={t("maxOutputTokens")}
             value={config.llm_max_tokens ?? 600}
             onChange={(e) => onUpdate({ llm_max_tokens: parseInt(e.target.value) || 600 })}
             error={getFieldError(errors, "llm_max_tokens")}
             min={1}
             max={4096}
-            helperText="Maximum length of generated responses (1–4096 tokens)"
+            helperText={t("maxTokensHelper")}
           />
         </div>
       </div>
@@ -130,21 +132,21 @@ export const LLMStep: React.FC<LLMStepProps> = ({
       {/* Preview */}
       <div className="mt-8 p-6 bg-[#EEEAE7]/10 border border-[#251D1C]/20 rounded-sm">
         <h4 className="text-sm font-medium text-gray-700 mb-4">
-          LLM Configuration Preview
+          {t("llmPreview")}
         </h4>
         <div className="bg-white p-4 rounded-sm border border-[#251D1C]/20 space-y-2 text-sm">
           <p className="text-gray-600">
-            <strong>Provider:</strong>{" "}
+            <strong>{t("provider")}:</strong>{" "}
             {provider === "google_ai_studio" ? "Google AI Studio" : "OpenAI"}
           </p>
           <p className="text-gray-600">
-            <strong>Model:</strong> {currentModel}
+            <strong>{t("model")}:</strong> {currentModel}
           </p>
           <p className="text-gray-600">
-            <strong>Temperature:</strong> {config.llm_temperature ?? 0.2}
+            <strong>{t("temperature")}:</strong> {config.llm_temperature ?? 0.2}
           </p>
           <p className="text-gray-600">
-            <strong>Max Tokens:</strong> {config.llm_max_tokens ?? 600}
+            <strong>{t("maxOutputTokens")}:</strong> {config.llm_max_tokens ?? 600}
           </p>
         </div>
       </div>

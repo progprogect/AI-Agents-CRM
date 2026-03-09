@@ -31,6 +31,7 @@ import { toConversationStatus } from "@/lib/utils/statusHelpers";
 export default function ConversationDetailPage() {
   const params = useParams();
   const conversationId = params.id as string;
+  const t = useTranslations("ConversationDetail");
 
   const {
     conversation,
@@ -235,12 +236,11 @@ export default function ConversationDetailPage() {
   if (error || !conversation) {
     return (
       <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-sm" role="alert">
-        <p className="text-sm text-red-700">{error || "Conversation not found"}</p>
+        <p className="text-sm text-red-700">{error || t("notFound")}</p>
       </div>
     );
   }
 
-  const t = useTranslations("ConversationDetail");
   const agentDisplayName = agent ? getAgentDisplayName(agent) : conversation.agent_id;
   const clinicName = agent ? getClinicDisplayName(agent) : null;
   const agentProfileName = agent ? getAgentProfileDisplayName(agent) : null;

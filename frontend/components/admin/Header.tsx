@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Menu } from "lucide-react";
 import { removeAdminToken, getCurrentUserEmail } from "@/lib/auth";
-import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
 
 interface HeaderProps {
   onSidebarToggle: () => void;
@@ -43,7 +42,6 @@ export const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 md:gap-4">
-          <LanguageSwitcher />
           {email && (
             <span
               className="text-sm text-gray-500 hidden sm:block truncate max-w-[160px] md:max-w-[200px]"

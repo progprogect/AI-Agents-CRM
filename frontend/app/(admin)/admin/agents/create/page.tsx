@@ -4,10 +4,12 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { AgentWizard } from "@/components/admin/AgentWizard";
 
 export default function CreateAgentPage() {
   const router = useRouter();
+  const t = useTranslations("Wizard");
   // Use lazy initialization to avoid setState in effect
   const [hasDraft] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -42,12 +44,12 @@ export default function CreateAgentPage() {
                   const draft = JSON.parse(
                     localStorage.getItem("agent_wizard_draft") || "{}"
                   );
-                  if (draft.isEdit) return "Editing agent:";
+                  if (draft.isEdit) return t("draftEditing");
                   return draft.isClone
-                    ? "Cloning agent:"
-                    : "Draft detected:";
+                    ? t("draftCloning")
+                    : t("draftDetected");
                 } catch {
-                  return "Draft detected:";
+                  return t("draftDetected");
                 }
               })()}
             </strong>{" "}
@@ -57,13 +59,13 @@ export default function CreateAgentPage() {
                   localStorage.getItem("agent_wizard_draft") || "{}"
                 );
                 if (draft.isEdit) {
-                  return `Configuration for "${draft.editingAgentId}" has been loaded. Make your changes and click "Update Agent" when ready.`;
+                  return t("draftEditLoaded", { id: draft.editingAgentId });
                 }
                 return draft.isClone
-                  ? `Configuration from "${draft.sourceAgentId}" has been loaded. Please review and update the Agent ID.`
-                  : "Your previous progress has been restored.";
+                  ? t("draftCloneLoaded", { id: draft.sourceAgentId })
+                  : t("draftRestored");
               } catch {
-                return "Your previous progress has been restored.";
+                return t("draftRestored");
               }
             })()}
           </p>

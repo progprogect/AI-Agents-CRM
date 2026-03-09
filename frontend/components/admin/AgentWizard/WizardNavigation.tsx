@@ -1,6 +1,9 @@
 /** Wizard navigation buttons component. */
 
+"use client";
+
 import React from "react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/shared/Button";
 
 interface WizardNavigationProps {
@@ -28,6 +31,7 @@ export const WizardNavigation: React.FC<WizardNavigationProps> = ({
   isSubmitting = false,
   nextLabel,
 }) => {
+  const t = useTranslations("Wizard");
   const isFirstStep = currentStep === 1;
   const isLastStep = currentStep === totalSteps;
 
@@ -39,7 +43,7 @@ export const WizardNavigation: React.FC<WizardNavigationProps> = ({
       isLoading={isSubmitting}
       className="w-full sm:w-auto"
     >
-      {nextLabel || "Create Agent"}
+      {nextLabel || t("createAgent")}
     </Button>
   ) : (
     <Button
@@ -48,7 +52,7 @@ export const WizardNavigation: React.FC<WizardNavigationProps> = ({
       disabled={isNextDisabled || isSubmitting}
       className="w-full sm:w-auto"
     >
-      Next
+      {t("next")}
     </Button>
   );
 
@@ -60,7 +64,7 @@ export const WizardNavigation: React.FC<WizardNavigationProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           {!isFirstStep && (
             <Button variant="secondary" onClick={onBack} disabled={isSubmitting}>
-              Back
+              {t("back")}
             </Button>
           )}
           {(hasDraft || !isFirstStep) && onStartOver && (
@@ -70,11 +74,11 @@ export const WizardNavigation: React.FC<WizardNavigationProps> = ({
               disabled={isSubmitting}
               className="text-gray-600 hover:text-gray-900"
             >
-              Start Over
+              {t("startOver")}
             </Button>
           )}
           <Button variant="ghost" onClick={onCancel} disabled={isSubmitting}>
-            Cancel
+            {t("cancel")}
           </Button>
         </div>
         {primaryButton}

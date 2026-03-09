@@ -3,6 +3,7 @@
 "use client";
 
 import React from "react";
+import { useTranslations } from "next-intl";
 import { useAgentWizard } from "@/lib/hooks/useAgentWizard";
 import { WizardProgress } from "./WizardProgress";
 import { WizardNavigation } from "./WizardNavigation";
@@ -14,16 +15,6 @@ import { EscalationStep } from "./steps/EscalationStep";
 import { LLMStep } from "./steps/LLMStep";
 import { ReviewStep, type AgentWizardSuccessResult } from "./steps/ReviewStep";
 
-const WIZARD_STEPS = [
-  { number: 1, title: "Basic Info" },
-  { number: 2, title: "Style" },
-  { number: 3, title: "Examples" },
-  { number: 4, title: "RAG" },
-  { number: 5, title: "Escalation" },
-  { number: 6, title: "LLM Settings" },
-  { number: 7, title: "Review" },
-];
-
 interface AgentWizardProps {
   onSuccess: (result?: AgentWizardSuccessResult) => void;
   onCancel: () => void;
@@ -33,6 +24,19 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
   onSuccess,
   onCancel,
 }) => {
+  const t = useTranslations("Wizard");
+  const WIZARD_STEPS = React.useMemo(
+    () => [
+      { number: 1, title: t("stepBasicInfo") },
+      { number: 2, title: t("stepStyle") },
+      { number: 3, title: t("stepExamples") },
+      { number: 4, title: t("stepRAG") },
+      { number: 5, title: t("stepEscalation") },
+      { number: 6, title: t("stepLLM") },
+      { number: 7, title: t("stepReview") },
+    ],
+    [t]
+  );
   const {
     state,
     updateConfig,
@@ -73,9 +77,7 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
   const handleStartOver = () => {
     // Ask for confirmation before clearing draft
     if (typeof window !== "undefined") {
-      const confirmed = window.confirm(
-        "Are you sure you want to start over? This will clear all your current progress and cannot be undone."
-      );
+      const confirmed = window.confirm(t("startOverConfirm"));
       if (confirmed) {
         clearDraft();
         reset();
@@ -165,7 +167,7 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
     <div className="max-w-4xl mx-auto">
       <div className="bg-white p-4 sm:p-8 sm:rounded-sm sm:shadow-md sm:border sm:border-[#BEBAB7]">
         <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4 sm:mb-6">
-          {isEditMode ? "Edit Agent" : "Create New Agent"}
+          {isEditMode ? t("editAgent") : t("createNewAgent")}
         </h2>
 
         <WizardProgress

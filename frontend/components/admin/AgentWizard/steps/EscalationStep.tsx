@@ -4,6 +4,7 @@
 
 import React, { useCallback } from "react";
 import { Plus, X } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Input } from "@/components/shared/Input";
 import { Textarea } from "@/components/shared/Textarea";
 import { Button } from "@/components/shared/Button";
@@ -23,6 +24,7 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
   config,
   onUpdate,
 }) => {
+  const t = useTranslations("Wizard");
   const rules: EscalationRule[] = config.escalation_rules || [];
   const detectContact = config.escalation_detect_contact ?? true;
 
@@ -58,10 +60,10 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          Escalation Rules
+          {t("escalationTitle")}
         </h3>
         <p className="text-sm text-gray-600">
-          Configure when the agent should hand off a conversation to a human operator.
+          {t("escalationDesc")}
         </p>
       </div>
 
@@ -69,9 +71,9 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
       <div className="p-4 border border-[#BEBAB7] rounded-sm bg-white space-y-3">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-gray-900">Contact info detection</p>
+            <p className="text-sm font-medium text-gray-900">{t("contactDetection")}</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              Escalate automatically when the user shares a phone number or email address.
+              {t("contactDetectionHint")}
             </p>
           </div>
           <div className="flex-shrink-0">
@@ -90,7 +92,7 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
         </div>
         <div className="relative flex justify-center">
           <span className="bg-white px-3 text-xs text-gray-400 uppercase tracking-wider">
-            Custom rules
+            {t("customRules")}
           </span>
         </div>
       </div>
@@ -99,9 +101,9 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
       <div className="space-y-4">
         {rules.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 border border-dashed border-gray-300 rounded-sm bg-gray-50 text-center px-4">
-            <p className="text-sm text-gray-500 mb-1">No custom rules added.</p>
+            <p className="text-sm text-gray-500 mb-1">{t("noCustomRules")}</p>
             <p className="text-xs text-gray-400">
-              Add rules to define additional escalation scenarios specific to your business.
+              {t("addRuleHint")}
             </p>
           </div>
         ) : (
@@ -112,32 +114,32 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-semibold text-[#9A9590] uppercase tracking-wider">
-                  Rule {index + 1}
+                  {t("ruleN", { n: index + 1 })}
                 </span>
                 <button
                   type="button"
                   onClick={() => handleDeleteRule(rule.id)}
                   className="flex items-center justify-center w-7 h-7 rounded-sm text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors duration-150"
-                  aria-label={`Delete rule ${index + 1}`}
+                  aria-label={t("ruleN", { n: index + 1 })}
                 >
                   <X size={16} />
                 </button>
               </div>
 
               <Input
-                label="Rule Name"
+                label={t("ruleName")}
                 value={rule.name}
                 onChange={(e) => handleUpdateRule(rule.id, "name", e.target.value)}
-                placeholder="e.g. Complaint received"
+                placeholder={t("ruleNamePlaceholder")}
               />
 
               <Textarea
-                label="Description"
+                label={t("description")}
                 value={rule.description}
                 onChange={(e) => handleUpdateRule(rule.id, "description", e.target.value)}
-                placeholder="e.g. When the user expresses strong dissatisfaction or files a complaint — transfer to a human immediately."
+                placeholder={t("descriptionPlaceholder")}
                 rows={3}
-                helperText="Describe the situation and what the agent should do."
+                helperText={t("descriptionHelper")}
               />
             </div>
           ))
@@ -153,7 +155,7 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
         disabled={rules.length >= MAX_RULES}
         icon={<Plus size={16} />}
       >
-        Add Rule
+        {t("addRule")}
         {rules.length > 0 && (
           <span className="ml-1 text-gray-400 font-normal">
             ({rules.length}/{MAX_RULES})
@@ -163,7 +165,7 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
 
       {rules.length >= MAX_RULES && (
         <p className="text-xs text-gray-500">
-          Maximum of {MAX_RULES} custom rules reached.
+          {t("maxRulesReached", { max: MAX_RULES })}
         </p>
       )}
     </div>
