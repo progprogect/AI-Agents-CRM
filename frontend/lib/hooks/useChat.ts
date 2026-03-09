@@ -57,6 +57,8 @@ export function useChat(conversationId: string | null) {
           role: message.role || "agent",
           content: message.content,
           timestamp: message.timestamp || new Date().toISOString(),
+          media_url: message.media_url ?? null,
+          media_type: message.media_type ?? null,
         };
         
         // If this is a user message with a real message_id, replace the optimistic one

@@ -338,16 +338,17 @@ async def _handle_message(
         if agent_response and agent_message_id:
             # Use timestamp from result to avoid extra DB query
             timestamp = agent_message_timestamp or to_utc_iso_string(utc_now())
-            await connection_manager.send_message(
-                conversation_id,
-                {
-                    "type": "message",
-                    "message_id": agent_message_id,
-                    "role": "agent",
-                    "content": agent_response,
-                    "timestamp": timestamp,
-                },
-            )
+            ws_payload: dict = {
+                "type": "message",
+                "message_id": agent_message_id,
+                "role": "agent",
+                "content": agent_response,
+                "timestamp": timestamp,
+            }
+            if result.get("rag_media_url"):
+                ws_payload["media_url"] = result["rag_media_url"]
+                ws_payload["media_type"] = result.get("rag_media_type")
+            await connection_manager.send_message(conversation_id, ws_payload)
         elif agent_response:
             # If message wasn't created in agent_service (shouldn't happen, but handle gracefully)
             await connection_manager.send_error(

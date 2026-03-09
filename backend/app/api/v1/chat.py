@@ -249,6 +249,10 @@ async def send_message(
     # If message wasn't created in agent_service (shouldn't happen, but handle gracefully)
     if not agent_message_id:
         agent_message_id = str(uuid.uuid4())
+        fallback_meta: dict = {"rag_context_used": result.get("rag_context_used", False)}
+        if result.get("rag_media_url"):
+            fallback_meta["media_url"] = result["rag_media_url"]
+            fallback_meta["media_type"] = result.get("rag_media_type")
         agent_message = Message(
             message_id=agent_message_id,
             conversation_id=conversation_id,
@@ -258,7 +262,7 @@ async def send_message(
             channel=conversation.channel,
             external_user_id=conversation.external_user_id,
             timestamp=agent_message_timestamp,
-            metadata={"rag_context_used": result.get("rag_context_used", False)},
+            metadata=fallback_meta,
         )
         await deps.dynamodb.create_message(agent_message)
         agent_message_timestamp = agent_message.timestamp

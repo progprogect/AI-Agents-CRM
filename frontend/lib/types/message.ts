@@ -37,6 +37,8 @@ export interface WebSocketMessage {
   status?: string;
   reason?: string;
   message?: string;
+  media_url?: string | null;
+  media_type?: string | null;
 }
 
 
