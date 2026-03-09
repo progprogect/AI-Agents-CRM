@@ -99,14 +99,6 @@ async def get_conversation(
     deps: CommonDependencies = Depends(),
 ):
     """Get conversation by ID."""
-    # Validate UUID format
-    try:
-        uuid.UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation ID format",
-        )
 
     conversation = await deps.dynamodb.get_conversation(conversation_id)
     if not conversation:
@@ -125,14 +117,6 @@ async def send_message(
     deps: CommonDependencies = Depends(),
 ):
     """Send a message in a conversation."""
-    # Validate UUID format
-    try:
-        uuid.UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation ID format",
-        )
 
     # Verify conversation exists
     conversation = await deps.dynamodb.get_conversation(conversation_id)
@@ -303,14 +287,6 @@ async def get_messages(
     deps: CommonDependencies = Depends(),
 ):
     """Get messages for a conversation."""
-    # Validate UUID format
-    try:
-        uuid.UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation ID format",
-        )
 
     # Verify conversation exists
     conversation = await deps.dynamodb.get_conversation(conversation_id)

@@ -93,14 +93,6 @@ async def get_conversation(
     _admin: str = require_admin(),
 ):
     """Get conversation by ID (admin view)."""
-    # Validate UUID format
-    try:
-        UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation ID format",
-        )
 
     conversation = await deps.dynamodb.get_conversation(conversation_id)
     if not conversation:
@@ -130,14 +122,6 @@ async def handoff_conversation(
     _admin: str = require_admin(),
 ):
     """Handoff conversation to human admin."""
-    # Validate UUID format
-    try:
-        UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation ID format",
-        )
 
     conversation = await deps.dynamodb.get_conversation(conversation_id)
     if not conversation:
@@ -192,14 +176,6 @@ async def return_to_ai(
     _admin: str = require_admin(),
 ):
     """Return conversation to AI."""
-    # Validate UUID format
-    try:
-        UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation ID format",
-        )
 
     conversation = await deps.dynamodb.get_conversation(conversation_id)
     if not conversation:
@@ -335,14 +311,6 @@ async def send_admin_message(
     _admin: str = require_admin(),
 ):
     """Send a message as admin in a conversation."""
-    # Validate UUID format
-    try:
-        UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation ID format",
-        )
 
     conversation = await deps.dynamodb.get_conversation(conversation_id)
     if not conversation:
@@ -531,14 +499,6 @@ async def refresh_instagram_profile(
     _admin: str = require_admin(),
 ):
     """Refresh Instagram user profile information."""
-    # Validate UUID format
-    try:
-        UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation ID format",
-        )
 
     # Get conversation
     conversation = await deps.dynamodb.get_conversation(conversation_id)
@@ -617,14 +577,6 @@ async def update_marketing_status(
     _admin: str = require_admin(),
 ):
     """Update marketing status of a conversation."""
-    # Validate UUID format
-    try:
-        UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation ID format",
-        )
 
     # Validate marketing status
     valid_marketing_statuses = [s.value for s in MarketingStatus]
