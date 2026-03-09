@@ -51,21 +51,31 @@ resource "aws_ecs_task_definition" "backend" {
       }]
 
       # ── Non-sensitive environment variables ───────────────────────────────
-      environment = [
-        { name = "ENVIRONMENT",       value = "production" },
-        { name = "DEBUG",             value = "false" },
-        # nginx binds to $PORT — set to 80 so ALB can reach it
-        { name = "PORT",              value = "80" },
-        { name = "DATABASE_BACKEND",  value = "postgres" },
-        { name = "AWS_REGION",        value = var.aws_region },
-        { name = "APP_URL",           value = var.app_url },
-        {
-          name  = "CORS_ORIGINS"
-          value = var.enable_alb ? "https://${aws_lb.main[0].dns_name}" : "*"
-        },
-        { name = "MESSAGE_TTL_HOURS", value = "48" },
-        { name = "SECRETS_MANAGER_OPENAI_KEY_NAME", value = aws_secretsmanager_secret.openai.name },
-      ]
+      environment = concat(
+        [
+          { name = "ENVIRONMENT",      value = "production" },
+          { name = "DEBUG",            value = "false" },
+          # nginx binds to $PORT — set to 80 so ALB can reach it
+          { name = "PORT",             value = "80" },
+          { name = "DATABASE_BACKEND", value = "postgres" },
+          { name = "AWS_REGION",       value = var.aws_region },
+          { name = "APP_URL",          value = var.app_url },
+          {
+            name  = "CORS_ORIGINS"
+            value = var.enable_alb ? "https://${aws_lb.main[0].dns_name}" : "*"
+          },
+          { name = "MESSAGE_TTL_HOURS",               value = "48" },
+          { name = "SECRETS_MANAGER_OPENAI_KEY_NAME", value = aws_secretsmanager_secret.openai.name },
+        ],
+        # Storage backend — set to S3 when the media bucket is enabled
+        var.enable_s3 ? [
+          { name = "STORAGE_BACKEND", value = "s3" },
+          { name = "S3_BUCKET_NAME",  value = var.s3_media_bucket_name },
+          { name = "S3_REGION",       value = var.aws_region },
+        ] : [
+          { name = "STORAGE_BACKEND", value = "cloudinary" },
+        ]
+      )
 
       # ── Sensitive values — fetched from Secrets Manager at startup ────────
       # ECS resolves each ARN and injects the plain-text value as an env var.
