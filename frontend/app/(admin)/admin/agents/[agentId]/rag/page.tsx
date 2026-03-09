@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import Link from "next/link";
-import { FileText, Image as ImageIcon, X, Upload, FolderOpen } from "lucide-react";
+import { FileText, Image as ImageIcon, X, Upload, FolderOpen, ChevronDown, ChevronUp } from "lucide-react";
 import { api, ApiError, type RagDocument, type RagFolder } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/shared/Button";
@@ -53,6 +53,7 @@ export default function AgentRAGPage() {
     name: string;
   } | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
+  const [isFolderPanelOpen, setIsFolderPanelOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadFolders = useCallback(async () => {
@@ -274,42 +275,80 @@ export default function AgentRAGPage() {
 
   return (
     <div className="flex flex-col md:flex-row gap-4 md:gap-6">
-      {/* Folders — full width on mobile, sidebar on desktop */}
-      <div className="w-full md:w-56 md:shrink-0 border border-[#BEBAB7] rounded-sm bg-white p-3">
-        <div className="flex items-center gap-2 mb-3">
-          <FolderOpen size={16} className="text-[#9A9590]" />
-          <h3 className="font-semibold text-gray-900">Folders</h3>
-        </div>
+      {/* Folders panel
+          Mobile:  compact toggle bar — tap to expand/collapse
+          Desktop: always-visible sidebar (w-56) */}
+      <div className="md:w-56 md:shrink-0">
+
+        {/* ── Mobile toggle button (hidden on desktop) ─────────────── */}
         <button
-          onClick={() => setSelectedFolderId(null)}
-          className={`w-full text-left px-3 py-2 rounded-sm mb-1 text-sm ${
-            selectedFolderId === null
-              ? "bg-[#EEEAE7] text-[#251D1C] font-medium"
-              : "hover:bg-[#EEEAE7]/50 text-gray-700"
-          }`}
+          className="md:hidden w-full flex items-center justify-between px-3 py-2.5 border border-[#BEBAB7] rounded-sm bg-white text-sm font-medium text-gray-700"
+          onClick={() => setIsFolderPanelOpen((v) => !v)}
+          aria-expanded={isFolderPanelOpen}
         >
-          All documents
+          <span className="flex items-center gap-2">
+            <FolderOpen size={16} className="text-[#9A9590]" />
+            {selectedFolderId
+              ? folders.find((f) => f.id === selectedFolderId)?.name ?? "Folder"
+              : "All documents"}
+            {folders.length > 0 && (
+              <span className="text-xs text-gray-400">({folders.length})</span>
+            )}
+          </span>
+          {isFolderPanelOpen ? (
+            <ChevronUp size={16} className="text-gray-400" />
+          ) : (
+            <ChevronDown size={16} className="text-gray-400" />
+          )}
         </button>
-        {isLoadingFolders ? (
-          <div className="flex justify-center py-4">
-            <LoadingSpinner size="sm" />
+
+        {/* ── Folder tree (always visible on desktop, toggle on mobile) ── */}
+        <div
+          className={`border border-[#BEBAB7] rounded-sm bg-white p-3 ${
+            isFolderPanelOpen ? "block" : "hidden"
+          } md:block`}
+        >
+          <div className="hidden md:flex items-center gap-2 mb-3">
+            <FolderOpen size={16} className="text-[#9A9590]" />
+            <h3 className="font-semibold text-gray-900">Folders</h3>
           </div>
-        ) : (
-          <div className="space-y-0.5 text-sm">
-            {buildFolderTree(folders, handleRenameFolder, handleDeleteFolder)}
+          <button
+            onClick={() => {
+              setSelectedFolderId(null);
+              setIsFolderPanelOpen(false);
+            }}
+            className={`w-full text-left px-3 py-2 rounded-sm mb-1 text-sm ${
+              selectedFolderId === null
+                ? "bg-[#EEEAE7] text-[#251D1C] font-medium"
+                : "hover:bg-[#EEEAE7]/50 text-gray-700"
+            }`}
+          >
+            All documents
+          </button>
+          {isLoadingFolders ? (
+            <div className="flex justify-center py-4">
+              <LoadingSpinner size="sm" />
+            </div>
+          ) : (
+            <div
+              className="space-y-0.5 text-sm"
+              onClick={() => setIsFolderPanelOpen(false)}
+            >
+              {buildFolderTree(folders, handleRenameFolder, handleDeleteFolder)}
+            </div>
+          )}
+          <div className="mt-3 flex gap-2">
+            <Input
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="New folder"
+              className="flex-1 text-sm"
+              onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
+            />
+            <Button size="sm" onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
+              Add
+            </Button>
           </div>
-        )}
-        <div className="mt-3 flex gap-2">
-          <Input
-            value={newFolderName}
-            onChange={(e) => setNewFolderName(e.target.value)}
-            placeholder="New folder"
-            className="flex-1 text-sm"
-            onKeyDown={(e) => e.key === "Enter" && handleCreateFolder()}
-          />
-          <Button size="sm" onClick={handleCreateFolder} disabled={!newFolderName.trim()}>
-            Add
-          </Button>
         </div>
       </div>
 
