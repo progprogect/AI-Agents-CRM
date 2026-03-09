@@ -23,7 +23,7 @@ resource "aws_cloudwatch_log_group" "ecs" {
   tags              = local.common_tags
 }
 
-# Note: aws_cloudwatch_log_group.frontend is defined in frontend.tf
+# The unified container logs everything to /ecs/doctor-agent (aws_cloudwatch_log_group.ecs)
 
 # ─────────────────────────────────────────────
 # ECS Task Definition — Backend
@@ -43,8 +43,10 @@ resource "aws_ecs_task_definition" "backend" {
       name  = "backend"
       image = "${aws_ecr_repository.backend.repository_url}:latest"
 
+      # nginx (the only external port) is configured via $PORT inside the container.
+      # FastAPI runs on 8000 and Next.js on 3000 — both internal, not exposed.
       portMappings = [{
-        containerPort = 8000
+        containerPort = 80
         protocol      = "tcp"
       }]
 
@@ -52,6 +54,8 @@ resource "aws_ecs_task_definition" "backend" {
       environment = [
         { name = "ENVIRONMENT",       value = "production" },
         { name = "DEBUG",             value = "false" },
+        # nginx binds to $PORT — set to 80 so ALB can reach it
+        { name = "PORT",              value = "80" },
         { name = "DATABASE_BACKEND",  value = "postgres" },
         { name = "AWS_REGION",        value = var.aws_region },
         { name = "APP_URL",           value = var.app_url },
@@ -59,10 +63,7 @@ resource "aws_ecs_task_definition" "backend" {
           name  = "CORS_ORIGINS"
           value = var.enable_alb ? "https://${aws_lb.main[0].dns_name}" : "*"
         },
-        # Message TTL
         { name = "MESSAGE_TTL_HOURS", value = "48" },
-        # Secrets Manager key name for OpenAI (used by LLM factory in dynamodb mode;
-        # in postgres mode OPENAI_API_KEY is injected directly from secrets below)
         { name = "SECRETS_MANAGER_OPENAI_KEY_NAME", value = aws_secretsmanager_secret.openai.name },
       ]
 
@@ -100,12 +101,13 @@ resource "aws_ecs_task_definition" "backend" {
         }
       }
 
+      # Health check goes through nginx (/health is proxied to FastAPI)
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+        command     = ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3
-        startPeriod = 60
+        startPeriod = 120  # Unified container starts 3 processes; allow extra time
       }
     }
   ])
@@ -136,7 +138,7 @@ resource "aws_ecs_service" "backend" {
     content {
       target_group_arn = aws_lb_target_group.backend[0].arn
       container_name   = "backend"
-      container_port   = 8000
+      container_port   = 80
     }
   }
 

@@ -37,17 +37,14 @@ resource "aws_iam_role_policy" "ecs_execution" {
         ]
         Resource = "*"
       },
-      # Write logs to CloudWatch
+      # Write logs to CloudWatch (unified container logs to /ecs/doctor-agent)
       {
         Effect = "Allow"
         Action = [
           "logs:CreateLogStream",
           "logs:PutLogEvents"
         ]
-        Resource = [
-          "${aws_cloudwatch_log_group.ecs.arn}:*",
-          "${aws_cloudwatch_log_group.frontend.arn}:*"
-        ]
+        Resource = ["${aws_cloudwatch_log_group.ecs.arn}:*"]
       },
       # Fetch secrets at container startup (injected as env vars via ECS secrets[])
       {

@@ -1,4 +1,6 @@
-# Application Load Balancer (optional - disabled by default for MVP)
+# Application Load Balancer (optional — disabled by default for MVP)
+# When enabled, ALL traffic hits the unified ECS container on port 80.
+# nginx inside the container handles routing to FastAPI or Next.js internally.
 resource "aws_lb" "main" {
   count              = var.enable_alb ? 1 : 0
   name               = "doctor-agent-alb"
@@ -7,23 +9,18 @@ resource "aws_lb" "main" {
   security_groups    = [aws_security_group.alb[0].id]
   subnets            = var.public_subnet_ids
 
-  enable_deletion_protection = false
-  enable_http2              = true
+  enable_deletion_protection       = false
+  enable_http2                     = true
   enable_cross_zone_load_balancing = true
 
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "doctor-agent-alb"
-    }
-  )
+  tags = merge(local.common_tags, { Name = "doctor-agent-alb" })
 }
 
-# Security Group for ALB
+# ALB Security Group — allow HTTP(80) and HTTPS(443) from internet
 resource "aws_security_group" "alb" {
   count       = var.enable_alb ? 1 : 0
   name        = "doctor-agent-alb-sg"
-  description = "Security group for Application Load Balancer"
+  description = "ALB — allow HTTP and HTTPS from internet"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -43,38 +40,33 @@ resource "aws_security_group" "alb" {
   }
 
   egress {
-    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "doctor-agent-alb-sg"
-    }
-  )
+  tags = merge(local.common_tags, { Name = "doctor-agent-alb-sg" })
 }
 
-# Security Group rule: Allow ALB to access ECS service
+# Allow ALB to reach the unified ECS container on port 80 (nginx)
 resource "aws_security_group_rule" "alb_to_ecs" {
   count                    = var.enable_alb ? 1 : 0
   type                     = "ingress"
-  from_port                = 8000
-  to_port                  = 8000
+  from_port                = 80
+  to_port                  = 80
   protocol                 = "tcp"
   source_security_group_id = aws_security_group.alb[0].id
   security_group_id        = aws_security_group.ecs_service.id
-  description              = "Allow ALB to access ECS service"
+  description              = "ALB → ECS unified container (nginx)"
 }
 
-# Target Group for backend
+# Unified target group — port 80 (nginx inside the container)
+# Stickiness is enabled for WebSocket support.
 resource "aws_lb_target_group" "backend" {
   count       = var.enable_alb ? 1 : 0
-  name        = "doctor-agent-backend-tg"
-  port        = 8000
+  name        = "doctor-agent-app-tg"
+  port        = 80
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip"
@@ -84,13 +76,13 @@ resource "aws_lb_target_group" "backend" {
     healthy_threshold   = 2
     unhealthy_threshold = 3
     timeout             = 10
-    interval            = 120
+    interval            = 30
     path                = "/health"
     protocol            = "HTTP"
     matcher             = "200"
   }
 
-  # Enable stickiness for WebSocket connections
+  # Sticky sessions — needed for WebSocket connections to remain on the same task
   stickiness {
     enabled         = true
     type            = "lb_cookie"
@@ -102,55 +94,15 @@ resource "aws_lb_target_group" "backend" {
   tags = local.common_tags
 }
 
-# Target Group for Frontend
-resource "aws_lb_target_group" "frontend" {
-  count       = var.enable_alb ? 1 : 0
-  name        = "doctor-agent-frontend-tg"
-  port        = 3000
-  protocol    = "HTTP"
-  vpc_id      = var.vpc_id
-  target_type = "ip"
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    timeout             = 10
-    interval            = 120
-    path                = "/"
-    protocol            = "HTTP"
-    matcher             = "200"
-  }
-
-  deregistration_delay = 30
-
-  tags = local.common_tags
-}
-
-# Security Group rule: Allow ALB to access Frontend
-resource "aws_security_group_rule" "alb_to_frontend" {
-  count                    = var.enable_alb ? 1 : 0
-  type                     = "ingress"
-  from_port                = 3000
-  to_port                  = 3000
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.alb[0].id
-  security_group_id        = aws_security_group.ecs_service.id
-  description              = "Allow ALB to access Frontend"
-}
-
-# HTTP Listener - Redirects to HTTPS (if HTTPS listener exists)
-# If HTTPS is not configured, forwards to frontend
-resource "aws_lb_listener" "frontend" {
+# HTTP listener — redirect all traffic to HTTPS
+resource "aws_lb_listener" "http_redirect" {
   count             = var.enable_alb ? 1 : 0
   load_balancer_arn = aws_lb.main[0].arn
   port              = "80"
   protocol          = "HTTP"
 
-  # Redirect HTTP to HTTPS if HTTPS listener exists
   default_action {
     type = "redirect"
-
     redirect {
       port        = "443"
       protocol    = "HTTPS"
@@ -158,40 +110,3 @@ resource "aws_lb_listener" "frontend" {
     }
   }
 }
-
-# HTTP Listener Rule - API routes go to backend
-resource "aws_lb_listener_rule" "backend_api" {
-  count        = var.enable_alb ? 1 : 0
-  listener_arn = aws_lb_listener.frontend[0].arn
-  priority     = 100
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.backend[0].arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/api/*", "/health", "/docs", "/openapi.json"]
-    }
-  }
-}
-
-# HTTP Listener Rule - WebSocket routes go to backend
-resource "aws_lb_listener_rule" "backend_websocket" {
-  count        = var.enable_alb ? 1 : 0
-  listener_arn = aws_lb_listener.frontend[0].arn
-  priority     = 90
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.backend[0].arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/ws/*"]
-    }
-  }
-}
-

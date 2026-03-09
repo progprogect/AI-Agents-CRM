@@ -1,59 +1,30 @@
-# HTTPS Listener for ALB
-# Requires an ACM certificate. Request one via:
-#   AWS Console → Certificate Manager → Request → Enter your domain
-# or import a Let's Encrypt certificate with:
-#   aws acm import-certificate --certificate file://cert.pem --private-key file://key.pem \
-#     --certificate-chain file://chain.pem --region <region>
+# HTTPS Listener — forwards all traffic to the unified ECS container.
+# nginx inside the container handles routing to FastAPI or Next.js.
+# No separate listener rules are needed.
 #
-# Then set certificate_arn in your terraform.tfvars:
+# To obtain an ACM certificate:
+#   Option A (AWS-managed): AWS Console → Certificate Manager → Request → enter domain
+#   Option B (Let's Encrypt import):
+#     aws acm import-certificate \
+#       --certificate fileb://cert.pem \
+#       --private-key fileb://key.pem \
+#       --certificate-chain fileb://chain.pem \
+#       --region <region>
+#
+# Then set in terraform.tfvars:
 #   certificate_arn = "arn:aws:acm:<region>:<account>:certificate/<id>"
 
-resource "aws_lb_listener" "frontend_https" {
+resource "aws_lb_listener" "https" {
   count             = var.enable_alb && var.certificate_arn != "" ? 1 : 0
   load_balancer_arn = aws_lb.main[0].arn
   port              = "443"
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"  # TLS 1.3 preferred
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = var.certificate_arn
 
+  # All traffic → unified container; nginx handles /api, /ws, / internally
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.frontend[0].arn
-  }
-}
-
-# HTTPS: API routes → backend
-resource "aws_lb_listener_rule" "backend_api_https" {
-  count        = var.enable_alb && var.certificate_arn != "" ? 1 : 0
-  listener_arn = aws_lb_listener.frontend_https[0].arn
-  priority     = 100
-
-  action {
-    type             = "forward"
     target_group_arn = aws_lb_target_group.backend[0].arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/api/*", "/health", "/docs", "/openapi.json"]
-    }
-  }
-}
-
-# HTTPS: WebSocket routes → backend
-resource "aws_lb_listener_rule" "backend_websocket_https" {
-  count        = var.enable_alb && var.certificate_arn != "" ? 1 : 0
-  listener_arn = aws_lb_listener.frontend_https[0].arn
-  priority     = 90
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.backend[0].arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/ws/*"]
-    }
   }
 }
