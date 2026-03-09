@@ -1,54 +1,54 @@
-# Terraform variables для Doctor Agent MVP
-# Скопируйте этот файл в terraform.tfvars и заполните реальными значениями
+# ============================================================
+# terraform.tfvars.example
+# ============================================================
+# Copy to terraform.tfvars and fill in your values.
+# This file MUST NOT be committed to git (add terraform.tfvars to .gitignore).
+# ============================================================
 
-vpc_id             = "vpc-03cb895f29b20a53e"
-aws_region         = "me-central-1"
-project_tag        = "doctor-agent"
+# ─────────────────────────────────────────────
+# AWS Networking (get from your AWS VPC console)
+# ─────────────────────────────────────────────
+aws_region = "me-central-1"
+vpc_id     = "vpc-xxxxxxxxxxxxxxxxx"
 
-# Private subnets для ECS tasks, OpenSearch, Redis
-# Должны иметь маршрут через NAT Gateway для доступа в интернет
-private_subnet_ids = [
-  "subnet-090c04ef58faa7ee1",  # Doctor-agent-subnet-private1-me-central-1a
-  "subnet-0aa9317fe1b2228e1"  # Doctor-agent-subnet-private2-me-central-1b
-]
+# Private subnets: where ECS tasks and RDS run (no direct internet access)
+private_subnet_ids = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
 
-# Public subnets для ALB (только если enable_alb = true)
-public_subnet_ids = [
-  "subnet-05596238170cc2248",  # Doctor-agent-subnet-public1-me-central-1a
-  "subnet-0d177e6c6453fbc92"  # Doctor-agent-subnet-public2-me-central-1b
-]
+# Public subnets: where ALB lives (only needed if enable_alb = true)
+public_subnet_ids = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
 
-# MVP настройки (минимальная стоимость)
-enable_alb = false              # Отключить ALB (~$16/месяц экономии)
-redis_num_cache_nodes = 0      # Отключить Redis (~$15/месяц экономии)
+# ─────────────────────────────────────────────
+# RDS PostgreSQL
+# ─────────────────────────────────────────────
+db_instance_class    = "db.t3.micro"   # db.t3.small for production
+db_name              = "agent_db"
+db_username          = "agent_admin"
+db_password          = "CHANGE_ME_strong_random_password"  # min 8 chars
+db_allocated_storage = 20    # GB; auto-scales up to 100 GB
+db_multi_az          = false # true for production HA
 
-# OpenSearch настройки
-opensearch_instance_type  = "t3.small.search"  # Минимальный размер для MVP
-opensearch_instance_count = 1
-opensearch_ebs_volume_size = 20
-opensearch_master_user_name = "admin"
-# Пароль задайте через Secrets Manager после создания домена:
-# aws secretsmanager put-secret-value \
-#   --region me-central-1 \
-#   --secret-id doctor-agent/opensearch \
-#   --secret-string "your-secure-password"
+# ─────────────────────────────────────────────
+# Application secrets
+# ─────────────────────────────────────────────
 
-# ECS настройки
-ecs_cpu          = 512          # 0.5 vCPU
-ecs_memory       = 1024         # 1 GB RAM
-ecs_desired_count = 1           # Один task для MVP
+# Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+secret_encryption_key = "CHANGE_ME_fernet_key_here="
 
-# ECR
-ecr_repository_name = "doctor-agent-backend"
+# Generate: openssl rand -hex 32
+jwt_secret_key = "CHANGE_ME_jwt_secret_here"
 
-# Redis (отключен для MVP)
-# redis_node_type = "cache.t3.micro"
-# redis_num_cache_nodes = 1
+# Public URL of the deployed application (used for webhook URLs)
+app_url = "https://your-domain.com"
 
+# ─────────────────────────────────────────────
+# ALB / HTTPS
+# ─────────────────────────────────────────────
+enable_alb      = true
+certificate_arn = "arn:aws:acm:me-central-1:ACCOUNT_ID:certificate/YOUR_CERT_ID"
 
-
-
-
-
-
-
+# ─────────────────────────────────────────────
+# ECS sizing
+# ─────────────────────────────────────────────
+ecs_cpu           = 512   # 0.5 vCPU
+ecs_memory        = 1024  # 1 GB RAM
+ecs_desired_count = 1

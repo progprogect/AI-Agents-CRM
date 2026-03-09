@@ -1,4 +1,7 @@
+# ─────────────────────────────────────────────
 # ECS Cluster
+# ─────────────────────────────────────────────
+
 resource "aws_ecs_cluster" "main" {
   name = "doctor-agent-cluster"
 
@@ -10,15 +13,33 @@ resource "aws_ecs_cluster" "main" {
   tags = local.common_tags
 }
 
-# CloudWatch Log Group for ECS
+# ─────────────────────────────────────────────
+# CloudWatch Log Groups
+# ─────────────────────────────────────────────
+
 resource "aws_cloudwatch_log_group" "ecs" {
   name              = "/ecs/doctor-agent"
   retention_in_days = 7
-
-  tags = local.common_tags
+  tags              = local.common_tags
 }
 
-# ECS Task Definition
+resource "aws_cloudwatch_log_group" "frontend" {
+  name              = "/ecs/doctor-agent-frontend"
+  retention_in_days = 7
+  tags              = local.common_tags
+}
+
+# ─────────────────────────────────────────────
+# Secrets Manager — Instagram webhook secret
+# (referenced in this file's ECS task definition)
+# ─────────────────────────────────────────────
+
+# (Defined in main.tf — referenced here by ARN)
+
+# ─────────────────────────────────────────────
+# ECS Task Definition — Backend
+# ─────────────────────────────────────────────
+
 resource "aws_ecs_task_definition" "backend" {
   family                   = "doctor-agent-backend"
   network_mode             = "awsvpc"
@@ -26,72 +47,51 @@ resource "aws_ecs_task_definition" "backend" {
   cpu                      = var.ecs_cpu
   memory                   = var.ecs_memory
   execution_role_arn       = aws_iam_role.ecs_execution.arn
-  task_role_arn           = aws_iam_role.ecs_task.arn
+  task_role_arn            = aws_iam_role.ecs_task.arn
 
   container_definitions = jsonencode([
     {
       name  = "backend"
       image = "${aws_ecr_repository.backend.repository_url}:latest"
 
-      portMappings = [
-        {
-          containerPort = 8000
-          protocol      = "tcp"
-        }
-      ]
+      portMappings = [{
+        containerPort = 8000
+        protocol      = "tcp"
+      }]
 
-      environment = concat([
-        {
-          name  = "ENVIRONMENT"
-          value = "production"
-        },
-        {
-          name  = "AWS_REGION"
-          value = var.aws_region
-        },
+      # ── Non-sensitive environment variables ───────────────────────────────
+      environment = [
+        { name = "ENVIRONMENT",       value = "production" },
+        { name = "DEBUG",             value = "false" },
+        { name = "DATABASE_BACKEND",  value = "postgres" },
+        { name = "AWS_REGION",        value = var.aws_region },
+        { name = "APP_URL",           value = var.app_url },
         {
           name  = "CORS_ORIGINS"
-          value = var.enable_alb ? "https://${aws_lb.main[0].dns_name},https://agents.elemental.ae" : "*"
+          value = var.enable_alb ? "https://${aws_lb.main[0].dns_name}" : "*"
         },
-        {
-          name  = "DYNAMODB_TABLE_AGENTS"
-          value = aws_dynamodb_table.agents.name
-        },
-        {
-          name  = "DYNAMODB_TABLE_CONVERSATIONS"
-          value = aws_dynamodb_table.conversations.name
-        },
-        {
-          name  = "DYNAMODB_TABLE_MESSAGES"
-          value = aws_dynamodb_table.messages.name
-        },
-        {
-          name  = "DYNAMODB_TABLE_CHANNEL_BINDINGS"
-          value = aws_dynamodb_table.channel_bindings.name
-        },
-        {
-          name  = "DYNAMODB_TABLE_AUDIT_LOGS"
-          value = aws_dynamodb_table.audit_logs.name
-        },
-        {
-          name  = "DYNAMODB_TABLE_SESSIONS"
-          value = aws_dynamodb_table.sessions.name
-        },
-        {
-          name  = "DYNAMODB_TABLE_RAG_DOCUMENTS"
-          value = aws_dynamodb_table.rag_documents.name
-        },
-        {
-          name  = "DYNAMODB_TABLE_INSTAGRAM_PROFILES"
-          value = aws_dynamodb_table.instagram_profiles.name
-        },
-        {
-          name  = "SECRETS_MANAGER_OPENAI_KEY_NAME"
-          value = aws_secretsmanager_secret.openai.name
-        }
-      ])
+        # Message TTL
+        { name = "MESSAGE_TTL_HOURS", value = "48" },
+        # Secrets Manager key name for OpenAI (used by LLM factory in dynamodb mode;
+        # in postgres mode OPENAI_API_KEY is injected directly from secrets below)
+        { name = "SECRETS_MANAGER_OPENAI_KEY_NAME", value = aws_secretsmanager_secret.openai.name },
+      ]
 
+      # ── Sensitive values — fetched from Secrets Manager at startup ────────
+      # ECS resolves each ARN and injects the plain-text value as an env var.
       secrets = [
+        {
+          name      = "DATABASE_URL"
+          valueFrom = aws_secretsmanager_secret.database_url.arn
+        },
+        {
+          name      = "SECRET_ENCRYPTION_KEY"
+          valueFrom = aws_secretsmanager_secret.secret_encryption_key.arn
+        },
+        {
+          name      = "JWT_SECRET_KEY"
+          valueFrom = aws_secretsmanager_secret.jwt_secret_key.arn
+        },
         {
           name      = "OPENAI_API_KEY"
           valueFrom = aws_secretsmanager_secret.openai.arn
@@ -107,7 +107,7 @@ resource "aws_ecs_task_definition" "backend" {
         options = {
           "awslogs-group"         = aws_cloudwatch_log_group.ecs.name
           "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix"  = "ecs"
+          "awslogs-stream-prefix" = "ecs"
         }
       }
 
@@ -124,7 +124,10 @@ resource "aws_ecs_task_definition" "backend" {
   tags = local.common_tags
 }
 
-# ECS Service
+# ─────────────────────────────────────────────
+# ECS Service — Backend
+# ─────────────────────────────────────────────
+
 resource "aws_ecs_service" "backend" {
   name            = "doctor-agent-backend"
   cluster         = aws_ecs_cluster.main.id
@@ -133,14 +136,12 @@ resource "aws_ecs_service" "backend" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets          = var.private_subnet_ids
-    security_groups  = [aws_security_group.ecs_service.id]
-    # If ALB is disabled, we need public IP for internet access (OpenAI API)
-    # If ALB is enabled, tasks can stay private
+    subnets         = var.private_subnet_ids
+    security_groups = [aws_security_group.ecs_service.id]
+    # Tasks stay private when ALB is enabled; need a public IP otherwise (for outbound internet)
     assign_public_ip = !var.enable_alb
   }
 
-  # Only add load balancer if ALB is enabled
   dynamic "load_balancer" {
     for_each = var.enable_alb ? [1] : []
     content {
@@ -152,17 +153,10 @@ resource "aws_ecs_service" "backend" {
 
   depends_on = [
     aws_iam_role_policy.ecs_execution,
-    aws_iam_role_policy.ecs_task
+    aws_iam_role_policy.ecs_task,
+    # RDS must be available before the app starts
+    aws_db_instance.main,
   ]
 
   tags = local.common_tags
 }
-
-# Secrets Manager secret for Instagram webhook verify token
-resource "aws_secretsmanager_secret" "instagram_webhook_verify_token" {
-  name        = "doctor-agent/instagram-webhook-verify-token"
-  description = "Instagram webhook verification token for Doctor Agent"
-
-  tags = local.common_tags
-}
-

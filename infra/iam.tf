@@ -1,24 +1,24 @@
-# IAM Role for ECS Task Execution (pulls images, writes logs)
+# ─────────────────────────────────────────────
+# IAM Role: ECS Task Execution
+# Grants ECS the ability to pull images from ECR and write logs to CloudWatch.
+# Also allows fetching secrets from Secrets Manager at container startup.
+# ─────────────────────────────────────────────
+
 resource "aws_iam_role" "ecs_execution" {
   name = "doctor-agent-ecs-execution-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
   })
 
   tags = local.common_tags
 }
 
-# IAM Policy for ECS Task Execution
 resource "aws_iam_role_policy" "ecs_execution" {
   name = "doctor-agent-ecs-execution-policy"
   role = aws_iam_role.ecs_execution.id
@@ -26,6 +26,7 @@ resource "aws_iam_role_policy" "ecs_execution" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # Pull Docker images from ECR
       {
         Effect = "Allow"
         Action = [
@@ -36,6 +37,7 @@ resource "aws_iam_role_policy" "ecs_execution" {
         ]
         Resource = "*"
       },
+      # Write logs to CloudWatch
       {
         Effect = "Allow"
         Action = [
@@ -47,41 +49,44 @@ resource "aws_iam_role_policy" "ecs_execution" {
           "${aws_cloudwatch_log_group.frontend.arn}:*"
         ]
       },
+      # Fetch secrets at container startup (injected as env vars via ECS secrets[])
       {
         Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
+        Action = ["secretsmanager:GetSecretValue"]
         Resource = [
           aws_secretsmanager_secret.openai.arn,
-          aws_secretsmanager_secret.instagram_webhook_verify_token.arn
+          aws_secretsmanager_secret.instagram_webhook_verify_token.arn,
+          aws_secretsmanager_secret.database_url.arn,
+          aws_secretsmanager_secret.secret_encryption_key.arn,
+          aws_secretsmanager_secret.jwt_secret_key.arn,
         ]
       }
     ]
   })
 }
 
-# IAM Role for ECS Task (application runtime)
+# ─────────────────────────────────────────────
+# IAM Role: ECS Task (application runtime)
+# Grants the running container permissions to call AWS services.
+# With Postgres backend: only Secrets Manager access is needed at runtime
+# (for creating/updating channel token secrets via the admin UI).
+# ─────────────────────────────────────────────
+
 resource "aws_iam_role" "ecs_task" {
   name = "doctor-agent-ecs-task-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
   })
 
   tags = local.common_tags
 }
 
-# IAM Policy for ECS Task (DynamoDB access)
 resource "aws_iam_role_policy" "ecs_task" {
   name = "doctor-agent-ecs-task-policy"
   role = aws_iam_role.ecs_task.id
@@ -89,46 +94,15 @@ resource "aws_iam_role_policy" "ecs_task" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      # Read the OpenAI key at runtime (LLM factory reads it on demand)
       {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:PutItem",
-          "dynamodb:GetItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan"
-        ]
-        Resource = [
-          aws_dynamodb_table.agents.arn,
-          aws_dynamodb_table.conversations.arn,
-          aws_dynamodb_table.messages.arn,
-          aws_dynamodb_table.channel_bindings.arn,
-          aws_dynamodb_table.audit_logs.arn,
-          aws_dynamodb_table.sessions.arn,
-          aws_dynamodb_table.rag_documents.arn,
-          aws_dynamodb_table.instagram_profiles.arn,
-          aws_dynamodb_table.notification_configs.arn,
-          "${aws_dynamodb_table.agents.arn}/*",
-          "${aws_dynamodb_table.conversations.arn}/*",
-          "${aws_dynamodb_table.messages.arn}/*",
-          "${aws_dynamodb_table.channel_bindings.arn}/*",
-          "${aws_dynamodb_table.audit_logs.arn}/*",
-          "${aws_dynamodb_table.sessions.arn}/*",
-          "${aws_dynamodb_table.rag_documents.arn}/*",
-          "${aws_dynamodb_table.instagram_profiles.arn}/*",
-          "${aws_dynamodb_table.notification_configs.arn}/*"
-        ]
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = [aws_secretsmanager_secret.openai.arn]
       },
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = [
-          aws_secretsmanager_secret.openai.arn
-        ]
-      },
+      # Create/update/delete channel and notification token secrets via admin UI.
+      # The app stores encrypted tokens in Postgres but also optionally uses
+      # Secrets Manager for fine-grained per-binding secrets.
       {
         Effect = "Allow"
         Action = [
@@ -148,5 +122,3 @@ resource "aws_iam_role_policy" "ecs_task" {
     ]
   })
 }
-
-

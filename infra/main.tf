@@ -7,11 +7,13 @@ locals {
   _validation_public_subnets = var.enable_alb && length(var.public_subnet_ids) == 0 ? tobool("ERROR: public_subnet_ids must be provided when enable_alb is true") : true
 }
 
+# ─────────────────────────────────────────────
 # Security Groups
+# ─────────────────────────────────────────────
 
 resource "aws_security_group" "ecs_service" {
-  name        = "ecs-service-sg"
-  description = "ECS backend service"
+  name        = "doctor-agent-ecs-service-sg"
+  description = "ECS tasks — allow all outbound (internet for OpenAI, etc.)"
   vpc_id      = var.vpc_id
 
   egress {
@@ -21,21 +23,17 @@ resource "aws_security_group" "ecs_service" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  lifecycle {
-    # Игнорируем изменения, так как SG уже существует и используется
-    ignore_changes = [description, tags, name]
-    prevent_destroy = true  # Защита от случайного удаления
-  }
+  tags = merge(local.common_tags, { Name = "doctor-agent-ecs-service-sg" })
 }
 
-# Security Group for Redis (оставляем для будущего использования)
+# Redis security group — allow access from ECS tasks
 resource "aws_security_group" "redis" {
-  name        = "redis-sg"
-  description = "Allow Redis access only from ECS backend"
+  name        = "doctor-agent-redis-sg"
+  description = "Allow Redis access only from ECS tasks"
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "Allow Redis from ECS service"
+    description     = "Redis from ECS"
     from_port       = 6379
     to_port         = 6379
     protocol        = "tcp"
@@ -43,313 +41,37 @@ resource "aws_security_group" "redis" {
   }
 
   egress {
-    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "redis-sg"
-    }
-  )
+  tags = merge(local.common_tags, { Name = "doctor-agent-redis-sg" })
 }
 
-# Security Group for OpenSearch (оставляем для будущего использования)
-resource "aws_security_group" "opensearch" {
-  name        = "opensearch-sg"
-  description = "Allow OpenSearch access only from ECS backend"
-  vpc_id      = var.vpc_id
-
-  ingress {
-    description     = "Allow HTTPS from ECS service"
-    from_port       = 443
-    to_port         = 443
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_service.id]
-  }
-
-  egress {
-    description = "Allow all outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "opensearch-sg"
-    }
-  )
-}
-
-# DynamoDB Tables
-
-resource "aws_dynamodb_table" "agents" {
-  name         = "Agents"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key = "agent_id"
-
-  attribute {
-    name = "agent_id"
-    type = "S"
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "Agents"
-    }
-  )
-}
-
-resource "aws_dynamodb_table" "conversations" {
-  name         = "Conversations"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key = "conversation_id"
-
-  attribute {
-    name = "conversation_id"
-    type = "S"
-  }
-
-  ttl {
-    attribute_name = "expires_at"
-    enabled        = true
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "Conversations"
-    }
-  )
-}
-
-resource "aws_dynamodb_table" "messages" {
-  name         = "Messages"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key = "conversation_id"
-  range_key = "message_id"
-
-  attribute {
-    name = "conversation_id"
-    type = "S"
-  }
-
-  attribute {
-    name = "message_id"
-    type = "S"
-  }
-
-  ttl {
-    attribute_name = "expires_at"
-    enabled        = true
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "Messages"
-    }
-  )
-}
-
-resource "aws_dynamodb_table" "channel_bindings" {
-  name         = "doctor-agent-channel-bindings"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key = "binding_id"
-
-  attribute {
-    name = "binding_id"
-    type = "S"
-  }
-
-  attribute {
-    name = "agent_id"
-    type = "S"
-  }
-
-  attribute {
-    name = "channel_type"
-    type = "S"
-  }
-
-  attribute {
-    name = "channel_account_id"
-    type = "S"
-  }
-
-  global_secondary_index {
-    name            = "agent_id-index"
-    hash_key        = "agent_id"
-    range_key       = "channel_type"
-    projection_type = "ALL"
-  }
-
-  global_secondary_index {
-    name            = "channel_account-index"
-    hash_key        = "channel_type"
-    range_key       = "channel_account_id"
-    projection_type = "ALL"
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "ChannelBindings"
-    }
-  )
-}
-
-resource "aws_dynamodb_table" "audit_logs" {
-  name         = "doctor-agent-audit-logs"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key = "log_id"
-
-  attribute {
-    name = "log_id"
-    type = "S"
-  }
-
-  attribute {
-    name = "admin_id"
-    type = "S"
-  }
-
-  attribute {
-    name = "resource_type"
-    type = "S"
-  }
-
-  global_secondary_index {
-    name            = "admin_id-index"
-    hash_key        = "admin_id"
-    projection_type = "ALL"
-  }
-
-  global_secondary_index {
-    name            = "resource_type-index"
-    hash_key        = "resource_type"
-    projection_type = "ALL"
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "AuditLogs"
-    }
-  )
-}
-
-resource "aws_dynamodb_table" "sessions" {
-  name         = "doctor-agent-sessions"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key = "session_key"
-
-  attribute {
-    name = "session_key"
-    type = "S"
-  }
-
-  ttl {
-    attribute_name = "expires_at"
-    enabled        = true
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "Sessions"
-    }
-  )
-}
-
-resource "aws_dynamodb_table" "notification_configs" {
-  name         = "doctor-agent-notification-configs"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key = "config_id"
-
-  attribute {
-    name = "config_id"
-    type = "S"
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "NotificationConfigs"
-    }
-  )
-}
-
-resource "aws_dynamodb_table" "rag_documents" {
-  name         = "doctor-agent-rag-documents"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key  = "agent_id"
-  range_key = "document_id"
-
-  attribute {
-    name = "agent_id"
-    type = "S"
-  }
-
-  attribute {
-    name = "document_id"
-    type = "S"
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "RAGDocuments"
-    }
-  )
-}
-
-resource "aws_dynamodb_table" "instagram_profiles" {
-  name         = "doctor-agent-instagram-profiles"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key = "external_user_id"
-
-  attribute {
-    name = "external_user_id"
-    type = "S"
-  }
-
-  ttl {
-    attribute_name = "ttl"
-    enabled        = true
-  }
-
-  tags = merge(
-    local.common_tags,
-    {
-      Name = "InstagramProfiles"
-    }
-  )
-}
-
-# Secrets Manager
+# ─────────────────────────────────────────────
+# Secrets Manager — OpenAI API key
+# (Separate from rds.tf secrets for clarity)
+# ─────────────────────────────────────────────
 
 resource "aws_secretsmanager_secret" "openai" {
-  name        = "doctor-agent/openai"
+  name        = "doctor-agent/openai-api-key"
   description = "OpenAI API key for Doctor Agent"
-
-  tags = local.common_tags
+  tags        = local.common_tags
 }
 
+# Note: Set the actual secret value via AWS Console or CLI after terraform apply:
+#   aws secretsmanager put-secret-value \
+#     --secret-id doctor-agent/openai-api-key \
+#     --secret-string "sk-..."
+
+# ─────────────────────────────────────────────
+# Secrets Manager — Instagram webhook token
+# ─────────────────────────────────────────────
+
+resource "aws_secretsmanager_secret" "instagram_webhook_verify_token" {
+  name        = "doctor-agent/instagram-webhook-verify-token"
+  description = "Instagram webhook verification token"
+  tags        = local.common_tags
+}
