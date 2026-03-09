@@ -54,7 +54,7 @@ function CopyField({ value, masked }: { value: string; masked?: boolean }) {
   const display = masked && !show ? "•".repeat(Math.min(value.length, 24)) : value;
   return (
     <div className="flex items-center gap-2 mt-1.5">
-      <code className="flex-1 bg-[#EEEAE7] border border-[#BEBAB7] rounded px-3 py-1.5 text-xs font-mono text-[#251D1C] truncate">
+      <code className="flex-1 min-w-0 bg-[#EEEAE7] border border-[#BEBAB7] rounded px-3 py-1.5 text-xs font-mono text-[#251D1C] overflow-x-auto whitespace-nowrap block">
         {value ? display : <span className="text-[#9A9590]">Not configured</span>}
       </code>
       {masked && value && (
@@ -112,7 +112,7 @@ function Step({
       <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#EEEAE7] text-[#443C3C] text-xs font-bold flex items-center justify-center mt-0.5">
         {n}
       </span>
-      <div className="flex-1 text-sm text-[#443C3C] leading-relaxed">{children}</div>
+      <div className="flex-1 min-w-0 text-sm text-[#443C3C] leading-relaxed break-words">{children}</div>
     </div>
   );
 }
