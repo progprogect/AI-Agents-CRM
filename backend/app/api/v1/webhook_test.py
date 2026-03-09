@@ -67,10 +67,11 @@ async def check_webhook_config(
     
     settings = get_settings()
     
+    base = (settings.app_url or "").rstrip("/")
     return {
         "webhook_verify_token_configured": settings.instagram_webhook_verify_token is not None,
         "app_secret_configured": settings.instagram_app_secret is not None,
-        "webhook_url": f"https://doctor-agent-alb-1328234230.me-central-1.elb.amazonaws.com/api/v1/instagram/webhook",
-        "webhook_verify_url": f"https://doctor-agent-alb-1328234230.me-central-1.elb.amazonaws.com/api/v1/instagram/webhook",
+        "webhook_url": f"{base}/api/v1/instagram/webhook",
+        "webhook_verify_url": f"{base}/api/v1/instagram/webhook",
     }
 

@@ -19,7 +19,11 @@ class AgentException(Exception):
         super().__init__(self.message)
 
 
-class AgentNotFoundError(AgentException):
+class NotFoundError(AgentException):
+    """Base class for all not-found errors (maps to HTTP 404)."""
+
+
+class AgentNotFoundError(NotFoundError):
     """Raised when agent is not found."""
 
     def __init__(self, agent_id: str):
@@ -31,7 +35,7 @@ class AgentNotFoundError(AgentException):
         )
 
 
-class ConversationNotFoundError(AgentException):
+class ConversationNotFoundError(NotFoundError):
     """Raised when conversation is not found."""
 
     def __init__(self, conversation_id: str):

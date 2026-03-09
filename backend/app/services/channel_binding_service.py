@@ -225,7 +225,7 @@ class ChannelBindingService:
                         # Use production domain for webhook URL
                         from app.config import get_settings as _get_settings
                         _settings = _get_settings()
-                        _base = _settings.app_url or "https://agents.elemental.ae"
+                        _base = _settings.app_url or ""
                         webhook_url = f"{_base}/api/v1/telegram/webhook/{binding_id}"
                         
                         webhook_set = await telegram_service.set_webhook(binding_id, webhook_url)

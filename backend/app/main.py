@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from app.api.exceptions import AgentException
+from app.api.exceptions import AgentException, NotFoundError
 from app.api.middleware import (
     LoggingMiddleware,
     RequestIDMiddleware,
@@ -108,11 +108,33 @@ def create_app() -> FastAPI:
     )
 
     # Exception handlers
+    @app.exception_handler(NotFoundError)
+    async def not_found_exception_handler(
+        request: Request, exc: NotFoundError
+    ):
+        """Handle NotFoundError subclasses → HTTP 404."""
+        request_id = getattr(request.state, "request_id", None)
+        logger.warning(
+            f"NotFound: {exc.code} - {exc.message}",
+            extra={"request_id": request_id, "code": exc.code, "path": request.url.path},
+        )
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={
+                "error": {
+                    "code": exc.code,
+                    "message": exc.message,
+                    "details": exc.details,
+                    "request_id": request_id,
+                }
+            },
+        )
+
     @app.exception_handler(AgentException)
     async def agent_exception_handler(
         request: Request, exc: AgentException
     ):
-        """Handle custom AgentException."""
+        """Handle custom AgentException → HTTP 400."""
         request_id = getattr(request.state, "request_id", None)
         logger.error(
             f"AgentException: {exc.code} - {exc.message}",

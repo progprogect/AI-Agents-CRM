@@ -63,7 +63,7 @@ class NotificationService:
                 return
 
             # Build notification message
-            admin_url = admin_panel_base_url or "https://agents.elemental.ae"
+            admin_url = admin_panel_base_url or ""
             conversation_url = f"{admin_url}/admin/conversations/{conversation.conversation_id}"
 
             message_text = (

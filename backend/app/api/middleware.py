@@ -1,5 +1,6 @@
 """Middleware for request processing."""
 
+import asyncio
 import time
 import uuid
 import logging
@@ -69,51 +70,49 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Simple rate limiting middleware."""
+    """Simple in-process rate limiting middleware (sliding window per IP).
+
+    Uses asyncio.Lock to prevent race conditions in concurrent async requests.
+    For multi-process deployments, use a shared Redis-backed rate limiter instead.
+    """
 
     def __init__(self, app, requests_per_minute: int = 60):
         """Initialize rate limiter."""
         super().__init__(app)
         self.requests_per_minute = requests_per_minute
         self.request_counts: dict[str, list[float]] = {}
+        self._lock = asyncio.Lock()
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Check rate limit."""
         client_ip = request.client.host if request.client else "unknown"
         current_time = time.time()
 
-        # Clean old entries (older than 1 minute)
-        if client_ip in self.request_counts:
-            self.request_counts[client_ip] = [
-                t
-                for t in self.request_counts[client_ip]
-                if current_time - t < 60
-            ]
-        else:
-            self.request_counts[client_ip] = []
+        async with self._lock:
+            # Remove timestamps older than 1 minute (sliding window)
+            window = self.request_counts.get(client_ip, [])
+            window = [t for t in window if current_time - t < 60]
 
-        # Check rate limit
-        if len(self.request_counts[client_ip]) >= self.requests_per_minute:
-            logger.warning(
-                f"Rate limit exceeded for {client_ip}",
-                extra={
-                    "client_ip": client_ip,
-                    "path": request.url.path,
-                    "request_id": getattr(request.state, "request_id", None),
-                },
-            )
+            if len(window) >= self.requests_per_minute:
+                logger.warning(
+                    f"Rate limit exceeded for {client_ip}",
+                    extra={
+                        "client_ip": client_ip,
+                        "path": request.url.path,
+                        "request_id": getattr(request.state, "request_id", None),
+                    },
+                )
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={
+                        "error": {
+                            "code": "RATE_LIMIT_EXCEEDED",
+                            "message": "Too many requests. Please try again later.",
+                        }
+                    },
+                )
 
-            return JSONResponse(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                content={
-                    "error": {
-                        "code": "RATE_LIMIT_EXCEEDED",
-                        "message": "Too many requests. Please try again later.",
-                    }
-                },
-            )
-
-        # Record request
-        self.request_counts[client_ip].append(current_time)
+            window.append(current_time)
+            self.request_counts[client_ip] = window
 
         return await call_next(request)

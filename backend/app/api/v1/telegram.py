@@ -123,7 +123,7 @@ async def set_webhook(
     from app.config import get_settings
 
     settings = get_settings()
-    base_url = settings.app_url.rstrip("/") if settings.app_url else "https://agents.elemental.ae"
+    base_url = settings.app_url.rstrip("/") if settings.app_url else ""
     webhook_url = f"{base_url}/api/v1/telegram/webhook/{binding_id}"
 
     # Set webhook via Telegram API
@@ -201,7 +201,7 @@ async def get_webhook_status(
                 webhook_info = result.get("result", {})
                 from app.config import get_settings as _get_settings
                 _s = _get_settings()
-                _base = _s.app_url.rstrip("/") if _s.app_url else "https://agents.elemental.ae"
+                _base = _s.app_url.rstrip("/") if _s.app_url else ""
                 return {
                     "status": "ok",
                     "webhook_info": webhook_info,

@@ -24,7 +24,15 @@ async def get_current_admin(
     if not credentials:
         admin_token = getattr(settings, "admin_token", None)
         if not admin_token:
-            return "admin_user"
+            # Allow unauthenticated access only in debug/dev mode.
+            # In production (DEBUG=False) this raises 401 to prevent accidental exposure.
+            if settings.debug:
+                return "admin_user"
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
@@ -57,8 +65,8 @@ async def get_current_admin(
     if admin_token and token == admin_token:
         return "admin_user"
 
-    # 3. Dev mode: no token configured — allow access
-    if not settings.jwt_secret_key and not admin_token:
+    # 3. Dev mode: no token configured — allow access only when DEBUG=True
+    if not settings.jwt_secret_key and not admin_token and settings.debug:
         return "admin_user"
 
     raise HTTPException(

@@ -364,105 +364,14 @@ async def send_admin_message(
 
         # Determine channel and send message accordingly
         conversation_channel = get_enum_value(conversation.channel)
-        
-        if conversation_channel == MessageChannel.INSTAGRAM.value:
-            # Send via Instagram API for Instagram conversations
-            try:
-                # Create Instagram service and sender
-                settings = get_settings()
-                secrets_manager = get_secrets_manager()
-                binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
-                instagram_service = InstagramService(binding_service, deps.dynamodb, settings)
-                
-                # Convert string back to enum for get_channel_sender
-                channel_enum = MessageChannel(conversation_channel) if isinstance(conversation_channel, str) else conversation.channel
-                instagram_sender = get_channel_sender(
-                    channel_enum, deps.dynamodb, instagram_service
-                )
-                
-                # Send message via Instagram API
-                await instagram_sender.send_message(
-                    conversation_id=conversation_id,
-                    message_text=request.content,
-                    media_url=request.media_url,
-                    media_type=request.media_type,
-                )
-                
-                logger.info(f"Sent admin message to Instagram conversation {conversation_id}")
-            except ValueError as e:
-                # No binding or missing external_user_id - return clear error
-                logger.error(f"Failed to send Instagram message: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Cannot send message to Instagram conversation: {str(e)}",
-                )
-            except Exception as instagram_error:
-                # Instagram API error - log but don't fail (message already saved)
-                logger.error(
-                    f"Failed to send message via Instagram API: {instagram_error}",
-                    exc_info=True,
-                )
-                # Message is already saved in DB, so we continue
-        elif conversation_channel == MessageChannel.TELEGRAM.value:
-            # Send via Telegram API for Telegram conversations
-            try:
-                # Create Telegram service and sender
-                settings = get_settings()
-                secrets_manager = get_secrets_manager()
-                binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
-                telegram_service = TelegramService(binding_service, deps.dynamodb, settings)
-                
-                # Convert string back to enum for get_channel_sender
-                channel_enum = MessageChannel(conversation_channel) if isinstance(conversation_channel, str) else conversation.channel
-                telegram_sender = get_channel_sender(
-                    channel_enum, deps.dynamodb, telegram_service=telegram_service
-                )
-                
-                # Send message via Telegram API
-                await telegram_sender.send_message(
-                    conversation_id=conversation_id,
-                    message_text=request.content,
-                    media_url=request.media_url,
-                    media_type=request.media_type,
-                )
-                
-                logger.info(f"Sent admin message to Telegram conversation {conversation_id}")
-            except ValueError as e:
-                # No binding or missing external_user_id - return clear error
-                logger.error(f"Failed to send Telegram message: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Cannot send message to Telegram conversation: {str(e)}",
-                )
-            except Exception as telegram_error:
-                # Telegram API error - log but don't fail (message already saved)
-                logger.error(
-                    f"Failed to send message via Telegram API: {telegram_error}",
-                    exc_info=True,
-                )
-                # Message is already saved in DB, so we continue
-        elif conversation_channel == MessageChannel.WHATSAPP.value:
-            # Send via WhatsApp sender (handles both Meta and Twilio providers)
-            try:
-                from app.services.channel_sender import WhatsAppSender
-                wa_sender = WhatsAppSender(None, deps.dynamodb)
-                await wa_sender.send_message(
-                    conversation_id=conversation_id,
-                    message_text=request.content,
-                    media_url=request.media_url,
-                    media_type=request.media_type,
-                )
-                logger.info(f"Sent admin message to WhatsApp conversation {conversation_id}")
-            except ValueError as e:
-                logger.error(f"Failed to send WhatsApp message: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Cannot send message to WhatsApp conversation: {str(e)}",
-                )
-            except Exception as wa_error:
-                logger.error(f"Failed to send message via WhatsApp: {wa_error}", exc_info=True)
-        else:
-            # Send via WebSocket for web chat (don't fail if WebSocket is not connected)
+        channel_enum = (
+            MessageChannel(conversation_channel)
+            if isinstance(conversation_channel, str)
+            else conversation.channel
+        )
+
+        if conversation_channel == MessageChannel.WEB_CHAT.value:
+            # Web chat is real-time only — deliver via WebSocket (best-effort)
             try:
                 await connection_manager.send_message(
                     conversation_id,
@@ -477,8 +386,47 @@ async def send_admin_message(
                     },
                 )
             except Exception as ws_error:
-                # Log but don't fail the request if WebSocket fails
-                logger.warning(f"Failed to send message via WebSocket: {ws_error}")
+                logger.warning(f"Failed to send admin message via WebSocket: {ws_error}")
+        else:
+            # External channels — build services lazily and use unified ChannelSender.
+            # Message is already persisted; channel send errors are non-fatal.
+            settings = get_settings()
+            secrets_manager = get_secrets_manager()
+            binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+
+            instagram_service = None
+            telegram_service = None
+            if conversation_channel == MessageChannel.INSTAGRAM.value:
+                instagram_service = InstagramService(binding_service, deps.dynamodb, settings)
+            elif conversation_channel == MessageChannel.TELEGRAM.value:
+                telegram_service = TelegramService(binding_service, deps.dynamodb, settings)
+
+            channel_sender = get_channel_sender(
+                channel_enum, deps.dynamodb, instagram_service, telegram_service
+            )
+
+            try:
+                await channel_sender.send_message(
+                    conversation_id=conversation_id,
+                    message_text=request.content,
+                    media_url=request.media_url,
+                    media_type=request.media_type,
+                )
+                logger.info(
+                    f"Sent admin message to {conversation_channel} conversation {conversation_id}"
+                )
+            except ValueError as e:
+                logger.error(f"Failed to send {conversation_channel} message: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot send message to {conversation_channel} conversation: {str(e)}",
+                )
+            except Exception as e:
+                # Channel API error — log but don't fail (message already saved to DB)
+                logger.error(
+                    f"Failed to deliver admin message via {conversation_channel}: {e}",
+                    exc_info=True,
+                )
 
         # Create audit log
         await deps.dynamodb.create_audit_log(
