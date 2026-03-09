@@ -381,7 +381,7 @@ export const api = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, err.detail || "Media upload failed");
+      throw new ApiError(res.status.toString(), err.detail || "Media upload failed");
     }
     return res.json();
   },
