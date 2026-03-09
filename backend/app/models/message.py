@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.utils.datetime_utils import to_utc_iso_string, utc_now
 
@@ -33,7 +33,7 @@ class Message(BaseModel):
     conversation_id: str = Field(..., description="Conversation ID")
     agent_id: str = Field(..., description="Agent ID")
     role: MessageRole = Field(..., description="Message role")
-    content: str = Field(..., description="Message content")
+    content: str = Field(default="", description="Message text content")
     channel: MessageChannel = Field(
         default=MessageChannel.WEB_CHAT, description="Channel through which message was sent/received"
     )
@@ -50,6 +50,22 @@ class Message(BaseModel):
     ttl: Optional[int] = Field(
         None, description="TTL timestamp for DynamoDB (timestamp + 48h)"
     )
+    # Media fields — stored in metadata for DB compatibility, exposed as top-level fields.
+    # When reading from DB, the model_validator populates these from metadata automatically.
+    media_url: Optional[str] = Field(None, description="Public URL of attached media")
+    media_type: Optional[str] = Field(
+        None, description="Media MIME category: image, video, audio, document"
+    )
+
+    @model_validator(mode="after")
+    def _sync_media_from_metadata(self) -> "Message":
+        """Populate media_url/media_type from metadata when reading from DB."""
+        if self.metadata:
+            if self.media_url is None:
+                self.media_url = self.metadata.get("media_url")
+            if self.media_type is None:
+                self.media_type = self.metadata.get("media_type")
+        return self
 
     class Config:
         """Pydantic config."""

@@ -8,6 +8,7 @@ interface MessageInputProps {
   disabled?: boolean;
   placeholder?: string;
   maxLength?: number;
+  allowEmpty?: boolean;  // allow sending empty text (when media is attached)
 }
 
 const SendIcon = () => (
@@ -32,6 +33,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   disabled = false,
   placeholder = "Type your message...",
   maxLength,
+  allowEmpty = false,
 }) => {
   const [content, setContent] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -45,7 +47,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   }, [content]);
 
   const handleSend = () => {
-    if (content.trim() && !disabled) {
+    if ((content.trim() || allowEmpty) && !disabled) {
       onSend(content);
       setContent("");
       if (textareaRef.current) {
@@ -100,7 +102,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         </div>
         <Button
           onClick={handleSend}
-          disabled={disabled || !content.trim()}
+          disabled={disabled || (!content.trim() && !allowEmpty)}
           variant="primary"
           icon={<SendIcon />}
           iconPosition="right"

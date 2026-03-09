@@ -90,6 +90,62 @@ class CloudinaryService:
             logger.error(f"Cloudinary upload failed: {e}", exc_info=True)
             raise CloudinaryServiceError(f"Failed to upload file: {e}") from e
 
+    def upload_chat_media(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        mimetype: str = "application/octet-stream",
+    ) -> str:
+        """Upload chat media (image/video/audio/document) to Cloudinary.
+
+        Returns the public secure URL.
+        Path: {CLOUDINARY_FOLDER}/chat-media/{uuid}.ext
+        """
+        self._ensure_configured()
+
+        import cloudinary
+        import cloudinary.uploader
+
+        cloudinary.config(
+            cloud_name=self.settings.cloudinary_cloud_name,
+            api_key=self.settings.cloudinary_api_key,
+            api_secret=self.settings.cloudinary_api_secret,
+        )
+
+        base_folder = self.settings.cloudinary_folder.strip("/")
+        folder = f"{base_folder}/chat-media"
+
+        ext = ""
+        if "." in filename:
+            ext = "." + filename.rsplit(".", 1)[-1].lower()
+        public_id = f"{folder}/{uuid.uuid4()}{ext}"
+
+        image_mimetypes = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/svg+xml"}
+        video_mimetypes = {"video/mp4", "video/webm", "video/ogg", "video/quicktime"}
+        if mimetype in image_mimetypes:
+            resource_type = "image"
+        elif mimetype in video_mimetypes:
+            resource_type = "video"
+        else:
+            resource_type = "raw"
+
+        try:
+            result = cloudinary.uploader.upload(
+                BytesIO(file_bytes),
+                public_id=public_id,
+                resource_type=resource_type,
+                overwrite=False,
+            )
+            url = result.get("secure_url") or result.get("url", "")
+            if not url:
+                raise CloudinaryServiceError("Upload succeeded but no URL returned")
+            return url
+        except CloudinaryServiceError:
+            raise
+        except Exception as e:
+            logger.error(f"Cloudinary chat-media upload failed: {e}", exc_info=True)
+            raise CloudinaryServiceError(f"Failed to upload chat media: {e}") from e
+
     def delete_file(self, public_id: str, resource_type: str = "image") -> bool:
         """
         Delete file from Cloudinary by public_id.

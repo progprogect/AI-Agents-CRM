@@ -54,6 +54,9 @@ export default function ConversationDetailPage() {
   const [isLoadingAgent, setIsLoadingAgent] = useState(false);
   const [isRefreshingProfile, setIsRefreshingProfile] = useState(false);
   const [isUpdatingMarketingStatus, setIsUpdatingMarketingStatus] = useState(false);
+  const [pendingMedia, setPendingMedia] = useState<{ url: string; type: string; name: string } | null>(null);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const isLoading = conversationLoading || messagesLoading;
   const isRefreshing = conversationRefreshing || messagesRefreshing;
@@ -113,11 +116,31 @@ export default function ConversationDetailPage() {
     }
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingMedia(true);
+    setActionError(null);
+    try {
+      const result = await api.uploadChatMedia(file);
+      setPendingMedia({ url: result.url, type: result.media_type, name: file.name });
+    } catch (err) {
+      const errorInfo = handleApiError(err);
+      setActionError(getUserFriendlyMessage(errorInfo));
+    } finally {
+      setIsUploadingMedia(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const handleSendAdminMessage = async (content: string) => {
+    if (!content.trim() && !pendingMedia) return;
     try {
       setActionError(null);
-      
-      // Optimistically add message to UI immediately
+      const media = pendingMedia;
+      setPendingMedia(null);
+
+      // Optimistic UI update
       const tempMessageId = `temp-${Date.now()}`;
       const optimisticMessage: Message = {
         message_id: tempMessageId,
@@ -126,24 +149,23 @@ export default function ConversationDetailPage() {
         role: "admin",
         content: content,
         timestamp: new Date().toISOString(),
+        media_url: media?.url,
+        media_type: media?.type,
       };
-      
-      // Add optimistic message to the list immediately
-      const currentMessages = messages || [];
-      setMessagesState([...currentMessages, optimisticMessage]);
-      
-      // Send message to backend
-      await api.sendAdminMessage(conversationId, "admin_user", content);
-      
-      // Wait a bit for message to be saved to DB, then refresh to get real message with correct ID
-      setTimeout(async () => {
-        await refreshMessages();
-      }, 500);
+      setMessagesState([...(messages || []), optimisticMessage]);
+
+      await api.sendAdminMessage(
+        conversationId,
+        "admin_user",
+        content,
+        media?.url,
+        media?.type,
+      );
+
+      setTimeout(async () => { await refreshMessages(); }, 500);
     } catch (err) {
-      // Remove optimistic message on error by refreshing
       const errorInfo = handleApiError(err);
       setActionError(getUserFriendlyMessage(errorInfo));
-      // Refresh to get correct state
       await refreshMessages();
     }
   };
@@ -358,12 +380,17 @@ export default function ConversationDetailPage() {
                 </div>
               )}
             </div>
-            {isInstagramChannel(conversation.channel) && (
-              <>
-                {/* Instagram User Profile Section */}
-                <div className="pt-2 border-t border-gray-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs text-gray-500">Instagram User</p>
+            {/* User Info — shown for all channels with external data */}
+            {(conversation.external_user_id || conversation.external_user_name) && (
+              <div className="pt-2 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-gray-500">
+                    {isInstagramChannel(conversation.channel) ? "Instagram User" :
+                     conversation.channel === "telegram" ? "Telegram User" :
+                     conversation.channel === "whatsapp" ? "WhatsApp Contact" :
+                     "Contact"}
+                  </p>
+                  {isInstagramChannel(conversation.channel) && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -371,52 +398,51 @@ export default function ConversationDetailPage() {
                       disabled={isRefreshingProfile}
                       isLoading={isRefreshingProfile}
                     >
-                      {isRefreshingProfile ? "Refreshing..." : "Refresh Profile"}
+                      {isRefreshingProfile ? "Refreshing..." : "Refresh"}
                     </Button>
-                  </div>
-                  {conversation.external_user_name || conversation.external_user_profile_pic ? (
-                    <div className="flex items-center gap-3">
-                      <UserAvatar
-                        src={conversation.external_user_profile_pic}
-                        name={conversation.external_user_name}
-                        size="lg"
-                      />
-                      <div className="flex flex-col">
-                        {conversation.external_user_name && (
-                          <p className="text-sm font-medium text-gray-900">
-                            {conversation.external_user_name}
-                          </p>
-                        )}
-                        {conversation.external_user_username && (
-                          <p className="text-xs text-gray-500">@{conversation.external_user_username}</p>
-                        )}
-                        {conversation.external_user_id && (
-                          <p className="text-xs text-gray-400 font-mono mt-1">
-                            ID: {conversation.external_user_id}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      {conversation.external_user_id && (
-                        <p className="text-xs font-mono text-gray-600">
-                          User ID: {conversation.external_user_id}
-                        </p>
-                      )}
-                      <p className="text-xs text-gray-500 mt-1">
-                        Profile information not available. Click "Refresh Profile" to fetch.
-                      </p>
-                    </div>
                   )}
                 </div>
+                <div className="flex items-center gap-3">
+                  {(conversation.external_user_name || conversation.external_user_profile_pic) && (
+                    <UserAvatar
+                      src={conversation.external_user_profile_pic}
+                      name={conversation.external_user_name}
+                      size="lg"
+                    />
+                  )}
+                  <div className="flex flex-col">
+                    {conversation.external_user_name && (
+                      <p className="text-sm font-medium text-gray-900">
+                        {conversation.external_user_name}
+                      </p>
+                    )}
+                    {conversation.external_user_username && (
+                      <p className="text-xs text-gray-500">
+                        @{conversation.external_user_username}
+                      </p>
+                    )}
+                    {conversation.external_user_id && (
+                      <p className="text-xs text-gray-400 font-mono mt-0.5">
+                        {(conversation.channel === "whatsapp" || conversation.channel === "telegram")
+                          ? `📞 +${conversation.external_user_id}`
+                          : `ID: ${conversation.external_user_id}`}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {isInstagramChannel(conversation.channel) && !conversation.external_user_name && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Click "Refresh" to fetch Instagram profile info.
+                  </p>
+                )}
                 {conversation.external_conversation_id && (
-                  <div className="pt-2">
-                    <p className="text-xs text-gray-500">Instagram Thread ID</p>
-                    <p className="text-xs font-mono text-gray-600">{conversation.external_conversation_id}</p>
+                  <div className="mt-2">
+                    <p className="text-xs text-gray-400 font-mono truncate">
+                      Thread: {conversation.external_conversation_id}
+                    </p>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -441,10 +467,58 @@ export default function ConversationDetailPage() {
 
         {canSendAdminMessage && (
           <div className="border-t border-gray-200 pt-4 mt-4">
+            {/* Pending media preview */}
+            {pendingMedia && (
+              <div className="flex items-center gap-3 mb-3 p-3 bg-[#EEEAE7]/60 border border-[#BEBAB7] rounded-sm">
+                {pendingMedia.type === "image" ? (
+                  <img src={pendingMedia.url} alt="attachment" className="w-14 h-14 object-cover rounded-sm flex-shrink-0" />
+                ) : (
+                  <span className="text-2xl flex-shrink-0">📎</span>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[#251D1C] truncate">{pendingMedia.name}</p>
+                  <p className="text-xs text-gray-500">{pendingMedia.type}</p>
+                </div>
+                <button
+                  onClick={() => setPendingMedia(null)}
+                  className="text-gray-400 hover:text-red-500 transition-colors text-lg leading-none"
+                  title="Remove attachment"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 mb-2">
+              {/* File attachment button */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                onChange={handleFileSelect}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingMedia}
+                title="Attach file"
+                className="flex-shrink-0 p-2 text-gray-400 hover:text-[#251D1C] hover:bg-[#EEEAE7] rounded-sm transition-colors disabled:opacity-50"
+              >
+                {isUploadingMedia ? (
+                  <span className="inline-block w-5 h-5 border-2 border-[#251D1C] border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                )}
+              </button>
+            </div>
+
             <MessageInput
               onSend={handleSendAdminMessage}
-              placeholder="Type your message as admin..."
-              disabled={false}
+              placeholder={pendingMedia ? "Add a caption (optional)..." : "Type your message as admin..."}
+              disabled={isUploadingMedia}
+              allowEmpty={!!pendingMedia}
             />
           </div>
         )}

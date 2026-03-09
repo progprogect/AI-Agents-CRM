@@ -24,7 +24,7 @@ from app.config import get_settings
 from app.utils.logging_config import setup_logging, get_logger
 from app.api.v1 import chat, agents, admin, channel_bindings, instagram, telegram, rag
 from app.api.v1 import instagram_test, whatsapp_test, debug, webhook_test, webhook_events, notifications
-from app.api.v1 import auth_router, crm, whatsapp, twilio_whatsapp
+from app.api.v1 import auth_router, crm, whatsapp, twilio_whatsapp, media
 from app.api import websocket, admin_websocket
 
 # Setup logging
@@ -224,6 +224,7 @@ def create_app() -> FastAPI:
     app.include_router(crm.router, prefix="/api/v1/crm", tags=["crm"])
     app.include_router(whatsapp.router, prefix="/api/v1", tags=["whatsapp"])
     app.include_router(twilio_whatsapp.router, prefix="/api/v1", tags=["twilio-whatsapp"])
+    app.include_router(media.router, prefix="/api/v1", tags=["media"])
     app.include_router(notifications.router, prefix="/api/v1/admin", tags=["notifications"])
     app.include_router(debug.router, prefix="/api/v1", tags=["debug"])
     app.include_router(instagram_test.router, prefix="/api/v1", tags=["instagram-test"])

@@ -21,9 +21,14 @@ class ChannelSender(ABC):
 
     @abstractmethod
     async def send_message(
-        self, conversation_id: str, message_text: str, **kwargs
+        self,
+        conversation_id: str,
+        message_text: str,
+        media_url: Optional[str] = None,
+        media_type: Optional[str] = None,
+        **kwargs,
     ) -> None:
-        """Send message through the channel."""
+        """Send message (text and/or media) through the channel."""
         pass
 
 
@@ -35,17 +40,17 @@ class WebChatSender(ChannelSender):
         self.dynamodb = dynamodb
 
     async def send_message(
-        self, conversation_id: str, message_text: str, **kwargs
+        self,
+        conversation_id: str,
+        message_text: str,
+        media_url: Optional[str] = None,
+        media_type: Optional[str] = None,
+        **kwargs,
     ) -> None:
         """Send message via WebSocket."""
-        # WebSocket messages are sent through the connection manager
-        # This is handled in the websocket.py endpoint
-        # For now, we just log - actual sending happens via WebSocket connection
         logger.info(
             f"WebChat message prepared for conversation {conversation_id}: {message_text[:50]}..."
         )
-        # The message is already saved to DB in AgentService
-        # WebSocket will broadcast it to connected clients
 
 
 class InstagramSender(ChannelSender):
@@ -66,9 +71,11 @@ class InstagramSender(ChannelSender):
         message_text: str,
         binding_id: Optional[str] = None,
         external_user_id: Optional[str] = None,
+        media_url: Optional[str] = None,
+        media_type: Optional[str] = None,
         **kwargs,
     ) -> None:
-        """Send message via Instagram Graph API."""
+        """Send message (text and/or media) via Instagram Graph API."""
         if not binding_id or not external_user_id:
             # Try to get from conversation
             conversation = await self.dynamodb.get_conversation(conversation_id)
@@ -112,6 +119,8 @@ class InstagramSender(ChannelSender):
             binding_id=binding_id,
             recipient_id=external_user_id,
             message_text=message_text,
+            media_url=media_url,
+            media_type=media_type,
         )
 
         # Note: Agent message is already saved in AgentService.process_message
@@ -136,9 +145,11 @@ class TelegramSender(ChannelSender):
         message_text: str,
         binding_id: Optional[str] = None,
         external_user_id: Optional[str] = None,
+        media_url: Optional[str] = None,
+        media_type: Optional[str] = None,
         **kwargs,
     ) -> None:
-        """Send message via Telegram Bot API."""
+        """Send message (text and/or media) via Telegram Bot API."""
         if not binding_id or not external_user_id:
             # Try to get from conversation
             conversation = await self.dynamodb.get_conversation(conversation_id)
@@ -182,6 +193,8 @@ class TelegramSender(ChannelSender):
             binding_id=binding_id,
             chat_id=external_user_id,
             message_text=message_text,
+            media_url=media_url,
+            media_type=media_type,
         )
 
         # Note: Agent message is already saved in AgentService.process_message
@@ -207,9 +220,11 @@ class WhatsAppSender(ChannelSender):
         message_text: str,
         binding_id: Optional[str] = None,
         external_user_id: Optional[str] = None,
+        media_url: Optional[str] = None,
+        media_type: Optional[str] = None,
         **kwargs,
     ) -> None:
-        """Send message via the appropriate WhatsApp provider (Meta or Twilio)."""
+        """Send message (text and/or media) via the appropriate WhatsApp provider."""
         from app.services.channel_binding_service import ChannelBindingService
         from app.storage.resolver import get_secrets_manager
 
@@ -263,6 +278,8 @@ class WhatsAppSender(ChannelSender):
                 from_number=from_number,
                 to=external_user_id,
                 text=message_text,
+                media_url=media_url,
+                media_type=media_type,
             )
         else:
             # Default: Meta Cloud API
@@ -281,6 +298,8 @@ class WhatsAppSender(ChannelSender):
                 access_token=access_token,
                 to=external_user_id,
                 text=message_text,
+                media_url=media_url,
+                media_type=media_type,
             )
 
 

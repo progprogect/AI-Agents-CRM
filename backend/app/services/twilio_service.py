@@ -72,8 +72,13 @@ class TwilioWhatsAppService:
         body = form_data.get("Body", "").strip()
         message_sid = form_data.get("MessageSid", "")
 
-        if not raw_from.startswith("whatsapp:") or not body:
-            logger.debug("Twilio webhook: skipping non-text or missing fields")
+        num_media = int(form_data.get("NumMedia", "0") or "0")
+        media_url_0 = form_data.get("MediaUrl0")
+        media_content_type = form_data.get("MediaContentType0", "")
+
+        # Skip if no text and no media
+        if not raw_from.startswith("whatsapp:") or (not body and num_media == 0):
+            logger.debug("Twilio webhook: skipping — no content")
             return
 
         # Normalize: strip whatsapp: prefix and leading + for consistent IDs
@@ -92,6 +97,20 @@ class TwilioWhatsAppService:
             )
             return
 
+        # Resolve media info from Twilio form data
+        media_url: str | None = None
+        media_type: str | None = None
+        if num_media > 0 and media_url_0:
+            media_url = media_url_0
+            if media_content_type.startswith("image/"):
+                media_type = "image"
+            elif media_content_type.startswith("video/"):
+                media_type = "video"
+            elif media_content_type.startswith("audio/"):
+                media_type = "audio"
+            else:
+                media_type = "document"
+
         await self._process_message(
             sender_phone=sender_phone,
             to_number=to_number,
@@ -99,6 +118,8 @@ class TwilioWhatsAppService:
             message_sid=message_sid,
             binding=binding,
             binding_service=binding_service,
+            media_url=media_url,
+            media_type=media_type,
         )
 
     async def _find_binding_by_to_number(
@@ -142,6 +163,8 @@ class TwilioWhatsAppService:
         message_sid: str,
         binding: Any,
         binding_service: Any,
+        media_url: str | None = None,
+        media_type: str | None = None,
     ) -> None:
         """Create/update conversation and call the agent."""
         conversation_id = f"twilio_wa_{binding.binding_id}_{sender_phone}"
@@ -161,6 +184,12 @@ class TwilioWhatsAppService:
             )
             await self.dynamodb.create_conversation(conversation)
 
+        msg_metadata: dict = {"twilio_message_sid": message_sid}
+        if media_url:
+            msg_metadata["media_url"] = media_url
+        if media_type:
+            msg_metadata["media_type"] = media_type
+
         message = Message(
             conversation_id=conversation_id,
             message_id=message_sid or str(uuid.uuid4()),
@@ -171,7 +200,9 @@ class TwilioWhatsAppService:
             external_message_id=message_sid,
             external_user_id=sender_phone,
             timestamp=utc_now(),
-            metadata={"twilio_message_sid": message_sid},
+            metadata=msg_metadata,
+            media_url=media_url,
+            media_type=media_type,
         )
         await self.dynamodb.create_message(message)
 
@@ -231,11 +262,12 @@ class TwilioWhatsAppService:
         from_number: str,
         to: str,
         text: str,
+        media_url: str | None = None,
+        media_type: str | None = None,
     ) -> dict[str, Any]:
-        """Send a WhatsApp text message via Twilio Programmable Messaging API."""
+        """Send a WhatsApp text and/or media message via Twilio Programmable Messaging API."""
         url = f"{TWILIO_API_BASE}/Accounts/{account_sid}/Messages.json"
 
-        # Normalise to whatsapp:+E164 format regardless of how numbers are stored
         def _wa(num: str) -> str:
             num = num.replace("whatsapp:", "").lstrip("+")
             return f"whatsapp:+{num}"
@@ -243,25 +275,20 @@ class TwilioWhatsAppService:
         from_addr = _wa(from_number)
         to_addr = _wa(to)
 
-        data = {
-            "From": from_addr,
-            "To": to_addr,
-            "Body": text,
-        }
+        data: dict[str, str] = {"From": from_addr, "To": to_addr}
+        if text:
+            data["Body"] = text
+        if media_url:
+            data["MediaUrl"] = media_url
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                url,
-                data=data,
-                auth=(account_sid, auth_token),
-            )
+            response = await client.post(url, data=data, auth=(account_sid, auth_token))
 
         if not response.is_success:
-            logger.error(
-                f"Twilio send_message failed: {response.status_code} {response.text}"
-            )
+            logger.error(f"Twilio send_message failed: {response.status_code} {response.text}")
         else:
-            logger.info(f"Twilio WhatsApp message sent to {to}")
+            label = f"{media_type} + text" if (media_url and text) else ("media" if media_url else "text")
+            logger.info(f"Twilio WhatsApp {label} sent to {to}")
 
         return response.json() if response.content else {}
 

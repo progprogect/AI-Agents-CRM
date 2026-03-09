@@ -170,8 +170,26 @@ class InstagramService:
             )
             return
 
-        if not sender_id or not recipient_id or not message_text:
-            logger.warning(f"Incomplete messaging event: {event}")
+        # Extract media from attachments
+        media_url: str | None = None
+        media_type: str | None = None
+        attachments = message_data.get("attachments", [])
+        if attachments:
+            attachment = attachments[0]
+            att_type = attachment.get("type", "")
+            payload_data = attachment.get("payload", {})
+            att_url = payload_data.get("url")
+            if att_url:
+                media_url = att_url
+                media_type = {
+                    "image": "image",
+                    "video": "video",
+                    "audio": "audio",
+                    "file": "document",
+                }.get(att_type, "image")
+
+        if not sender_id or not recipient_id or (not message_text and not media_url):
+            logger.info(f"Ignoring incomplete Instagram messaging event (no text or media)")
             return
 
         # Log self-messaging events for debugging (but process them normally)
@@ -229,6 +247,12 @@ class InstagramService:
         # Используем timestamp из webhook, если доступен, иначе текущее время
         message_timestamp = webhook_timestamp if webhook_timestamp else utc_now()
 
+        msg_metadata: dict = {}
+        if media_url:
+            msg_metadata["media_url"] = media_url
+        if media_type:
+            msg_metadata["media_type"] = media_type
+
         # Create user message
         user_message = Message(
             message_id=str(uuid.uuid4()),
@@ -239,7 +263,10 @@ class InstagramService:
             channel=MessageChannel.INSTAGRAM,
             external_message_id=message_id,
             external_user_id=sender_id,
-            timestamp=message_timestamp,  # Используем улучшенный timestamp
+            timestamp=message_timestamp,
+            metadata=msg_metadata,
+            media_url=media_url,
+            media_type=media_type,
         )
 
         await self.dynamodb.create_message(user_message)
@@ -374,42 +401,67 @@ class InstagramService:
         return conversation
 
     async def send_message(
-        self, binding_id: str, recipient_id: str, message_text: str
+        self,
+        binding_id: str,
+        recipient_id: str,
+        message_text: str,
+        media_url: str | None = None,
+        media_type: str | None = None,
     ) -> dict[str, Any]:
-        """Send message via Instagram Graph API."""
-        # Get access token
+        """Send text and/or media message via Instagram Graph API."""
         access_token = await self.channel_binding_service.get_access_token(binding_id)
-
-        # Get binding to get account ID
         binding = await self.channel_binding_service.get_binding(binding_id)
         if not binding:
             raise ValueError(f"Binding {binding_id} not found")
 
-        # Send message via Instagram Graph API
         url = f"{self.GRAPH_API_BASE_URL}/{binding.channel_account_id}/messages"
-        payload = {
-            "recipient": {"id": recipient_id},
-            "message": {"text": message_text},
-        }
+        headers = {"Authorization": f"Bearer {access_token}"}
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                url,
-                json=payload,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
+            # Send media attachment if provided
+            if media_url and media_type:
+                ig_type = {
+                    "image": "image",
+                    "video": "video",
+                    "audio": "audio",
+                    "document": "file",
+                }.get(media_type, "image")
 
-            if response.status_code != 200:
-                error_text = response.text
-                logger.error(
-                    f"Failed to send Instagram message: {response.status_code} - {error_text}"
-                )
-                response.raise_for_status()
+                media_payload = {
+                    "recipient": {"id": recipient_id},
+                    "message": {
+                        "attachment": {
+                            "type": ig_type,
+                            "payload": {"url": media_url, "is_reusable": True},
+                        }
+                    },
+                }
+                resp = await client.post(url, json=media_payload, headers=headers)
+                if resp.status_code != 200:
+                    logger.error(f"Instagram media send failed: {resp.status_code} {resp.text}")
+                    # Fall through to text if media fails
+                else:
+                    logger.info(f"Sent Instagram {media_type} to {recipient_id}")
+                    # Send text separately if both provided
+                    if message_text:
+                        await client.post(
+                            url,
+                            json={"recipient": {"id": recipient_id}, "message": {"text": message_text}},
+                            headers=headers,
+                        )
+                    return resp.json()
 
-            result = response.json()
+            # Text-only message
+            if message_text:
+                payload = {"recipient": {"id": recipient_id}, "message": {"text": message_text}}
+                response = await client.post(url, json=payload, headers=headers)
+                if response.status_code != 200:
+                    logger.error(f"Instagram send failed: {response.status_code} {response.text}")
+                    response.raise_for_status()
+                logger.info(f"Sent Instagram message to {recipient_id}")
+                return response.json()
 
-            logger.info(f"Sent Instagram message to {recipient_id}")
-            return result
+        return {}
 
     async def get_user_profile(
         self, igsid: str, access_token: str

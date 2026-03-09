@@ -284,7 +284,9 @@ class SendAdminMessageRequest(BaseModel):
     """Request to send admin message."""
 
     admin_id: str = Field(..., description="Admin user ID", min_length=1)
-    content: str = Field(..., description="Message content", min_length=1, max_length=10000)
+    content: str = Field(default="", description="Message text (may be empty when sending media only)", max_length=10000)
+    media_url: Optional[str] = Field(None, description="Public URL of attached media (from /api/v1/media/upload)")
+    media_type: Optional[str] = Field(None, description="Media category: image, video, audio, document")
 
 
 class SendAdminMessageResponse(BaseModel):
@@ -294,6 +296,8 @@ class SendAdminMessageResponse(BaseModel):
     role: str
     content: str
     timestamp: str
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None
 
 
 @router.post(
@@ -324,18 +328,33 @@ async def send_admin_message(
             detail="Admin can only send messages when conversation status is NEEDS_HUMAN or HUMAN_ACTIVE",
         )
 
+    if not request.content and not request.media_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either content or media_url must be provided",
+        )
+
     try:
-        # Create admin message
+        # Create admin message (store media info in metadata for DB compatibility)
         message_id = str(uuid.uuid4())
+        msg_metadata: dict = {}
+        if request.media_url:
+            msg_metadata["media_url"] = request.media_url
+        if request.media_type:
+            msg_metadata["media_type"] = request.media_type
+
         admin_message = Message(
             message_id=message_id,
             conversation_id=conversation_id,
             agent_id=conversation.agent_id,
             role=MessageRole.ADMIN,
-            content=request.content,
+            content=request.content or "",
             channel=conversation.channel,
             external_user_id=conversation.external_user_id,
             timestamp=utc_now(),
+            metadata=msg_metadata,
+            media_url=request.media_url,
+            media_type=request.media_type,
         )
 
         await deps.dynamodb.create_message(admin_message)
@@ -362,6 +381,8 @@ async def send_admin_message(
                 await instagram_sender.send_message(
                     conversation_id=conversation_id,
                     message_text=request.content,
+                    media_url=request.media_url,
+                    media_type=request.media_type,
                 )
                 
                 logger.info(f"Sent admin message to Instagram conversation {conversation_id}")
@@ -398,6 +419,8 @@ async def send_admin_message(
                 await telegram_sender.send_message(
                     conversation_id=conversation_id,
                     message_text=request.content,
+                    media_url=request.media_url,
+                    media_type=request.media_type,
                 )
                 
                 logger.info(f"Sent admin message to Telegram conversation {conversation_id}")
@@ -415,6 +438,26 @@ async def send_admin_message(
                     exc_info=True,
                 )
                 # Message is already saved in DB, so we continue
+        elif conversation_channel == MessageChannel.WHATSAPP.value:
+            # Send via WhatsApp sender (handles both Meta and Twilio providers)
+            try:
+                from app.services.channel_sender import WhatsAppSender
+                wa_sender = WhatsAppSender(None, deps.dynamodb)
+                await wa_sender.send_message(
+                    conversation_id=conversation_id,
+                    message_text=request.content,
+                    media_url=request.media_url,
+                    media_type=request.media_type,
+                )
+                logger.info(f"Sent admin message to WhatsApp conversation {conversation_id}")
+            except ValueError as e:
+                logger.error(f"Failed to send WhatsApp message: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot send message to WhatsApp conversation: {str(e)}",
+                )
+            except Exception as wa_error:
+                logger.error(f"Failed to send message via WhatsApp: {wa_error}", exc_info=True)
         else:
             # Send via WebSocket for web chat (don't fail if WebSocket is not connected)
             try:
@@ -425,6 +468,8 @@ async def send_admin_message(
                         "message_id": message_id,
                         "role": "admin",
                         "content": request.content,
+                        "media_url": request.media_url,
+                        "media_type": request.media_type,
                         "timestamp": to_utc_iso_string(admin_message.timestamp),
                     },
                 )
@@ -448,6 +493,8 @@ async def send_admin_message(
             role=role_value,
             content=admin_message.content,
             timestamp=to_utc_iso_string(admin_message.timestamp),
+            media_url=admin_message.media_url,
+            media_type=admin_message.media_type,
         )
     except Exception as e:
         logger.error(f"Error sending admin message: {e}", exc_info=True)

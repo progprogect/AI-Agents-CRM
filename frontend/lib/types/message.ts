@@ -11,6 +11,8 @@ export interface Message {
   timestamp: string;
   metadata?: Record<string, any>;
   ttl?: number;
+  media_url?: string | null;
+  media_type?: string | null;  // "image" | "video" | "audio" | "document"
 }
 
 export interface SendMessageRequest {

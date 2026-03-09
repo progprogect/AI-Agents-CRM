@@ -351,16 +351,39 @@ export const api = {
   async sendAdminMessage(
     conversationId: string,
     adminId: string,
-    content: string
+    content: string,
+    mediaUrl?: string | null,
+    mediaType?: string | null,
   ): Promise<Message> {
     return request<Message>(
       `/api/v1/admin/conversations/${conversationId}/messages`,
       {
         method: "POST",
-        body: JSON.stringify({ admin_id: adminId, content }),
+        body: JSON.stringify({
+          admin_id: adminId,
+          content,
+          media_url: mediaUrl ?? undefined,
+          media_type: mediaType ?? undefined,
+        }),
       },
-      true // require auth
+      true
     );
+  },
+
+  async uploadChatMedia(file: File): Promise<{ url: string; media_type: string; filename: string; size_bytes: number }> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const token = typeof window !== "undefined" ? localStorage.getItem("agent_admin_token") : null;
+    const res = await fetch("/api/v1/media/upload", {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, err.detail || "Media upload failed");
+    }
+    return res.json();
   },
 
   async refreshInstagramProfile(

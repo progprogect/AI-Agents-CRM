@@ -344,8 +344,8 @@ export default function ConversationsPage() {
                             ⚠️
                           </span>
                         )}
-                        {/* Show avatar for Instagram conversations with profile */}
-                        {conv.channel === "instagram" && (conv.external_user_name || conv.external_user_profile_pic) && (
+                        {/* Show avatar when user profile is available (any channel) */}
+                        {(conv.external_user_name || conv.external_user_profile_pic) && (
                           <UserAvatar
                             src={conv.external_user_profile_pic}
                             name={conv.external_user_name}
@@ -358,16 +358,23 @@ export default function ConversationsPage() {
                               needsAttention ? "font-bold text-gray-900" : "font-medium text-gray-900"
                             }`}
                           >
-                            {conv.channel === "instagram" && conv.external_user_name
+                            {conv.external_user_name
                               ? conv.external_user_name
                               : getConversationDisplayId(conv, "list")}
                           </span>
-                          {conv.channel === "instagram" && conv.external_user_username && (
+                          {conv.external_user_username && (
                             <span className="text-xs text-gray-500">
                               @{conv.external_user_username}
                             </span>
                           )}
-                          {(!conv.external_user_name || conv.channel !== "instagram") && (
+                          {/* Show phone for WhatsApp/Telegram */}
+                          {!conv.external_user_username && conv.external_user_id &&
+                            (conv.channel === "whatsapp" || conv.channel === "telegram") && (
+                            <span className="text-xs text-gray-500">
+                              📞 +{conv.external_user_id}
+                            </span>
+                          )}
+                          {!conv.external_user_name && (
                             <span className="text-xs text-gray-500 font-mono">
                               {conv.conversation_id.substring(0, 8)}...
                             </span>

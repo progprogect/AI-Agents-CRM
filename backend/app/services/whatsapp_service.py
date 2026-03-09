@@ -77,6 +77,12 @@ class WhatsAppService:
 
                 for msg in messages:
                     await self._process_message(msg, binding)
+                # Also log media status updates for visibility (no processing needed)
+                for status_item in value.get("statuses", []):
+                    logger.debug(
+                        f"WhatsApp status update: {status_item.get('status')} "
+                        f"for {status_item.get('recipient_id')}"
+                    )
 
     async def _process_message(
         self,
@@ -88,12 +94,33 @@ class WhatsAppService:
         sender_phone = msg.get("from")
         wa_message_id = msg.get("id")
 
-        if msg_type != "text":
-            logger.info(f"Ignoring non-text WhatsApp message type: {msg_type}")
+        # Extract text content
+        text_body = ""
+        media_url: str | None = None
+        media_type: str | None = None
+
+        if msg_type == "text":
+            text_body = msg.get("text", {}).get("body", "").strip()
+        elif msg_type in ("image", "video", "audio", "document", "sticker"):
+            media_data = msg.get(msg_type, {})
+            # WhatsApp media has an id that must be fetched via Graph API
+            # We store the id for reference; actual URL requires an auth'd download
+            media_id = media_data.get("id")
+            if media_id:
+                # Construct the Graph API media URL (requires access token to download)
+                media_url = f"https://graph.facebook.com/v18.0/{media_id}"
+            media_type = "image" if msg_type in ("image", "sticker") else (
+                "video" if msg_type == "video" else (
+                    "audio" if msg_type == "audio" else "document"
+                )
+            )
+            text_body = media_data.get("caption", "")
+            logger.info(f"WhatsApp {msg_type} message from {sender_phone}, media_id={media_id}")
+        else:
+            logger.info(f"Ignoring WhatsApp message type: {msg_type}")
             return
 
-        text_body = msg.get("text", {}).get("body", "").strip()
-        if not text_body:
+        if not text_body and not media_url:
             return
 
         logger.info(
@@ -119,6 +146,13 @@ class WhatsAppService:
             )
             await self.dynamodb.create_conversation(conversation)
 
+        # Build metadata
+        msg_metadata: dict = {"whatsapp_message_id": wa_message_id}
+        if media_url:
+            msg_metadata["media_url"] = media_url
+        if media_type:
+            msg_metadata["media_type"] = media_type
+
         # Save incoming message
         message = Message(
             conversation_id=conversation_id,
@@ -130,7 +164,9 @@ class WhatsAppService:
             external_message_id=wa_message_id,
             external_user_id=sender_phone,
             timestamp=utc_now(),
-            metadata={"whatsapp_message_id": wa_message_id},
+            metadata=msg_metadata,
+            media_url=media_url,
+            media_type=media_type,
         )
         await self.dynamodb.create_message(message)
 
@@ -188,26 +224,60 @@ class WhatsAppService:
         access_token: str,
         to: str,
         text: str,
+        media_url: str | None = None,
+        media_type: str | None = None,
     ) -> dict[str, Any]:
-        """Send a WhatsApp text message via Cloud API."""
+        """Send a WhatsApp text and/or media message via Cloud API."""
         url = f"{GRAPH_API_BASE}/{phone_number_id}/messages"
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to,
-            "type": "text",
-            "text": {"preview_url": False, "body": text},
-        }
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
         }
+
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            if not response.is_success:
-                logger.error(
-                    f"WhatsApp send_message failed: {response.status_code} {response.text}"
-                )
-            else:
-                logger.info(f"WhatsApp message sent to {to}")
-            return response.json() if response.content else {}
+            # Send media message if media_url provided
+            if media_url and media_type:
+                wa_media_type = {
+                    "image": "image",
+                    "video": "video",
+                    "audio": "audio",
+                    "document": "document",
+                }.get(media_type, "document")
+
+                media_payload: dict[str, Any] = {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": to,
+                    "type": wa_media_type,
+                    wa_media_type: {"link": media_url},
+                }
+                if text and wa_media_type in ("image", "video", "document"):
+                    media_payload[wa_media_type]["caption"] = text
+
+                resp = await client.post(url, json=media_payload, headers=headers)
+                if not resp.is_success:
+                    logger.error(f"WhatsApp media send failed: {resp.status_code} {resp.text}")
+                    # Fall through to send text separately
+                    if text:
+                        return await self.send_message(phone_number_id, access_token, to, text)
+                else:
+                    logger.info(f"WhatsApp {media_type} sent to {to}")
+                return resp.json() if resp.content else {}
+
+            # Text-only
+            if text:
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": to,
+                    "type": "text",
+                    "text": {"preview_url": False, "body": text},
+                }
+                response = await client.post(url, json=payload, headers=headers)
+                if not response.is_success:
+                    logger.error(f"WhatsApp send_message failed: {response.status_code} {response.text}")
+                else:
+                    logger.info(f"WhatsApp message sent to {to}")
+                return response.json() if response.content else {}
+
+        return {}
