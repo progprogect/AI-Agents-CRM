@@ -1,0 +1,30 @@
+{
+  "Header": {
+    "adminDashboard": "Панель администратора",
+    "logout": "Выйти",
+    "toggleMenu": "Открыть меню навигации",
+    "logoutAria": "Выйти из панели администратора"
+  },
+  "Nav": {
+    "agents": "Агенты",
+    "conversations": "Разговоры",
+    "crm": "CRM",
+    "notifications": "Уведомления",
+    "audit": "Аудит",
+    "statistics": "Статистика",
+    "instagramTest": "Тест Instagram",
+    "whatsappTest": "Тест WhatsApp",
+    "users": "Пользователи",
+    "adminNav": "Навигация администратора",
+    "mainNav": "Основная навигация",
+    "closeMenu": "Закрыть меню",
+    "navigateTo": "Перейти к {name}",
+    "requireAttention": "{count} требуют внимания"
+  },
+  "Locale": {
+    "label": "Язык",
+    "en": "English",
+    "ru": "Русский",
+    "switchTo": "Переключить на {lang}"
+  }
+}

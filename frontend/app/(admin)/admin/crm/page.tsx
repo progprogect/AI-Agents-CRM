@@ -513,19 +513,19 @@ export default function CRMPage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[#BEBAB7] bg-white flex-shrink-0">
-        <div>
-          <h1 className="text-xl font-bold text-[#251D1C]">CRM Pipeline</h1>
-          <p className="text-sm text-[#9A9590]">Drag conversations between stages</p>
+      {/* Header — stacks on mobile, side-by-side on desktop */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 py-4 border-b border-[#BEBAB7] bg-white flex-shrink-0">
+        <div className="min-w-0">
+          <h1 className="text-lg sm:text-xl font-bold text-[#251D1C]">CRM Pipeline</h1>
+          <p className="text-xs sm:text-sm text-[#9A9590]">Drag conversations between stages</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
           {/* Agent filter */}
           <select
             value={selectedAgentId}
             onChange={(e) => setSelectedAgentId(e.target.value)}
-            className="text-sm border border-[#BEBAB7] rounded px-3 py-1.5 text-[#443C3C] bg-white outline-none focus:border-[#251D1C]"
+            className="flex-1 min-w-[140px] sm:flex-initial sm:min-w-0 text-sm border border-[#BEBAB7] rounded px-3 py-1.5 text-[#443C3C] bg-white outline-none focus:border-[#251D1C]"
           >
             <option value="">All Agents</option>
             {agents.map((a) => (
@@ -537,7 +537,7 @@ export default function CRMPage() {
 
           <button
             onClick={load}
-            className="flex items-center gap-1.5 text-sm text-[#9A9590] hover:text-[#251D1C] border border-[#BEBAB7] px-3 py-1.5 rounded hover:border-[#443C3C] transition-colors"
+            className="flex items-center justify-center gap-1.5 text-sm text-[#9A9590] hover:text-[#251D1C] border border-[#BEBAB7] px-3 py-1.5 rounded hover:border-[#443C3C] transition-colors flex-shrink-0"
           >
             <RefreshCw size={14} />
             Refresh
@@ -547,7 +547,7 @@ export default function CRMPage() {
 
       {/* Delete confirmation banner */}
       {deleteConfirm && (
-        <div className="px-6 py-2 bg-red-50 border-b border-red-200 flex items-center justify-between text-sm">
+        <div className="px-4 sm:px-6 py-2 bg-red-50 border-b border-red-200 flex items-center justify-between text-sm">
           <span className="text-red-700">
             Click Delete again to confirm removing &quot;{stages.find((s) => s.id === deleteConfirm)?.name}&quot;
           </span>
@@ -567,7 +567,7 @@ export default function CRMPage() {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex gap-4 p-6 h-full min-w-max items-start">
+          <div className="flex gap-4 p-4 sm:p-6 h-full min-w-max items-start">
             {stages.map((stage) => (
               <KanbanColumn
                 key={stage.id}

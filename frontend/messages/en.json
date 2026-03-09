@@ -1,0 +1,30 @@
+{
+  "Header": {
+    "adminDashboard": "Admin Dashboard",
+    "logout": "Logout",
+    "toggleMenu": "Toggle navigation menu",
+    "logoutAria": "Logout from admin panel"
+  },
+  "Nav": {
+    "agents": "Agents",
+    "conversations": "Conversations",
+    "crm": "CRM",
+    "notifications": "Notifications",
+    "audit": "Audit",
+    "statistics": "Statistics",
+    "instagramTest": "Instagram Test",
+    "whatsappTest": "WhatsApp Test",
+    "users": "Users",
+    "adminNav": "Admin navigation",
+    "mainNav": "Main navigation",
+    "closeMenu": "Close navigation menu",
+    "navigateTo": "Navigate to {name}",
+    "requireAttention": "{count} require attention"
+  },
+  "Locale": {
+    "label": "Language",
+    "en": "English",
+    "ru": "Русский",
+    "switchTo": "Switch to {lang}"
+  }
+}

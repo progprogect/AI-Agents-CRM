@@ -246,29 +246,29 @@ export default function ConversationDetailPage() {
 
   return (
     <div>
-      {/* Page header — wraps on small screens */}
-      <div className="flex flex-wrap items-start gap-3 mb-5">
+      {/* Page header — stacks on mobile, side-by-side on desktop */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-5">
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Conversation Details</h1>
+          <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">Conversation Details</h1>
           <p className="text-xs md:text-sm text-gray-500 mt-1 font-mono truncate">
             {getConversationDisplayId(conversation, "detail")}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
           {/* Mobile toggle for info cards */}
           <button
             onClick={() => setShowInfoCards((v) => !v)}
-            className="md:hidden text-sm border border-[#BEBAB7] px-3 py-1.5 rounded-sm text-gray-600 hover:bg-[#EEEAE7] transition-colors"
+            className="md:hidden text-sm border border-[#BEBAB7] px-3 py-1.5 rounded-sm text-gray-600 hover:bg-[#EEEAE7] transition-colors flex-shrink-0"
           >
             {showInfoCards ? "Hide info" : "Show info"}
           </button>
           {conversation.status === "AI_ACTIVE" && (
-            <Button variant="primary" onClick={handleHandoff}>
+            <Button variant="primary" onClick={handleHandoff} className="flex-1 sm:flex-initial min-w-0">
               Handoff to Human
             </Button>
           )}
           {conversation.status === "HUMAN_ACTIVE" && (
-            <Button variant="secondary" onClick={handleReturnToAI}>
+            <Button variant="secondary" onClick={handleReturnToAI} className="flex-1 sm:flex-initial min-w-0">
               Return to AI
             </Button>
           )}
@@ -282,9 +282,9 @@ export default function ConversationDetailPage() {
       )}
 
       {/* Info Cards — always visible on desktop, toggle on mobile */}
-      <div className={`${showInfoCards ? "grid" : "hidden"} md:grid grid-cols-1 md:grid-cols-2 gap-4 mb-6`}>
+      <div className={`${showInfoCards ? "grid" : "hidden"} md:grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 sm:mb-6`}>
         {/* Agent Info Card */}
-        <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-6">
+        <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-4 sm:p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-3">Agent Information</h3>
           {isLoadingAgent ? (
             <LoadingSpinner size="sm" />
@@ -321,7 +321,7 @@ export default function ConversationDetailPage() {
         </div>
 
         {/* Conversation Info Card */}
-        <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-6">
+        <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-4 sm:p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-3">Conversation Information</h3>
           <div className="space-y-2">
             <div>
@@ -460,7 +460,7 @@ export default function ConversationDetailPage() {
       </div>
 
       {/* Messages Section */}
-      <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-6">
+      <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-4 sm:p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Messages</h2>
         <div className="space-y-4 mb-4 min-h-[200px]">
           {messages.length === 0 ? (

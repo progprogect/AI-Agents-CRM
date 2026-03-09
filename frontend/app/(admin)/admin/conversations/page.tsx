@@ -203,10 +203,11 @@ export default function ConversationsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
-          <p className="text-sm text-gray-600 mt-1">
+      {/* Header — stacks on mobile, side-by-side on desktop */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Conversations</h1>
+          <p className="text-xs sm:text-sm text-gray-600 mt-1">
             {needsHumanCount > 0 && (
               <span className="text-[#F59E0B] font-medium">
                 {needsHumanCount} conversation{needsHumanCount !== 1 ? "s" : ""} require{needsHumanCount === 1 ? "s" : ""} attention
@@ -217,40 +218,44 @@ export default function ConversationsPage() {
             )}
           </p>
         </div>
-        {/* Controls — wrap to next line on mobile */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-2 sm:mt-0">
+        {/* Controls — stack on mobile, inline on desktop */}
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
           {/* Connection status indicator */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             <div
               className={`w-2 h-2 rounded-full ${
                 isConnected ? "bg-green-500" : "bg-gray-400"
               }`}
               aria-label={isConnected ? "Live connection" : "Polling mode"}
             />
-            <span className="text-sm text-gray-600">
+            <span className="text-xs sm:text-sm text-gray-600">
               {isConnected ? "Live" : "Polling"}
             </span>
           </div>
 
           {/* Filter dropdowns */}
-          <Select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as ConversationFilter)}
-            options={[
-              { value: "all", label: "All Conversations" },
-              { value: "needs_attention", label: "Requires Attention" },
-              { value: "active", label: "Active" },
-              { value: "closed", label: "Closed" },
-            ]}
-          />
-          <Select
-            value={crmStageFilter}
-            onChange={(e) => setCrmStageFilter(e.target.value)}
-            options={[
-              { value: "all", label: "All CRM Stages" },
-              ...crmStages.map((s) => ({ value: s.id, label: s.name })),
-            ]}
-          />
+          <div className="w-full sm:w-auto sm:min-w-[140px]">
+            <Select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as ConversationFilter)}
+              options={[
+                { value: "all", label: "All Conversations" },
+                { value: "needs_attention", label: "Requires Attention" },
+                { value: "active", label: "Active" },
+                { value: "closed", label: "Closed" },
+              ]}
+            />
+          </div>
+          <div className="w-full sm:w-auto sm:min-w-[140px]">
+            <Select
+              value={crmStageFilter}
+              onChange={(e) => setCrmStageFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All CRM Stages" },
+                ...crmStages.map((s) => ({ value: s.id, label: s.name })),
+              ]}
+            />
+          </div>
         </div>
       </div>
 
@@ -261,7 +266,7 @@ export default function ConversationsPage() {
           placeholder="Search by agent name or conversation ID..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full max-w-md"
+          className="w-full max-w-full sm:max-w-md"
         />
       </div>
 
