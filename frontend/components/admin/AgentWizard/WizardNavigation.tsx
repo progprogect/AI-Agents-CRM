@@ -53,8 +53,8 @@ export const WizardNavigation: React.FC<WizardNavigationProps> = ({
   );
 
   return (
-    <div className="pt-6 border-t border-gray-200">
-      {/* Mobile: primary button on top, secondary row below.
+    <div className="sticky bottom-0 bg-white pt-4 sm:pt-6 pb-2 sm:pb-0 border-t border-gray-200">
+      {/* Mobile: primary button on top (flex-col-reverse), secondary row below.
           Desktop: secondary actions left, primary right (justify-between). */}
       <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">

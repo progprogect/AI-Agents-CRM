@@ -273,9 +273,9 @@ export default function AgentRAGPage() {
   };
 
   return (
-    <div className="flex gap-6 min-h-[600px]">
-      {/* Left: Folders */}
-      <div className="w-56 shrink-0 border border-[#BEBAB7] rounded-sm bg-white p-3">
+    <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+      {/* Folders — full width on mobile, sidebar on desktop */}
+      <div className="w-full md:w-56 md:shrink-0 border border-[#BEBAB7] rounded-sm bg-white p-3">
         <div className="flex items-center gap-2 mb-3">
           <FolderOpen size={16} className="text-[#9A9590]" />
           <h3 className="font-semibold text-gray-900">Folders</h3>
@@ -315,9 +315,9 @@ export default function AgentRAGPage() {
 
       {/* Main: Documents */}
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">RAG Documents</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">RAG Documents</h1>
             <p className="text-sm text-gray-600 mt-1">
               Agent: {agentId}
               {selectedFolderId && (
