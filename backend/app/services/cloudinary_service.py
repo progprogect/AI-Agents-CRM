@@ -1,4 +1,4 @@
-"""Cloudinary service for RAG file storage."""
+"""Cloudinary storage backend."""
 
 import logging
 import uuid
@@ -6,33 +6,39 @@ from io import BytesIO
 from typing import Optional
 
 from app.config import Settings, get_settings
+from app.services.storage_service import StorageService, StorageServiceError
 
 logger = logging.getLogger(__name__)
 
 
-class CloudinaryServiceError(Exception):
-    """Cloudinary service error."""
-
-    pass
+# Backward-compatible alias so existing imports of CloudinaryServiceError keep working
+CloudinaryServiceError = StorageServiceError
 
 
-class CloudinaryService:
-    """Service for uploading and deleting files in Cloudinary."""
+class CloudinaryService(StorageService):
+    """StorageService backed by Cloudinary CDN."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
 
     def _ensure_configured(self) -> None:
-        """Ensure Cloudinary is configured."""
         if not all([
             self.settings.cloudinary_cloud_name,
             self.settings.cloudinary_api_key,
             self.settings.cloudinary_api_secret,
         ]):
-            raise CloudinaryServiceError(
+            raise StorageServiceError(
                 "Cloudinary is not configured. Set CLOUDINARY_CLOUD_NAME, "
-                "CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET."
+                "CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET."
             )
+
+    def _configure(self) -> None:
+        import cloudinary
+        cloudinary.config(
+            cloud_name=self.settings.cloudinary_cloud_name,
+            api_key=self.settings.cloudinary_api_key,
+            api_secret=self.settings.cloudinary_api_secret,
+        )
 
     def upload_file(
         self,
@@ -42,23 +48,11 @@ class CloudinaryService:
         folder_path: str = "",
         document_id: Optional[str] = None,
     ) -> str:
-        """
-        Upload file to Cloudinary.
-
-        Path: {CLOUDINARY_FOLDER}/{agent_id}/{folder_path}/{document_id}.ext
-
-        Returns the secure URL of the uploaded file.
-        """
+        """Upload a RAG document to Cloudinary. Returns the secure URL."""
         self._ensure_configured()
+        self._configure()
 
-        import cloudinary
         import cloudinary.uploader
-
-        cloudinary.config(
-            cloud_name=self.settings.cloudinary_cloud_name,
-            api_key=self.settings.cloudinary_api_key,
-            api_secret=self.settings.cloudinary_api_secret,
-        )
 
         base_folder = self.settings.cloudinary_folder.strip("/")
         path_parts = [base_folder, agent_id]
@@ -66,12 +60,9 @@ class CloudinaryService:
             path_parts.append(folder_path.strip("/"))
         folder = "/".join(path_parts)
 
-        ext = ""
-        if "." in filename:
-            ext = "." + filename.rsplit(".", 1)[-1].lower()
+        ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
         public_id = f"{folder}/{document_id or str(uuid.uuid4())}{ext}"
 
-        # Determine resource_type: image for images, raw for others
         image_extensions = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
         resource_type = "image" if ext.lower() in image_extensions else "raw"
 
@@ -84,11 +75,13 @@ class CloudinaryService:
             )
             url = result.get("secure_url") or result.get("url", "")
             if not url:
-                raise CloudinaryServiceError("Upload succeeded but no URL returned")
+                raise StorageServiceError("Cloudinary upload succeeded but no URL returned")
             return url
+        except StorageServiceError:
+            raise
         except Exception as e:
             logger.error(f"Cloudinary upload failed: {e}", exc_info=True)
-            raise CloudinaryServiceError(f"Failed to upload file: {e}") from e
+            raise StorageServiceError(f"Failed to upload file to Cloudinary: {e}") from e
 
     def upload_chat_media(
         self,
@@ -96,28 +89,16 @@ class CloudinaryService:
         filename: str,
         mimetype: str = "application/octet-stream",
     ) -> str:
-        """Upload chat media (image/video/audio/document) to Cloudinary.
-
-        Returns the public secure URL.
-        Path: {CLOUDINARY_FOLDER}/chat-media/{uuid}.ext
-        """
+        """Upload chat media to Cloudinary. Returns the secure URL."""
         self._ensure_configured()
+        self._configure()
 
-        import cloudinary
         import cloudinary.uploader
-
-        cloudinary.config(
-            cloud_name=self.settings.cloudinary_cloud_name,
-            api_key=self.settings.cloudinary_api_key,
-            api_secret=self.settings.cloudinary_api_secret,
-        )
 
         base_folder = self.settings.cloudinary_folder.strip("/")
         folder = f"{base_folder}/chat-media"
 
-        ext = ""
-        if "." in filename:
-            ext = "." + filename.rsplit(".", 1)[-1].lower()
+        ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
         public_id = f"{folder}/{uuid.uuid4()}{ext}"
 
         image_mimetypes = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp", "image/svg+xml"}
@@ -138,41 +119,58 @@ class CloudinaryService:
             )
             url = result.get("secure_url") or result.get("url", "")
             if not url:
-                raise CloudinaryServiceError("Upload succeeded but no URL returned")
+                raise StorageServiceError("Cloudinary upload succeeded but no URL returned")
             return url
-        except CloudinaryServiceError:
+        except StorageServiceError:
             raise
         except Exception as e:
             logger.error(f"Cloudinary chat-media upload failed: {e}", exc_info=True)
-            raise CloudinaryServiceError(f"Failed to upload chat media: {e}") from e
+            raise StorageServiceError(f"Failed to upload chat media to Cloudinary: {e}") from e
 
-    def delete_file(self, public_id: str, resource_type: str = "image") -> bool:
+    def delete_by_url(self, file_url: str) -> bool:
+        """Delete a Cloudinary file by its public URL.
+
+        Parses the Cloudinary URL to extract public_id and resource_type,
+        then calls the Cloudinary destroy API.
         """
-        Delete file from Cloudinary by public_id.
+        if "cloudinary.com" not in file_url or "/upload/" not in file_url:
+            logger.warning(f"URL is not a Cloudinary URL, skipping delete: {file_url}")
+            return False
 
-        resource_type: "image" for images, "raw" for PDFs and other files.
-
-        Returns True if deleted successfully.
-        """
         self._ensure_configured()
+        self._configure()
 
-        import cloudinary
         import cloudinary.uploader
 
-        cloudinary.config(
-            cloud_name=self.settings.cloudinary_cloud_name,
-            api_key=self.settings.cloudinary_api_key,
-            api_secret=self.settings.cloudinary_api_secret,
-        )
+        # Extract public_id: strip version segment (v1234567890/) if present
+        suffix = file_url.split("/upload/")[1]
+        parts = suffix.split("/")
+        if parts and parts[0].startswith("v") and parts[0][1:].isdigit():
+            parts = parts[1:]
+        path = "/".join(parts)
+
+        # Determine resource_type from extension
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        image_exts = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"}
+        video_exts = {"mp4", "webm", "mov", "avi", "ogg"}
+        if ext in image_exts:
+            resource_type = "image"
+            public_id = path.rsplit(".", 1)[0]
+        elif ext in video_exts:
+            resource_type = "video"
+            public_id = path.rsplit(".", 1)[0]
+        else:
+            resource_type = "raw"
+            public_id = path  # raw resources keep the extension in public_id
 
         try:
             result = cloudinary.uploader.destroy(public_id, resource_type=resource_type)
             return result.get("result") == "ok"
         except Exception as e:
             logger.error(f"Cloudinary delete failed for {public_id}: {e}", exc_info=True)
-            raise CloudinaryServiceError(f"Failed to delete file: {e}") from e
+            raise StorageServiceError(f"Failed to delete file from Cloudinary: {e}") from e
 
 
 def get_cloudinary_service() -> CloudinaryService:
-    """Get Cloudinary service instance."""
+    """Get CloudinaryService instance (for backward compatibility)."""
     return CloudinaryService(get_settings())

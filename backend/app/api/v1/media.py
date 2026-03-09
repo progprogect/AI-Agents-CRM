@@ -7,7 +7,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from app.api.auth import require_admin
-from app.services.cloudinary_service import CloudinaryServiceError, get_cloudinary_service
+from app.services.storage_service import StorageServiceError, get_storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +88,9 @@ async def upload_chat_media(
         )
 
     try:
-        svc = get_cloudinary_service()
+        svc = get_storage_service()
         url = svc.upload_chat_media(file_bytes, filename, mimetype)
-    except CloudinaryServiceError as e:
+    except StorageServiceError as e:
         logger.error(f"Media upload failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

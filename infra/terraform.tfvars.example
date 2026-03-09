@@ -52,3 +52,9 @@ certificate_arn = "arn:aws:acm:me-central-1:ACCOUNT_ID:certificate/YOUR_CERT_ID"
 ecs_cpu           = 512   # 0.5 vCPU
 ecs_memory        = 1024  # 1 GB RAM
 ecs_desired_count = 1
+
+# ─────────────────────────────────────────────
+# S3 file storage (set STORAGE_BACKEND=s3 in ECS env to activate)
+# ─────────────────────────────────────────────
+enable_s3            = true
+s3_media_bucket_name = "doctor-agent-media"   # Must be globally unique

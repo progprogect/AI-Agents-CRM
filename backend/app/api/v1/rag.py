@@ -10,7 +10,7 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, 
 from app.api.auth import require_admin
 from app.config import get_settings
 from app.dependencies import CommonDependencies
-from app.services.cloudinary_service import CloudinaryServiceError, get_cloudinary_service
+from app.services.storage_service import StorageServiceError, get_storage_service
 from app.services.image_processor_service import get_image_processor_service
 from app.storage.postgres_rag import PostgresRAGClient, get_postgres_rag_client
 from app.storage.postgres_rag_folders import PostgresRAGFolders, get_postgres_rag_folders
@@ -205,18 +205,17 @@ async def upload_rag_document(
     doc_id = str(uuid.uuid4())
     fid = UUID(folder_id) if folder_id else None
 
-    # Build folder path for Cloudinary (from folder_id we'd need to resolve path - for now use flat)
     folder_path = ""
-    cloudinary_svc = get_cloudinary_service()
+    storage_svc = get_storage_service()
     image_processor = get_image_processor_service()
     rag_client = get_postgres_rag_client()
 
     try:
-        file_url = cloudinary_svc.upload_file(
+        file_url = storage_svc.upload_file(
             content, filename, agent_id, folder_path, doc_id
         )
-    except CloudinaryServiceError as e:
-        logger.warning(f"Cloudinary not configured or upload failed: {e}")
+    except StorageServiceError as e:
+        logger.warning(f"Storage service not configured or upload failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="File upload service is not configured",
@@ -391,24 +390,14 @@ async def delete_rag_document(
     doc = await rag.get_document(agent_id, document_id)
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-    # Delete from Cloudinary if we have file_url (extract public_id from URL)
+    # Delete from storage if we have a file_url
     if doc.get("file_url"):
         try:
-            cloudinary = get_cloudinary_service()
-            url = doc["file_url"]
-            if "cloudinary.com" in url and "/upload/" in url:
-                suffix = url.split("/upload/")[1]
-                parts = suffix.split("/")
-                if parts and parts[0].startswith("v") and parts[0][1:].isdigit():
-                    parts = parts[1:]
-                path = "/".join(parts)
-                public_id = path.rsplit(".", 1)[0] if doc.get("file_type") == "image" else path
-                resource_type = "raw" if doc.get("file_type") in ("pdf", "raw") else "image"
-                try:
-                    cloudinary.delete_file(public_id, resource_type)
-                except CloudinaryServiceError:
-                    pass
+            storage_svc = get_storage_service()
+            storage_svc.delete_by_url(doc["file_url"])
+        except StorageServiceError as e:
+            logger.warning(f"Storage delete failed (non-fatal): {e}")
         except Exception as e:
-            logger.warning(f"Cloudinary delete failed: {e}")
+            logger.warning(f"Storage delete error (non-fatal): {e}")
     await rag.delete_document(agent_id, document_id)
     return {"message": "Document deleted"}

@@ -234,7 +234,13 @@ class Settings(BaseSettings):
         default=60, description="Rate limit per minute per IP"
     )
 
-    # Cloudinary (RAG file storage)
+    # File storage backend
+    storage_backend: str = Field(
+        default="cloudinary",
+        description='Storage provider for RAG and chat media: "cloudinary" (default) or "s3" (AWS)',
+    )
+
+    # Cloudinary (storage_backend=cloudinary, default for Railway)
     cloudinary_cloud_name: Optional[str] = Field(
         default=None, description="Cloudinary cloud name", alias="CLOUDINARY_CLOUD_NAME"
     )
@@ -246,6 +252,27 @@ class Settings(BaseSettings):
     )
     cloudinary_folder: str = Field(
         default="rag", description="Cloudinary base folder for RAG", alias="CLOUDINARY_FOLDER"
+    )
+
+    # Amazon S3 (storage_backend=s3, for AWS deployments)
+    s3_bucket_name: Optional[str] = Field(
+        default=None,
+        description="S3 bucket name for file storage (required when STORAGE_BACKEND=s3)",
+        alias="S3_BUCKET_NAME",
+    )
+    s3_region: Optional[str] = Field(
+        default=None,
+        description="S3 bucket region (defaults to AWS_REGION if not set)",
+        alias="S3_REGION",
+    )
+    s3_public_url_prefix: Optional[str] = Field(
+        default=None,
+        description=(
+            "Public URL prefix for S3 files. "
+            "Set to a CloudFront distribution URL (e.g. https://d1234abcd.cloudfront.net) "
+            "or leave empty to use the default S3 HTTPS URL."
+        ),
+        alias="S3_PUBLIC_URL_PREFIX",
     )
 
     # App URL (public base URL for webhook configuration)
