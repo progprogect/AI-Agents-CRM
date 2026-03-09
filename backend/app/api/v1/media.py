@@ -2,9 +2,8 @@
 
 import logging
 import mimetypes
-from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
 from app.api.auth import require_admin
