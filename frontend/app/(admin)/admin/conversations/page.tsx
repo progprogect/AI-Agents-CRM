@@ -217,9 +217,10 @@ export default function ConversationsPage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        {/* Controls — wrap to next line on mobile */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-2 sm:mt-0">
           {/* Connection status indicator */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <div
               className={`w-2 h-2 rounded-full ${
                 isConnected ? "bg-green-500" : "bg-gray-400"
@@ -232,30 +233,24 @@ export default function ConversationsPage() {
           </div>
 
           {/* Filter dropdowns */}
-          <div className="flex items-center gap-2">
-            <div className="w-48">
-              <Select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as ConversationFilter)}
-                options={[
-                  { value: "all", label: "All Conversations" },
-                  { value: "needs_attention", label: "Requires Attention" },
-                  { value: "active", label: "Active" },
-                  { value: "closed", label: "Closed" },
-                ]}
-              />
-            </div>
-            <div className="w-48">
-              <Select
-                value={crmStageFilter}
-                onChange={(e) => setCrmStageFilter(e.target.value)}
-                options={[
-                  { value: "all", label: "All CRM Stages" },
-                  ...crmStages.map((s) => ({ value: s.id, label: s.name })),
-                ]}
-              />
-            </div>
-          </div>
+          <Select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as ConversationFilter)}
+            options={[
+              { value: "all", label: "All Conversations" },
+              { value: "needs_attention", label: "Requires Attention" },
+              { value: "active", label: "Active" },
+              { value: "closed", label: "Closed" },
+            ]}
+          />
+          <Select
+            value={crmStageFilter}
+            onChange={(e) => setCrmStageFilter(e.target.value)}
+            options={[
+              { value: "all", label: "All CRM Stages" },
+              ...crmStages.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
         </div>
       </div>
 
@@ -266,7 +261,7 @@ export default function ConversationsPage() {
           placeholder="Search by agent name or conversation ID..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="max-w-md"
+          className="w-full max-w-md"
         />
       </div>
 
@@ -288,6 +283,7 @@ export default function ConversationsPage() {
         />
       ) : (
         <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-[#EEEAE7]/10">
               <tr>
@@ -458,6 +454,7 @@ export default function ConversationsPage() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

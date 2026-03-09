@@ -378,6 +378,7 @@ export default function AgentsPage() {
         />
       ) : (
         <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-[#EEEAE7]/10">
               <tr>
@@ -410,6 +411,7 @@ export default function AgentsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

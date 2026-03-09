@@ -1,4 +1,4 @@
-/** Sidebar navigation component. */
+/** Sidebar navigation component — responsive drawer on mobile, static on desktop. */
 
 "use client";
 
@@ -10,7 +10,18 @@ import { useAdminWebSocket } from "@/lib/hooks/useAdminWebSocket";
 import { api } from "@/lib/api";
 import { isSuperAdmin } from "@/lib/auth";
 
-import { Bot, MessageSquare, Bell, ClipboardList, BarChart3, FlaskConical, Users, Kanban, MessageCircle } from "lucide-react";
+import {
+  Bot,
+  MessageSquare,
+  Bell,
+  ClipboardList,
+  BarChart3,
+  FlaskConical,
+  Users,
+  Kanban,
+  MessageCircle,
+  X,
+} from "lucide-react";
 
 const baseNavigation = [
   { name: "Agents", href: "/admin/agents", icon: <Bot size={20} /> },
@@ -23,7 +34,12 @@ const baseNavigation = [
   { name: "WhatsApp Test", href: "/admin/whatsapp-test", icon: <MessageCircle size={20} /> },
 ];
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const pathname = usePathname();
   const [needsHumanCount, setNeedsHumanCount] = useState(0);
   const { onStatsUpdate, onNewEscalation } = useAdminWebSocket();
@@ -74,11 +90,40 @@ export const Sidebar: React.FC = () => {
   }, [onStatsUpdate, onNewEscalation]);
 
   return (
-    <aside className="w-64 bg-white border-r border-[#BEBAB7] flex flex-col flex-shrink-0" aria-label="Admin navigation">
-      <div className="flex items-center h-[72px] px-6 border-b border-[#BEBAB7]">
-        <Image src="/logo.svg" alt="CAworks" width={120} height={32} className="h-8 w-auto" priority />
+    <aside
+      className={[
+        // Base styles (mobile-first: fixed drawer)
+        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#BEBAB7]",
+        "flex flex-col flex-shrink-0",
+        // Slide animation
+        "transition-transform duration-300 ease-in-out",
+        isOpen ? "translate-x-0" : "-translate-x-full",
+        // Desktop: always visible, part of normal flow
+        "md:static md:translate-x-0 md:z-auto",
+      ].join(" ")}
+      aria-label="Admin navigation"
+    >
+      {/* Logo row — contains close button on mobile */}
+      <div className="relative flex items-center h-[72px] px-6 border-b border-[#BEBAB7] flex-shrink-0">
+        <Image
+          src="/logo.svg"
+          alt="CAworks"
+          width={120}
+          height={32}
+          className="h-8 w-auto"
+          priority
+        />
+        {/* Close button — mobile only */}
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-1/2 -translate-y-1/2 md:hidden p-1.5 rounded-sm text-gray-400 hover:text-gray-600 hover:bg-[#EEEAE7] transition-colors"
+          aria-label="Close navigation menu"
+        >
+          <X size={20} />
+        </button>
       </div>
-      <nav className="flex-1 p-4 space-y-2" aria-label="Main navigation">
+
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto" aria-label="Main navigation">
         {navigation.map((item) => {
           const isActive = pathname === item.href;
           const isConversations = item.href === "/admin/conversations";
@@ -88,7 +133,8 @@ export const Sidebar: React.FC = () => {
             <Link
               key={item.name}
               href={item.href}
-              className={`group flex items-center justify-between gap-3 px-4 py-2 rounded-sm transition-all duration-200 ${
+              onClick={onClose}
+              className={`group flex items-center justify-between gap-3 px-4 py-3 md:py-2 rounded-sm transition-all duration-200 ${
                 isActive
                   ? "bg-[#EEEAE7] text-[#443C3C] font-medium border-l-2 border-[#251D1C]"
                   : "text-gray-700 hover:bg-[#EEEAE7]/50 hover:text-[#251D1C]"
@@ -97,7 +143,12 @@ export const Sidebar: React.FC = () => {
               aria-label={`Navigate to ${item.name}${showBadge ? ` (${needsHumanCount} require attention)` : ""}`}
             >
               <div className="flex items-center gap-3">
-                <span className={`flex items-center justify-center transition-colors duration-200 group-hover:text-[#251D1C] ${isActive ? "text-[#251D1C]" : "text-gray-500"}`} aria-hidden="true">{item.icon}</span>
+                <span
+                  className={`flex items-center justify-center transition-colors duration-200 group-hover:text-[#251D1C] ${isActive ? "text-[#251D1C]" : "text-gray-500"}`}
+                  aria-hidden="true"
+                >
+                  {item.icon}
+                </span>
                 <span>{item.name}</span>
               </div>
               {showBadge && (

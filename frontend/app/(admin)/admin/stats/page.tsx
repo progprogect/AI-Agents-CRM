@@ -62,9 +62,9 @@ export default function StatsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Statistics</h1>
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <Select
             value={period}
             onChange={(e) => setPeriod(e.target.value as Period)}
@@ -166,12 +166,7 @@ export default function StatsPage() {
       {stats.crm_stage_stats && stats.crm_stage_stats.length > 0 && (
         <div className="mb-6">
           <h2 className="text-base font-semibold text-[#443C3C] mb-3">CRM Pipeline</h2>
-          <div
-            className="grid gap-4"
-            style={{
-              gridTemplateColumns: `repeat(${Math.min(stats.crm_stage_stats.length, 4)}, minmax(0, 1fr))`,
-            }}
-          >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {stats.crm_stage_stats.map((stage: CRMStageStat) => (
               <div
                 key={stage.id}

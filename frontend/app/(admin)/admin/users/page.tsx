@@ -188,6 +188,7 @@ export default function UsersPage() {
 
       {/* Users table */}
       <div className="bg-white rounded-sm shadow-sm border border-[#BEBAB7] overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-[#EEEAE7]">
             <tr>
@@ -268,6 +269,7 @@ export default function UsersPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       <p className="mt-4 text-xs text-gray-400">

@@ -57,6 +57,8 @@ export default function ConversationDetailPage() {
   const [pendingMedia, setPendingMedia] = useState<{ url: string; type: string; name: string } | null>(null);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Mobile: toggle info cards visibility (hidden by default to maximize chat area)
+  const [showInfoCards, setShowInfoCards] = useState(false);
 
   const isLoading = conversationLoading || messagesLoading;
   const isRefreshing = conversationRefreshing || messagesRefreshing;
@@ -244,14 +246,22 @@ export default function ConversationDetailPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Conversation Details</h1>
-          <p className="text-sm text-gray-500 mt-1 font-mono">
+      {/* Page header — wraps on small screens */}
+      <div className="flex flex-wrap items-start gap-3 mb-5">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Conversation Details</h1>
+          <p className="text-xs md:text-sm text-gray-500 mt-1 font-mono truncate">
             {getConversationDisplayId(conversation, "detail")}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Mobile toggle for info cards */}
+          <button
+            onClick={() => setShowInfoCards((v) => !v)}
+            className="md:hidden text-sm border border-[#BEBAB7] px-3 py-1.5 rounded-sm text-gray-600 hover:bg-[#EEEAE7] transition-colors"
+          >
+            {showInfoCards ? "Hide info" : "Show info"}
+          </button>
           {conversation.status === "AI_ACTIVE" && (
             <Button variant="primary" onClick={handleHandoff}>
               Handoff to Human
@@ -271,8 +281,8 @@ export default function ConversationDetailPage() {
         </div>
       )}
 
-      {/* Info Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      {/* Info Cards — always visible on desktop, toggle on mobile */}
+      <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 ${showInfoCards ? "block" : "hidden"} md:grid`}>
         {/* Agent Info Card */}
         <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-3">Agent Information</h3>
