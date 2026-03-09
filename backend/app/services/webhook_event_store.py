@@ -20,7 +20,24 @@ def add_webhook_event(event_type: str, payload: Dict[str, Any]) -> None:
     
     # Extract useful information from payload for easier access
     extracted_info = {}
-    if event_type == "instagram_webhook":
+    if event_type == "twilio_whatsapp":
+        # Twilio sends form-encoded: From=whatsapp:+375..., To=whatsapp:+141..., Body=...
+        raw_from = payload.get("From", "")
+        raw_to = payload.get("To", "")
+        body = payload.get("Body", "")
+        message_sid = payload.get("MessageSid", "")
+        if raw_from.startswith("whatsapp:"):
+            extracted_info["sender_phone"] = raw_from.replace("whatsapp:", "").lstrip("+")
+        if raw_to.startswith("whatsapp:"):
+            extracted_info["phone_number_id"] = raw_to.replace("whatsapp:", "")
+            extracted_info["display_phone"] = raw_to.replace("whatsapp:", "")
+        if body:
+            extracted_info["message_text"] = body
+            extracted_info["message_type"] = "text"
+        if message_sid:
+            extracted_info["message_id"] = message_sid
+        extracted_info["provider"] = "twilio"
+    elif event_type == "instagram_webhook":
         entries = payload.get("entry", [])
         for entry in entries:
             messaging = entry.get("messaging", [])

@@ -19,6 +19,7 @@ interface WhatsAppBinding {
   display_name: string;
   is_active: boolean;
   is_verified: boolean;
+  provider: "meta" | "twilio";
 }
 
 export default function WhatsAppTestPage() {
@@ -74,7 +75,8 @@ export default function WhatsAppTestPage() {
 
     setIsSending(true);
     const binding = bindings.find((b) => b.binding_id === selectedBindingId);
-    addLog("info", `Sending test message via Phone Number ID: ${binding?.phone_number_id}`);
+    const providerLabel = binding?.provider === "twilio" ? "Twilio" : "Meta Cloud API";
+    addLog("info", `Sending via ${providerLabel} | From: ${binding?.phone_number_id}`);
     addLog("info", `Recipient: ${recipientPhone}`);
     addLog("info", `Message: ${messageText}`);
 
@@ -114,7 +116,7 @@ export default function WhatsAppTestPage() {
         const data = await res.json();
         // Filter only WhatsApp events
         const waEvents = (data.events || []).filter(
-          (e: any) => e.type === "whatsapp_webhook"
+          (e: any) => e.type === "whatsapp_webhook" || e.type === "twilio_whatsapp"
         );
         setRecentWebhooks(waEvents);
       }
@@ -192,6 +194,7 @@ export default function WhatsAppTestPage() {
                     {bindings.map((b) => (
                       <option key={b.binding_id} value={b.binding_id}>
                         {b.display_name} · ID: {b.phone_number_id}
+                        {b.provider === "twilio" ? " [Twilio]" : " [Meta]"}
                         {!b.is_active ? " (inactive)" : ""}
                         {!b.is_verified ? " (unverified)" : ""}
                       </option>
@@ -293,6 +296,7 @@ export default function WhatsAppTestPage() {
                   const displayPhone = extracted.display_phone || phoneNumberId;
                   const msgType = extracted.message_type || "text";
                   const isStatus = !!extracted.status_update;
+                  const isTwilio = event.type === "twilio_whatsapp" || extracted.provider === "twilio";
 
                   return (
                     <div
@@ -300,11 +304,16 @@ export default function WhatsAppTestPage() {
                       className="p-3 bg-gray-50 rounded border text-sm"
                     >
                       <div className="flex justify-between items-start mb-2">
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-500 flex items-center gap-2">
                           {new Date(event.timestamp).toLocaleString()}
+                          {isTwilio ? (
+                            <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Twilio</span>
+                          ) : (
+                            <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-medium">Meta</span>
+                          )}
                           {isStatus && (
-                            <span className="ml-2 text-amber-600 font-medium">
-                              Status Update: {extracted.status_update}
+                            <span className="text-amber-600 font-medium">
+                              Status: {extracted.status_update}
                             </span>
                           )}
                         </div>
@@ -415,32 +424,57 @@ export default function WhatsAppTestPage() {
       </div>
 
       {/* Documentation notes */}
-      <div className="mt-6 bg-green-50 border border-green-200 rounded-sm p-4">
-        <h3 className="font-semibold text-green-900 mb-2">
-          📖 WhatsApp Cloud API — Key Notes
-        </h3>
-        <div className="text-sm text-green-800 space-y-2">
-          <p className="font-medium">How to test:</p>
-          <ul className="space-y-1 list-disc list-inside ml-4">
-            <li>
-              <strong>Outgoing:</strong> Select a binding, enter a recipient number, click Send Message
-            </li>
-            <li>
-              <strong>Incoming:</strong> Send a WhatsApp message to your Business number — events appear below automatically (5s refresh)
-            </li>
-            <li>
-              Click <strong>Use as Recipient</strong> on an incoming event to quickly reply to that sender
-            </li>
-          </ul>
-          <p className="mt-2 text-xs text-green-600">
-            <strong>Note:</strong> The recipient must have previously initiated a conversation with your Business number
-            within the last 24 hours, OR you must use an approved message template. For testing, send a message
-            from the recipient phone first, then reply from here.
-          </p>
-          <p className="mt-1 text-xs text-green-600">
-            <strong>Access Token:</strong> For production, use a permanent System User token. The 24-hour temporary
-            token from Meta&apos;s Getting Started page will expire and stop working.
-          </p>
+      <div className="mt-6 space-y-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-sm p-4">
+          <h3 className="font-semibold text-blue-900 mb-2">
+            🟦 Twilio Sandbox — Webhook Setup Required
+          </h3>
+          <div className="text-sm text-blue-800 space-y-1">
+            <p>
+              In <strong>Twilio Console → Messaging → Try it out → Sandbox Settings</strong>,
+              set <strong>"When a message comes in"</strong> to:
+            </p>
+            <code className="block bg-blue-100 px-3 py-1.5 rounded font-mono text-xs break-all">
+              {typeof window !== "undefined"
+                ? `${window.location.origin}/api/v1/twilio/whatsapp/webhook`
+                : "https://your-domain.up.railway.app/api/v1/twilio/whatsapp/webhook"}
+            </code>
+            <p className="text-xs text-blue-600 mt-1">
+              Method: <strong>POST</strong>. Without this, incoming messages will not be received.
+            </p>
+            <p className="text-xs text-blue-600">
+              For Sandbox testing: your phone must first send <strong>join &lt;word&gt;</strong> to the Twilio Sandbox number.
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-green-50 border border-green-200 rounded-sm p-4">
+          <h3 className="font-semibold text-green-900 mb-2">
+            📖 How to test
+          </h3>
+          <div className="text-sm text-green-800 space-y-2">
+            <ul className="space-y-1 list-disc list-inside ml-4">
+              <li>
+                <strong>Outgoing:</strong> Select a binding, enter a recipient number, click Send Message.
+                The correct API (Twilio or Meta) is chosen automatically.
+              </li>
+              <li>
+                <strong>Incoming:</strong> Send a WhatsApp message to your Business/Sandbox number —
+                events appear in "Incoming Webhook Events" automatically (5s refresh).
+              </li>
+              <li>
+                Click <strong>Use as Recipient</strong> on an incoming event to quickly reply.
+              </li>
+            </ul>
+            <p className="mt-2 text-xs text-green-600">
+              <strong>Meta:</strong> Recipient must have messaged you within 24h, or use a template.
+              Use a permanent System User token for production.
+            </p>
+            <p className="mt-1 text-xs text-green-600">
+              <strong>Twilio Sandbox:</strong> Both sender and recipient must join the sandbox first.
+              For production, register a real WhatsApp Sender in Twilio Console.
+            </p>
+          </div>
         </div>
       </div>
     </div>
