@@ -129,9 +129,12 @@ async def _send_via_twilio(
             error="Twilio binding is missing account_sid in metadata",
         )
 
-    to_number = request.to.lstrip("+")
-    from_addr = f"whatsapp:{from_number}" if not from_number.startswith("whatsapp:") else from_number
-    to_addr = f"whatsapp:+{to_number}"
+    def _wa(num: str) -> str:
+        num = num.replace("whatsapp:", "").lstrip("+")
+        return f"whatsapp:+{num}"
+
+    from_addr = _wa(from_number)
+    to_addr = _wa(request.to)
 
     url = f"{TWILIO_API_BASE}/Accounts/{account_sid}/Messages.json"
     logger.info(f"Twilio test send: from={from_addr} to={to_addr} account={account_sid}")

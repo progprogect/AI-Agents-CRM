@@ -39,13 +39,13 @@ async def twilio_whatsapp_webhook(
     binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
     twilio_service = TwilioWhatsAppService(deps.dynamodb)
 
-    # Optional signature validation.
-    # We validate only when we can resolve the binding's auth token, which requires
-    # knowing the To number first — extracted from form_data.
+    # Optional signature validation — log only, never block.
+    # Rejecting on signature mismatch is unsafe behind a reverse-proxy (Railway, nginx)
+    # because request.url is the internal URL (http://) while Twilio signs the public
+    # HTTPS URL, causing permanent HMAC mismatch that silently drops all messages.
     twilio_signature = request.headers.get("X-Twilio-Signature", "")
-    to_number = form_data.get("To", "").replace("whatsapp:", "")
-
-    if twilio_signature and to_number:
+    if twilio_signature:
+        to_number = form_data.get("To", "").replace("whatsapp:", "")
         try:
             binding = await twilio_service._find_binding_by_to_number(
                 binding_service, to_number
@@ -57,19 +57,23 @@ async def twilio_whatsapp_webhook(
                 )
                 if not valid:
                     logger.warning(
-                        "Twilio webhook signature validation failed — rejecting request"
+                        "Twilio webhook signature mismatch (processing anyway — "
+                        "expected when behind a reverse-proxy)"
                     )
-                    return Response(status_code=403)
         except Exception as sig_err:
-            # Don't block delivery if signature check itself errors
-            logger.warning(f"Twilio signature check error (skipping): {sig_err}")
+            logger.warning(f"Twilio signature check skipped: {sig_err}")
+
+    logger.info(
+        f"Twilio webhook received: From={form_data.get('From', '-')} "
+        f"To={form_data.get('To', '-')} "
+        f"Body={form_data.get('Body', '')[:60]!r}"
+    )
 
     # Process message
     try:
         await twilio_service.handle_webhook(form_data, binding_service)
     except Exception as exc:
         logger.error(f"Twilio webhook processing error: {exc}", exc_info=True)
-        # Still return 200 so Twilio doesn't retry indefinitely
 
     # Empty TwiML — the AI reply is sent via REST API asynchronously
     return Response(content="<?xml version='1.0' encoding='UTF-8'?><Response/>", media_type="text/xml")

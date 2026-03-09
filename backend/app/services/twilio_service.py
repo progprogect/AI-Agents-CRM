@@ -76,11 +76,12 @@ class TwilioWhatsAppService:
             logger.debug("Twilio webhook: skipping non-text or missing fields")
             return
 
-        sender_phone = raw_from.replace("whatsapp:", "")
+        # Normalize: strip whatsapp: prefix and leading + for consistent IDs
+        sender_phone = raw_from.replace("whatsapp:", "").lstrip("+")
         to_number = raw_to.replace("whatsapp:", "")
 
         logger.info(
-            f"Twilio WhatsApp message from {sender_phone} to {to_number}: {body[:80]}"
+            f"Twilio WhatsApp message from={sender_phone} to={to_number}: {body[:80]!r}"
         )
 
         # Find binding by from_number stored in metadata
@@ -106,14 +107,31 @@ class TwilioWhatsAppService:
         """Find a Twilio binding by to_number.
 
         For Twilio bindings channel_account_id stores the from_number (the
-        WhatsApp-enabled Twilio phone number), so we can use the standard
-        get_binding_by_account_id lookup.
+        WhatsApp-enabled Twilio phone number). We try multiple normalizations
+        because users may save the number with or without the leading '+'.
         """
-        binding = await binding_service.get_binding_by_account_id(
-            channel_type="whatsapp", account_id=to_number
+        # Normalise: try both "+number" and "number" (without +)
+        candidates = []
+        stripped = to_number.lstrip("+")
+        if to_number.startswith("+"):
+            candidates = [to_number, stripped]   # try with + first
+        else:
+            candidates = [f"+{to_number}", to_number]  # try with + first
+
+        for candidate in candidates:
+            binding = await binding_service.get_binding_by_account_id(
+                channel_type="whatsapp", account_id=candidate
+            )
+            if binding and (binding.metadata or {}).get("provider") == "twilio" and binding.is_active:
+                logger.info(
+                    f"Found Twilio binding {binding.binding_id} for to_number={candidate}"
+                )
+                return binding
+
+        logger.warning(
+            f"No active Twilio binding found for to_number={to_number} "
+            f"(tried: {candidates})"
         )
-        if binding and (binding.metadata or {}).get("provider") == "twilio" and binding.is_active:
-            return binding
         return None
 
     async def _process_message(
@@ -217,9 +235,13 @@ class TwilioWhatsAppService:
         """Send a WhatsApp text message via Twilio Programmable Messaging API."""
         url = f"{TWILIO_API_BASE}/Accounts/{account_sid}/Messages.json"
 
-        # Ensure E.164 numbers have the whatsapp: prefix
-        from_addr = f"whatsapp:{from_number}" if not from_number.startswith("whatsapp:") else from_number
-        to_addr = f"whatsapp:{to}" if not to.startswith("whatsapp:") else to
+        # Normalise to whatsapp:+E164 format regardless of how numbers are stored
+        def _wa(num: str) -> str:
+            num = num.replace("whatsapp:", "").lstrip("+")
+            return f"whatsapp:+{num}"
+
+        from_addr = _wa(from_number)
+        to_addr = _wa(to)
 
         data = {
             "From": from_addr,
