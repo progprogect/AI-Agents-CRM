@@ -282,7 +282,7 @@ export default function ConversationDetailPage() {
       )}
 
       {/* Info Cards — always visible on desktop, toggle on mobile */}
-      <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 ${showInfoCards ? "block" : "hidden"} md:grid`}>
+      <div className={`${showInfoCards ? "grid" : "hidden"} md:grid grid-cols-1 md:grid-cols-2 gap-4 mb-6`}>
         {/* Agent Info Card */}
         <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-6">
           <h3 className="text-sm font-medium text-gray-500 mb-3">Agent Information</h3>
