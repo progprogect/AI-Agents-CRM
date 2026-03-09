@@ -1,11 +1,25 @@
 /** Status badge component for displaying conversation status consistently. */
 
+"use client";
+
 import React from "react";
+import { useTranslations } from "next-intl";
 import type { ConversationStatus } from "@/lib/types/conversation";
-import {
-  getStatusDisplay,
-  getStatusAriaLabel,
-} from "@/lib/utils/statusDisplay";
+import { getStatusDisplay } from "@/lib/utils/statusDisplay";
+
+const STATUS_LABEL_KEYS: Record<ConversationStatus, string> = {
+  AI_ACTIVE: "aiResponding",
+  NEEDS_HUMAN: "needsAttention",
+  HUMAN_ACTIVE: "adminActive",
+  CLOSED: "closed",
+};
+
+const STATUS_ARIA_KEYS: Record<ConversationStatus, string> = {
+  AI_ACTIVE: "aiRespondingAria",
+  NEEDS_HUMAN: "needsAttentionAria",
+  HUMAN_ACTIVE: "adminActiveAria",
+  CLOSED: "closedAria",
+};
 
 interface StatusBadgeProps {
   status: ConversationStatus;
@@ -20,8 +34,10 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
   showIcon = true,
   className = "",
 }) => {
+  const t = useTranslations("Status");
   const statusDisplay = getStatusDisplay(status);
-  const ariaLabel = getStatusAriaLabel(status);
+  const label = t(STATUS_LABEL_KEYS[status] ?? "closed");
+  const ariaLabel = t(STATUS_ARIA_KEYS[status] ?? "closedAria");
 
   const sizeClasses = {
     sm: "px-2 py-0.5 text-xs",
@@ -35,7 +51,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
       role="status"
     >
       {showIcon && <span aria-hidden="true">{statusDisplay.icon}</span>}
-      <span>{statusDisplay.label}</span>
+      <span>{label}</span>
     </span>
   );
 };

@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useConversationsList, type ConversationFilter } from "@/lib/hooks/useConversationsList";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/shared/Button";
@@ -32,11 +33,13 @@ function CRMStageSelector({
   currentStageId,
   conversationId,
   onChanged,
+  noStageLabel,
 }: {
   stages: CRMStage[];
   currentStageId?: string | null;
   conversationId: string;
   onChanged: () => void;
+  noStageLabel: string;
 }) {
   const [loading, setLoading] = useState(false);
 
@@ -74,7 +77,7 @@ function CRMStageSelector({
           >
             {!currentStageId && (
               <option value="" disabled>
-                — No stage —
+                {noStageLabel}
               </option>
             )}
             {stages.map((s) => (
@@ -113,6 +116,8 @@ const ViewIcon = () => (
 
 export default function ConversationsPage() {
   const router = useRouter();
+  const t = useTranslations("Conversations");
+  const tCommon = useTranslations("Common");
   const [filter, setFilter] = useState<ConversationFilter>("all");
   const [crmStageFilter, setCrmStageFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -206,15 +211,15 @@ export default function ConversationsPage() {
       {/* Header — stacks on mobile, side-by-side on desktop */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Conversations</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t("title")}</h1>
           <p className="text-xs sm:text-sm text-gray-600 mt-1">
             {needsHumanCount > 0 && (
               <span className="text-[#F59E0B] font-medium">
-                {needsHumanCount} conversation{needsHumanCount !== 1 ? "s" : ""} require{needsHumanCount === 1 ? "s" : ""} attention
+                {t("requireAttentionCount", { count: needsHumanCount })}
               </span>
             )}
             {!needsHumanCount && filteredConversations.length > 0 && (
-              <span>{filteredConversations.length} conversation{filteredConversations.length !== 1 ? "s" : ""}</span>
+              <span>{t("conversationCount", { count: filteredConversations.length })}</span>
             )}
           </p>
         </div>
@@ -226,10 +231,10 @@ export default function ConversationsPage() {
               className={`w-2 h-2 rounded-full ${
                 isConnected ? "bg-green-500" : "bg-gray-400"
               }`}
-              aria-label={isConnected ? "Live connection" : "Polling mode"}
+              aria-label={isConnected ? t("liveConnection") : t("pollingMode")}
             />
             <span className="text-xs sm:text-sm text-gray-600">
-              {isConnected ? "Live" : "Polling"}
+              {isConnected ? t("live") : t("polling")}
             </span>
           </div>
 
@@ -239,10 +244,10 @@ export default function ConversationsPage() {
               value={filter}
               onChange={(e) => setFilter(e.target.value as ConversationFilter)}
               options={[
-                { value: "all", label: "All Conversations" },
-                { value: "needs_attention", label: "Requires Attention" },
-                { value: "active", label: "Active" },
-                { value: "closed", label: "Closed" },
+                { value: "all", label: t("allConversations") },
+                { value: "needs_attention", label: t("requiresAttention") },
+                { value: "active", label: t("active") },
+                { value: "closed", label: t("closed") },
               ]}
             />
           </div>
@@ -251,7 +256,7 @@ export default function ConversationsPage() {
               value={crmStageFilter}
               onChange={(e) => setCrmStageFilter(e.target.value)}
               options={[
-                { value: "all", label: "All CRM Stages" },
+                { value: "all", label: t("allCrmStages") },
                 ...crmStages.map((s) => ({ value: s.id, label: s.name })),
               ]}
             />
@@ -263,7 +268,7 @@ export default function ConversationsPage() {
       <div className="mb-4">
         <Input
           type="text"
-          placeholder="Search by agent name or conversation ID..."
+          placeholder={t("searchPlaceholder")}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full max-w-full sm:max-w-md"
@@ -279,11 +284,9 @@ export default function ConversationsPage() {
       {filteredConversations.length === 0 ? (
         <EmptyState
           icon="💬"
-          title={searchQuery ? "No conversations found" : "No conversations yet"}
+          title={searchQuery ? t("noConversationsFound") : t("noConversationsYet")}
           description={
-            searchQuery
-              ? "Try adjusting your search query or filters."
-              : "Conversations will appear here once users start chatting."
+            searchQuery ? t("adjustSearch") : t("conversationsWillAppear")
           }
         />
       ) : (
@@ -293,30 +296,30 @@ export default function ConversationsPage() {
             <thead className="bg-[#EEEAE7]/10">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Conversation
+                  {t("conversation")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Agent
+                  {t("agent")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Channel
+                  {t("channel")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Status
+                  {t("status")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  CRM Stage
+                  {t("crmStage")}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Created
+                  {t("created")}
                 </th>
                 {(filter === "all" || filter === "needs_attention") && (
                   <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                    Waiting
+                    {t("waiting")}
                   </th>
                 )}
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
-                  Actions
+                  {tCommon("actions")}
                 </th>
               </tr>
             </thead>
@@ -341,7 +344,7 @@ export default function ConversationsPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         {needsAttention && (
-                          <span className="text-lg" aria-label="Requires attention">
+                          <span className="text-lg" aria-label={t("requiresAttentionAria")}>
                             ⚠️
                           </span>
                         )}
@@ -385,7 +388,7 @@ export default function ConversationsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {isLoadingAgents ? (
-                        <span className="text-sm text-gray-400">Loading...</span>
+                        <span className="text-sm text-gray-400">{tCommon("loading")}</span>
                       ) : (
                         <div className="flex flex-col">
                           <span className="text-sm text-gray-900 font-medium" title={conv.agent_id}>
@@ -411,6 +414,7 @@ export default function ConversationsPage() {
                             currentStageId={conv.crm_stage_id}
                             conversationId={conv.conversation_id}
                             onChanged={refresh}
+                            noStageLabel={tCommon("noStage")}
                           />
                         ) : (
                           <span className="text-xs text-gray-400">—</span>
@@ -440,14 +444,14 @@ export default function ConversationsPage() {
                             onClick={() => setTakeOverConversationId(conv.conversation_id)}
                             disabled={isTakingOver}
                           >
-                            Take Over
+                            {t("takeOver")}
                           </Button>
                         )}
-                        <Tooltip content={`View conversation ${conv.conversation_id}`}>
+                        <Tooltip content={`${t("viewConversation")} ${conv.conversation_id}`}>
                           <Link
                             href={`/admin/conversations/${conv.conversation_id}`}
                             className="inline-flex items-center justify-center w-8 h-8 text-[#251D1C] hover:text-[#443C3C] hover:bg-[#EEEAE7]/10 rounded-sm transition-all duration-200"
-                            aria-label="View conversation"
+                            aria-label={t("viewConversation")}
                           >
                             <ViewIcon />
                           </Link>
@@ -468,10 +472,10 @@ export default function ConversationsPage() {
         isOpen={!!takeOverConversationId}
         onClose={() => setTakeOverConversationId(null)}
         onConfirm={() => takeOverConversationId && handleTakeOver(takeOverConversationId)}
-        title="Take Over Conversation"
-        message="Are you sure you want to take over this conversation? You will be able to respond to the user directly."
-        confirmText="Take Over"
-        cancelText="Cancel"
+        title={t("takeOverTitle")}
+        message={t("takeOverMessage")}
+        confirmText={t("takeOver")}
+        cancelText={tCommon("cancel")}
         isLoading={isTakingOver}
         variant="warning"
       />

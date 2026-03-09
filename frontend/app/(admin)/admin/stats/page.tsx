@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { api, ApiError } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { StatCardGroup } from "@/components/admin/StatCardGroup";
@@ -11,6 +12,7 @@ import { Select } from "@/components/shared/Select";
 import type { Stats, Period, CRMStageStat } from "@/lib/types/stats";
 
 export default function StatsPage() {
+  const t = useTranslations("Stats");
   const [stats, setStats] = useState<Stats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +32,7 @@ export default function StatsPage() {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError("Failed to load statistics");
+        setError(t("failedToLoad"));
       }
     } finally {
       setIsLoading(false);
@@ -55,7 +57,7 @@ export default function StatsPage() {
   if (error || !stats) {
     return (
       <div className="bg-red-50 border-l-4 border-red-500 p-4">
-        <p className="text-sm text-red-700">{error || "Failed to load statistics"}</p>
+        <p className="text-sm text-red-700">{error || t("failedToLoad")}</p>
       </div>
     );
   }
@@ -63,15 +65,15 @@ export default function StatsPage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Statistics</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t("title")}</h1>
         <div className="w-full sm:w-48">
           <Select
             value={period}
             onChange={(e) => setPeriod(e.target.value as Period)}
             options={[
-              { value: "today", label: "Today" },
-              { value: "last_7_days", label: "Last 7 days" },
-              { value: "last_30_days", label: "Last 30 days" },
+              { value: "today", label: t("today") },
+              { value: "last_7_days", label: t("last7Days") },
+              { value: "last_30_days", label: t("last30Days") },
             ]}
           />
         </div>
@@ -107,17 +109,17 @@ export default function StatsPage() {
               className="h-4 w-4 text-[#251D1C] focus:ring-[#251D1C] border-gray-300 rounded"
             />
             <label htmlFor="comparison-toggle" className="text-sm font-medium text-gray-700">
-              Show comparison with previous period
+              {t("showComparison")}
             </label>
           </div>
         </div>
       )}
 
       <StatCardGroup
-        title="Overview"
+        title={t("overview")}
         cards={[
           {
-            label: "Total Conversations",
+            label: t("totalConversations"),
             value: stats.total_conversations,
             change: stats.comparison?.total_conversations,
             icon: "💬",
@@ -128,31 +130,31 @@ export default function StatsPage() {
       />
 
       <StatCardGroup
-        title="Technical Statuses"
+        title={t("technicalStatuses")}
         cards={[
           {
-            label: "AI Active",
+            label: t("aiActive"),
             value: stats.ai_active,
             change: stats.comparison?.ai_active,
             icon: "🤖",
             colorClass: "bg-[#EEEAE7]/20 text-[#443C3C] border-[#251D1C]/40",
           },
           {
-            label: "Needs Human",
+            label: t("needsHuman"),
             value: stats.needs_human,
             change: stats.comparison?.needs_human,
             icon: "👤",
             colorClass: "bg-[#F59E0B]/10 text-[#D97706] border-[#F59E0B]/30",
           },
           {
-            label: "Human Active",
+            label: t("humanActive"),
             value: stats.human_active,
             change: stats.comparison?.human_active,
             icon: "✋",
             colorClass: "bg-[#3B82F6]/10 text-[#2563EB] border-[#3B82F6]/30",
           },
           {
-            label: "Closed",
+            label: t("closed"),
             value: stats.closed,
             change: stats.comparison?.closed,
             icon: "✅",
@@ -165,7 +167,7 @@ export default function StatsPage() {
       {/* Dynamic CRM Pipeline stats */}
       {stats.crm_stage_stats && stats.crm_stage_stats.length > 0 && (
         <div className="mb-6">
-          <h2 className="text-base font-semibold text-[#443C3C] mb-3">CRM Pipeline</h2>
+          <h2 className="text-base font-semibold text-[#443C3C] mb-3">{t("crmPipeline")}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {stats.crm_stage_stats.map((stage: CRMStageStat) => (
               <div
@@ -183,7 +185,7 @@ export default function StatsPage() {
                   </span>
                 </div>
                 <span className="text-2xl font-bold text-[#251D1C]">{stage.count}</span>
-                <span className="text-xs text-[#9A9590]">conversations</span>
+                <span className="text-xs text-[#9A9590]">{t("conversations")}</span>
               </div>
             ))}
           </div>

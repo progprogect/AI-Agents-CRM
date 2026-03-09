@@ -32,5 +32,11 @@
 - `Header` — шапка админ-панели
 - `Nav` — пункты бокового меню
 - `Locale` — переключатель языка
-
-Для страниц создавайте отдельные namespace (например `Conversations`, `CRM`).
+- `Common` — общие кнопки и метки (Cancel, Loading, Actions и т.д.)
+- `Status` — статусы разговоров (AI Responding, Needs Attention и т.д.)
+- `Conversations` — страница списка разговоров
+- `ConversationDetail` — страница деталей разговора
+- `CRM` — страница CRM Pipeline
+- `Stats` — страница статистики
+- `Agents` — страница агентов (ключи добавлены, компоненты — по мере необходимости)
+- `Login` — страница входа

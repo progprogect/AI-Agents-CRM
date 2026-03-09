@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { isAuthenticated, setAdminToken } from "@/lib/auth";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 
@@ -22,6 +23,7 @@ type Step = "email" | "otp";
 
 export default function LoginPage() {
   const router = useRouter();
+  const t = useTranslations("Login");
 
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
@@ -68,20 +70,20 @@ export default function LoginPage() {
       });
 
       if (res.status === 429) {
-        setError("Too many requests. Please wait a few minutes before trying again.");
+        setError(t("tooManyRequests"));
         return;
       }
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data?.detail ?? "Something went wrong. Please try again.");
+        setError(data?.detail ?? t("somethingWentWrong"));
         return;
       }
 
       setStep("otp");
       setResendCooldown(60);
     } catch {
-      setError("Unable to connect. Please check your internet connection.");
+      setError(t("unableToConnect"));
     } finally {
       setIsLoading(false);
     }
@@ -90,7 +92,7 @@ export default function LoginPage() {
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     if (code.trim().length !== 6) {
-      setError("Please enter the 6-digit code.");
+      setError(t("enter6DigitCode"));
       return;
     }
 
@@ -107,7 +109,7 @@ export default function LoginPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setError(data?.detail ?? "Invalid or expired code. Please try again.");
+        setError(data?.detail ?? t("invalidOrExpiredCode"));
         setCode("");
         return;
       }
@@ -115,7 +117,7 @@ export default function LoginPage() {
       setAdminToken(data.access_token);
       router.replace("/admin/agents");
     } catch {
-      setError("Unable to connect. Please check your internet connection.");
+      setError(t("unableToConnect"));
     } finally {
       setIsLoading(false);
     }
@@ -152,9 +154,9 @@ export default function LoginPage() {
         <div className="bg-white rounded-sm shadow-sm border border-[#BEBAB7] p-8">
           {step === "email" ? (
             <>
-              <h1 className="text-xl font-semibold text-gray-900 mb-1">Admin Login</h1>
+              <h1 className="text-xl font-semibold text-gray-900 mb-1">{t("title")}</h1>
               <p className="text-sm text-gray-500 mb-6">
-                Enter your email to receive a login code.
+                {t("subtitle")}
               </p>
 
               <form onSubmit={handleRequestOTP} noValidate>
@@ -163,7 +165,7 @@ export default function LoginPage() {
                     htmlFor="email"
                     className="block text-sm font-medium text-gray-700 mb-1"
                   >
-                    Email address
+                    {t("emailLabel")}
                   </label>
                   <input
                     id="email"
@@ -172,7 +174,7 @@ export default function LoginPage() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@company.com"
+                    placeholder={t("emailPlaceholder")}
                     className="w-full px-3 py-2 border border-gray-300 rounded-sm bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C] transition-colors"
                     disabled={isLoading}
                   />
@@ -188,15 +190,15 @@ export default function LoginPage() {
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#251D1C] text-white text-sm font-medium rounded-sm hover:bg-[#443C3C] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                 >
                   {isLoading ? <LoadingSpinner size="sm" /> : null}
-                  Send Code
+                  {t("sendCode")}
                 </button>
               </form>
             </>
           ) : (
             <>
-              <h1 className="text-xl font-semibold text-gray-900 mb-1">Check your email</h1>
+              <h1 className="text-xl font-semibold text-gray-900 mb-1">{t("checkEmail")}</h1>
               <p className="text-sm text-gray-500 mb-1">
-                We sent a 6-digit code to
+                {t("codeSentTo")}
               </p>
               <p className="text-sm font-medium text-gray-900 mb-6 truncate">{email}</p>
 
@@ -206,7 +208,7 @@ export default function LoginPage() {
                     htmlFor="code"
                     className="block text-sm font-medium text-gray-700 mb-1"
                   >
-                    Login code
+                    {t("loginCodeLabel")}
                   </label>
                   <input
                     id="code"
@@ -219,7 +221,7 @@ export default function LoginPage() {
                     required
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                    placeholder="000000"
+                    placeholder={t("codePlaceholder")}
                     className="w-full px-3 py-2 border border-gray-300 rounded-sm bg-white text-sm text-center tracking-[0.4em] font-mono focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C] transition-colors"
                     disabled={isLoading}
                   />
@@ -235,7 +237,7 @@ export default function LoginPage() {
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#251D1C] text-white text-sm font-medium rounded-sm hover:bg-[#443C3C] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                 >
                   {isLoading ? <LoadingSpinner size="sm" /> : null}
-                  Verify
+                  {t("verify")}
                 </button>
               </form>
 
@@ -245,7 +247,7 @@ export default function LoginPage() {
                   onClick={() => { setStep("email"); setError(null); setCode(""); }}
                   className="text-gray-500 hover:text-gray-700 transition-colors"
                 >
-                  Change email
+                  {t("changeEmail")}
                 </button>
                 <button
                   type="button"
@@ -253,7 +255,7 @@ export default function LoginPage() {
                   disabled={resendCooldown > 0 || isLoading}
                   className="text-[#251D1C] hover:text-[#443C3C] disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
                 >
-                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend code"}
+                  {resendCooldown > 0 ? t("resendIn", { seconds: resendCooldown }) : t("resendCode")}
                 </button>
               </div>
             </>

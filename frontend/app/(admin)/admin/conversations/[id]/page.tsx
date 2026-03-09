@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { api, ApiError } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/shared/Button";
@@ -239,6 +240,7 @@ export default function ConversationDetailPage() {
     );
   }
 
+  const t = useTranslations("ConversationDetail");
   const agentDisplayName = agent ? getAgentDisplayName(agent) : conversation.agent_id;
   const clinicName = agent ? getClinicDisplayName(agent) : null;
   const agentProfileName = agent ? getAgentProfileDisplayName(agent) : null;
@@ -249,7 +251,7 @@ export default function ConversationDetailPage() {
       {/* Page header — stacks on mobile, side-by-side on desktop */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-5">
         <div className="flex-1 min-w-0">
-          <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">Conversation Details</h1>
+          <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">{t("title")}</h1>
           <p className="text-xs md:text-sm text-gray-500 mt-1 font-mono truncate">
             {getConversationDisplayId(conversation, "detail")}
           </p>
@@ -260,16 +262,16 @@ export default function ConversationDetailPage() {
             onClick={() => setShowInfoCards((v) => !v)}
             className="md:hidden text-sm border border-[#BEBAB7] px-3 py-1.5 rounded-sm text-gray-600 hover:bg-[#EEEAE7] transition-colors flex-shrink-0"
           >
-            {showInfoCards ? "Hide info" : "Show info"}
+            {showInfoCards ? t("hideInfo") : t("showInfo")}
           </button>
           {conversation.status === "AI_ACTIVE" && (
             <Button variant="primary" onClick={handleHandoff} className="flex-1 sm:flex-initial min-w-0">
-              Handoff to Human
+              {t("handoffToHuman")}
             </Button>
           )}
           {conversation.status === "HUMAN_ACTIVE" && (
             <Button variant="secondary" onClick={handleReturnToAI} className="flex-1 sm:flex-initial min-w-0">
-              Return to AI
+              {t("returnToAI")}
             </Button>
           )}
         </div>
@@ -285,35 +287,35 @@ export default function ConversationDetailPage() {
       <div className={`${showInfoCards ? "grid" : "hidden"} md:grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 sm:mb-6`}>
         {/* Agent Info Card */}
         <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-4 sm:p-6">
-          <h3 className="text-sm font-medium text-gray-500 mb-3">Agent Information</h3>
+          <h3 className="text-sm font-medium text-gray-500 mb-3">{t("agentInfo")}</h3>
           {isLoadingAgent ? (
             <LoadingSpinner size="sm" />
           ) : (
             <div className="space-y-2">
               <div>
-                <p className="text-xs text-gray-500">Agent Name</p>
+                <p className="text-xs text-gray-500">{t("agentName")}</p>
                 <p className="text-sm font-medium text-gray-900">{agentDisplayName}</p>
               </div>
               {clinicName && (
                 <div>
-                  <p className="text-xs text-gray-500">Company</p>
+                  <p className="text-xs text-gray-500">{t("company")}</p>
                   <p className="text-sm font-medium text-gray-900">{clinicName}</p>
                 </div>
               )}
               {agentProfileName && (
                 <div>
-                  <p className="text-xs text-gray-500">Agent</p>
+                  <p className="text-xs text-gray-500">{t("agent")}</p>
                   <p className="text-sm font-medium text-gray-900">{agentProfileName}</p>
                 </div>
               )}
               {specialty && (
                 <div>
-                  <p className="text-xs text-gray-500">Specialty</p>
+                  <p className="text-xs text-gray-500">{t("specialty")}</p>
                   <p className="text-sm font-medium text-gray-900">{specialty}</p>
                 </div>
               )}
               <div className="pt-2 border-t border-gray-200">
-                <p className="text-xs text-gray-500">Agent ID</p>
+                <p className="text-xs text-gray-500">{t("agentId")}</p>
                 <p className="text-xs font-mono text-gray-600">{conversation.agent_id}</p>
               </div>
             </div>
@@ -322,29 +324,29 @@ export default function ConversationDetailPage() {
 
         {/* Conversation Info Card */}
         <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-4 sm:p-6">
-          <h3 className="text-sm font-medium text-gray-500 mb-3">Conversation Information</h3>
+          <h3 className="text-sm font-medium text-gray-500 mb-3">{t("conversationInfo")}</h3>
           <div className="space-y-2">
             <div>
-              <p className="text-xs text-gray-500">Status</p>
+              <p className="text-xs text-gray-500">{t("status")}</p>
               <div className="mt-1">
                 <StatusBadge status={toConversationStatus(conversation.status)} />
               </div>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Channel</p>
+              <p className="text-xs text-gray-500">{t("channel")}</p>
               <p className="text-sm font-medium text-gray-900">
                 {getChannelDisplay(conversation.channel)}
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Created</p>
+              <p className="text-xs text-gray-500">{t("created")}</p>
               <p className="text-sm font-medium text-gray-900">
                 {formatDateTime(conversation.created_at)}
               </p>
             </div>
             {conversation.closed_at && (
               <div>
-                <p className="text-xs text-gray-500">Closed</p>
+                <p className="text-xs text-gray-500">{t("closed")}</p>
                 <p className="text-sm font-medium text-gray-900">
                   {formatDateTime(conversation.closed_at)}
                 </p>
@@ -352,18 +354,18 @@ export default function ConversationDetailPage() {
             )}
             {conversation.handoff_reason && (
               <div>
-                <p className="text-xs text-gray-500">Handoff Reason</p>
+                <p className="text-xs text-gray-500">{t("handoffReason")}</p>
                 <p className="text-sm font-medium text-gray-900">
                   {conversation.handoff_reason}
                 </p>
               </div>
             )}
             <div className="pt-2 border-t border-gray-200">
-              <p className="text-xs text-gray-500 mb-2">Marketing Status</p>
+              <p className="text-xs text-gray-500 mb-2">{t("marketingStatus")}</p>
               {isUpdatingMarketingStatus ? (
                 <div className="flex items-center gap-2">
                   <LoadingSpinner size="sm" />
-                  <span className="text-xs text-gray-500">Updating...</span>
+                  <span className="text-xs text-gray-500">{t("updating")}</span>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -384,7 +386,7 @@ export default function ConversationDetailPage() {
                   />
                   {conversation.rejection_reason && conversation.marketing_status === "REJECTED" && (
                     <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-sm">
-                      <p className="text-xs text-gray-500 mb-1">Rejection Reason:</p>
+                      <p className="text-xs text-gray-500 mb-1">{t("rejectionReason")}</p>
                       <p className="text-sm text-gray-900">{conversation.rejection_reason}</p>
                     </div>
                   )}
@@ -396,10 +398,10 @@ export default function ConversationDetailPage() {
               <div className="pt-2 border-t border-gray-200">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs text-gray-500">
-                    {isInstagramChannel(conversation.channel) ? "Instagram User" :
-                     conversation.channel === "telegram" ? "Telegram User" :
-                     conversation.channel === "whatsapp" ? "WhatsApp Contact" :
-                     "Contact"}
+                    {isInstagramChannel(conversation.channel) ? t("instagramUser") :
+                     conversation.channel === "telegram" ? t("telegramUser") :
+                     conversation.channel === "whatsapp" ? t("whatsappContact") :
+                     t("contact")}
                   </p>
                   {isInstagramChannel(conversation.channel) && (
                     <Button
@@ -409,7 +411,7 @@ export default function ConversationDetailPage() {
                       disabled={isRefreshingProfile}
                       isLoading={isRefreshingProfile}
                     >
-                      {isRefreshingProfile ? "Refreshing..." : "Refresh"}
+                      {isRefreshingProfile ? t("refreshing") : t("refreshProfile")}
                     </Button>
                   )}
                 </div>
@@ -443,7 +445,7 @@ export default function ConversationDetailPage() {
                 </div>
                 {isInstagramChannel(conversation.channel) && !conversation.external_user_name && (
                   <p className="text-xs text-gray-500 mt-1">
-                    Click "Refresh" to fetch Instagram profile info.
+                    {t("refreshProfileHint")}
                   </p>
                 )}
                 {conversation.external_conversation_id && (
@@ -461,13 +463,13 @@ export default function ConversationDetailPage() {
 
       {/* Messages Section */}
       <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 p-4 sm:p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Messages</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">{t("messages")}</h2>
         <div className="space-y-4 mb-4 min-h-[200px]">
           {messages.length === 0 ? (
             <EmptyState
               icon="💬"
-              title="No messages yet"
-              description="Messages will appear here once the conversation starts."
+              title={t("noMessagesYet")}
+              description={t("messagesWillAppear")}
             />
           ) : (
             messages.map((message) => (
@@ -493,7 +495,7 @@ export default function ConversationDetailPage() {
                 <button
                   onClick={() => setPendingMedia(null)}
                   className="text-gray-400 hover:text-red-500 transition-colors text-lg leading-none"
-                  title="Remove attachment"
+                  title={t("removeAttachment")}
                 >
                   ×
                 </button>
@@ -527,7 +529,7 @@ export default function ConversationDetailPage() {
 
             <MessageInput
               onSend={handleSendAdminMessage}
-              placeholder={pendingMedia ? "Add a caption (optional)..." : "Type your message as admin..."}
+              placeholder={pendingMedia ? t("addCaptionPlaceholder") : t("typeMessagePlaceholder")}
               disabled={isUploadingMedia}
               allowEmpty={!!pendingMedia}
             />

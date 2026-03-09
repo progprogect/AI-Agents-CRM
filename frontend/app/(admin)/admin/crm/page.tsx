@@ -3,6 +3,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import {
   DndContext,
@@ -30,17 +31,18 @@ import { Plus, Pencil, Trash2, Check, X, ExternalLink, RefreshCw } from "lucide-
 // ── Status dot ───────────────────────────────────────────────────────────────
 
 function StatusDot({ status }: { status: string }) {
+  const t = useTranslations("Status");
+  const labels: Record<string, string> = {
+    AI_ACTIVE: t("aiActive"),
+    NEEDS_HUMAN: t("needsHuman"),
+    HUMAN_ACTIVE: t("humanActive"),
+    CLOSED: t("closed"),
+  };
   const colors: Record<string, string> = {
     AI_ACTIVE: "bg-green-500",
     NEEDS_HUMAN: "bg-amber-500",
     HUMAN_ACTIVE: "bg-blue-500",
     CLOSED: "bg-gray-400",
-  };
-  const labels: Record<string, string> = {
-    AI_ACTIVE: "AI Active",
-    NEEDS_HUMAN: "Needs Human",
-    HUMAN_ACTIVE: "Human Active",
-    CLOSED: "Closed",
   };
   return (
     <span
@@ -66,10 +68,11 @@ interface CardProps {
 }
 
 function ConversationCard({ conversation: c, isDragging }: CardProps) {
+  const t = useTranslations("CRM");
   const contactName =
     c.external_user_name ||
     (c.external_user_username ? `@${c.external_user_username}` : null) ||
-    `Visitor #${c.conversation_id.slice(-6)}`;
+    t("visitor", { id: c.conversation_id.slice(-6) });
 
   return (
     <div
@@ -98,8 +101,8 @@ function ConversationCard({ conversation: c, isDragging }: CardProps) {
       {(c.request_type || c.handoff_reason) && (
         <div className="text-xs text-[#9A9590] truncate">
           {c.request_type
-            ? `Type: ${c.request_type}`
-            : `Reason: ${c.handoff_reason}`}
+            ? `${t("type")} ${c.request_type}`
+            : `${t("reason")} ${c.handoff_reason}`}
         </div>
       )}
 
@@ -107,7 +110,7 @@ function ConversationCard({ conversation: c, isDragging }: CardProps) {
       <div className="flex items-center justify-between pt-0.5">
         {c.status === "NEEDS_HUMAN" ? (
           <span className="text-xs text-amber-600 font-medium">
-            Waiting {getWaitingTime(c.updated_at)}
+            {t("waiting")} {getWaitingTime(c.updated_at)}
           </span>
         ) : (
           <span />
@@ -117,7 +120,7 @@ function ConversationCard({ conversation: c, isDragging }: CardProps) {
           className="flex items-center gap-1 text-xs text-[#443C3C] hover:text-[#251D1C] font-medium"
           onClick={(e) => e.stopPropagation()}
         >
-          Open <ExternalLink size={10} />
+          {t("open")} <ExternalLink size={10} />
         </Link>
       </div>
     </div>
@@ -154,6 +157,7 @@ interface ColumnProps {
 }
 
 function KanbanColumn({ stage, conversations, onRename, onDelete, onColorChange }: ColumnProps) {
+  const t = useTranslations("CRM");
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(stage.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -238,7 +242,7 @@ function KanbanColumn({ stage, conversations, onRename, onDelete, onColorChange 
           <button
             onClick={() => setEditing(true)}
             className="text-[#9A9590] hover:text-[#443C3C] p-0.5"
-            title="Rename"
+            title={t("rename")}
           >
             <Pencil size={12} />
           </button>
@@ -246,7 +250,7 @@ function KanbanColumn({ stage, conversations, onRename, onDelete, onColorChange 
             <button
               onClick={() => onDelete(stage.id)}
               className="text-[#9A9590] hover:text-red-500 p-0.5"
-              title="Delete stage"
+              title={t("deleteStage")}
             >
               <Trash2 size={12} />
             </button>
@@ -278,7 +282,7 @@ function KanbanColumn({ stage, conversations, onRename, onDelete, onColorChange 
 
         {conversations.length === 0 && (
           <div className="flex items-center justify-center h-16 text-xs text-[#BEBAB7]">
-            Drop cards here
+            {t("dropCardsHere")}
           </div>
         )}
       </div>
@@ -289,6 +293,8 @@ function KanbanColumn({ stage, conversations, onRename, onDelete, onColorChange 
 // ── Add Stage form ────────────────────────────────────────────────────────────
 
 function AddStageButton({ onAdd }: { onAdd: (name: string, color: string) => void }) {
+  const t = useTranslations("CRM");
+  const tCommon = useTranslations("Common");
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [color, setColor] = useState("#9A9590");
@@ -315,7 +321,7 @@ function AddStageButton({ onAdd }: { onAdd: (name: string, color: string) => voi
           className="w-full flex items-center gap-2 px-4 py-3 rounded-md border-2 border-dashed border-[#BEBAB7] text-[#9A9590] hover:border-[#443C3C] hover:text-[#443C3C] transition-colors text-sm font-medium"
         >
           <Plus size={16} />
-          Add Stage
+          {t("addStage")}
         </button>
       </div>
     );
@@ -323,7 +329,7 @@ function AddStageButton({ onAdd }: { onAdd: (name: string, color: string) => voi
 
   return (
     <div className="flex-shrink-0 w-72 bg-white rounded-md border border-[#BEBAB7] p-3 space-y-3">
-      <div className="text-sm font-semibold text-[#251D1C]">New Stage</div>
+      <div className="text-sm font-semibold text-[#251D1C]">{t("newStage")}</div>
       <input
         ref={inputRef}
         value={name}
@@ -332,11 +338,11 @@ function AddStageButton({ onAdd }: { onAdd: (name: string, color: string) => voi
           if (e.key === "Enter") handleSubmit();
           if (e.key === "Escape") setOpen(false);
         }}
-        placeholder="Stage name..."
+        placeholder={t("stageNamePlaceholder")}
         className="w-full text-sm px-2.5 py-1.5 border border-[#BEBAB7] rounded outline-none focus:border-[#251D1C]"
       />
       <div className="flex items-center gap-2">
-        <label className="text-xs text-[#9A9590]">Color:</label>
+        <label className="text-xs text-[#9A9590]">{t("color")}</label>
         <input
           type="color"
           value={color}
@@ -348,13 +354,13 @@ function AddStageButton({ onAdd }: { onAdd: (name: string, color: string) => voi
             onClick={() => setOpen(false)}
             className="text-xs text-[#9A9590] hover:text-[#443C3C]"
           >
-            Cancel
+            {tCommon("cancel")}
           </button>
           <button
             onClick={handleSubmit}
             className="text-xs font-medium text-white bg-[#251D1C] px-3 py-1 rounded hover:bg-[#443C3C]"
           >
-            Add
+            {tCommon("create")}
           </button>
         </div>
       </div>
@@ -365,6 +371,8 @@ function AddStageButton({ onAdd }: { onAdd: (name: string, color: string) => voi
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CRMPage() {
+  const t = useTranslations("CRM");
+  const tCommon = useTranslations("Common");
   const [stages, setStages] = useState<CRMStage[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -516,8 +524,8 @@ export default function CRMPage() {
       {/* Header — stacks on mobile, side-by-side on desktop */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 py-4 border-b border-[#BEBAB7] bg-white flex-shrink-0">
         <div className="min-w-0">
-          <h1 className="text-lg sm:text-xl font-bold text-[#251D1C]">CRM Pipeline</h1>
-          <p className="text-xs sm:text-sm text-[#9A9590]">Drag conversations between stages</p>
+          <h1 className="text-lg sm:text-xl font-bold text-[#251D1C]">{t("title")}</h1>
+          <p className="text-xs sm:text-sm text-[#9A9590]">{t("subtitle")}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
@@ -527,7 +535,7 @@ export default function CRMPage() {
             onChange={(e) => setSelectedAgentId(e.target.value)}
             className="flex-1 min-w-[140px] sm:flex-initial sm:min-w-0 text-sm border border-[#BEBAB7] rounded px-3 py-1.5 text-[#443C3C] bg-white outline-none focus:border-[#251D1C]"
           >
-            <option value="">All Agents</option>
+            <option value="">{tCommon("allAgents")}</option>
             {agents.map((a) => (
               <option key={a.agent_id} value={a.agent_id}>
                 {a.config?.profile?.agent_display_name ?? a.agent_id}
@@ -540,7 +548,7 @@ export default function CRMPage() {
             className="flex items-center justify-center gap-1.5 text-sm text-[#9A9590] hover:text-[#251D1C] border border-[#BEBAB7] px-3 py-1.5 rounded hover:border-[#443C3C] transition-colors flex-shrink-0"
           >
             <RefreshCw size={14} />
-            Refresh
+            {tCommon("refresh")}
           </button>
         </div>
       </div>
@@ -549,7 +557,7 @@ export default function CRMPage() {
       {deleteConfirm && (
         <div className="px-4 sm:px-6 py-2 bg-red-50 border-b border-red-200 flex items-center justify-between text-sm">
           <span className="text-red-700">
-            Click Delete again to confirm removing &quot;{stages.find((s) => s.id === deleteConfirm)?.name}&quot;
+            {t("deleteConfirm", { name: stages.find((s) => s.id === deleteConfirm)?.name ?? "" })}
           </span>
           <button
             onClick={() => setDeleteConfirm(null)}
