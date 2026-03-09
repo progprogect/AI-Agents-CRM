@@ -23,18 +23,7 @@ resource "aws_cloudwatch_log_group" "ecs" {
   tags              = local.common_tags
 }
 
-resource "aws_cloudwatch_log_group" "frontend" {
-  name              = "/ecs/doctor-agent-frontend"
-  retention_in_days = 7
-  tags              = local.common_tags
-}
-
-# ─────────────────────────────────────────────
-# Secrets Manager — Instagram webhook secret
-# (referenced in this file's ECS task definition)
-# ─────────────────────────────────────────────
-
-# (Defined in main.tf — referenced here by ARN)
+# Note: aws_cloudwatch_log_group.frontend is defined in frontend.tf
 
 # ─────────────────────────────────────────────
 # ECS Task Definition — Backend
