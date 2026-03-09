@@ -287,6 +287,7 @@ class SendAdminMessageRequest(BaseModel):
     content: str = Field(default="", description="Message text (may be empty when sending media only)", max_length=10000)
     media_url: Optional[str] = Field(None, description="Public URL of attached media (from /api/v1/media/upload)")
     media_type: Optional[str] = Field(None, description="Media category: image, video, audio, document")
+    media_filename: Optional[str] = Field(None, description="Original filename of the attached media")
 
 
 class SendAdminMessageResponse(BaseModel):
@@ -342,6 +343,8 @@ async def send_admin_message(
             msg_metadata["media_url"] = request.media_url
         if request.media_type:
             msg_metadata["media_type"] = request.media_type
+        if request.media_filename:
+            msg_metadata["media_filename"] = request.media_filename
 
         admin_message = Message(
             message_id=message_id,

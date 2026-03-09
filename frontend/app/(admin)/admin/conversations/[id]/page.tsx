@@ -160,6 +160,7 @@ export default function ConversationDetailPage() {
         content,
         media?.url,
         media?.type,
+        media?.name,
       );
 
       setTimeout(async () => { await refreshMessages(); }, 500);

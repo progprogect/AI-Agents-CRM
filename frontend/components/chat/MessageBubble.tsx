@@ -39,10 +39,12 @@ function MediaAttachment({
   url,
   mediaType,
   isUser,
+  displayFilename,
 }: {
   url: string;
   mediaType: string | null | undefined;
   isUser: boolean;
+  displayFilename?: string | null;
 }) {
   const type = mediaType || "document";
 
@@ -74,8 +76,12 @@ function MediaAttachment({
     );
   }
 
-  // document / unknown
-  const filename = url.split("/").pop()?.split("?")[0] || "file";
+  // document / unknown — use provided displayName or extract from URL
+  const urlFilename = url.split("/").pop()?.split("?")[0] || "file";
+  // If the URL filename looks like a UUID (no spaces, long hex), hide it
+  const isUuidFilename = /^[0-9a-f-]{36}\.[a-z]+$/i.test(urlFilename);
+  const displayName = isUuidFilename ? (displayFilename || "Document") : (displayFilename || urlFilename);
+
   return (
     <a
       href={url}
@@ -88,7 +94,7 @@ function MediaAttachment({
       }`}
     >
       <span className="text-base">📎</span>
-      <span className="truncate max-w-[200px]">{filename}</span>
+      <span className="truncate max-w-[200px]">{displayName}</span>
     </a>
   );
 }
@@ -121,8 +127,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = memo(({ message }) =>
   const isAgent = message.role === "agent";
 
   // Prefer top-level fields, fall back to metadata
-  const mediaUrl  = message.media_url  ?? message.metadata?.media_url  ?? null;
-  const mediaType = message.media_type ?? message.metadata?.media_type ?? null;
+  const mediaUrl      = message.media_url      ?? message.metadata?.media_url      ?? null;
+  const mediaType     = message.media_type     ?? message.metadata?.media_type     ?? null;
+  const mediaFilename = message.media_filename ?? message.metadata?.media_filename ?? null;
 
   return (
     <div className={`flex items-start gap-2 mb-4 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
@@ -159,7 +166,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = memo(({ message }) =>
         >
           {/* Media attachment */}
           {mediaUrl && (
-            <MediaAttachment url={mediaUrl} mediaType={mediaType} isUser={isUser || isAdmin} />
+            <MediaAttachment
+              url={mediaUrl}
+              mediaType={mediaType}
+              isUser={isUser || isAdmin}
+              displayFilename={mediaFilename}
+            />
           )}
 
           {/* Text content */}

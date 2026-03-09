@@ -13,6 +13,7 @@ export interface Message {
   ttl?: number;
   media_url?: string | null;
   media_type?: string | null;  // "image" | "video" | "audio" | "document"
+  media_filename?: string | null;
 }
 
 export interface SendMessageRequest {

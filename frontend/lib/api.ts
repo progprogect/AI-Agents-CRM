@@ -354,6 +354,7 @@ export const api = {
     content: string,
     mediaUrl?: string | null,
     mediaType?: string | null,
+    mediaFilename?: string | null,
   ): Promise<Message> {
     return request<Message>(
       `/api/v1/admin/conversations/${conversationId}/messages`,
@@ -364,6 +365,7 @@ export const api = {
           content,
           media_url: mediaUrl ?? undefined,
           media_type: mediaType ?? undefined,
+          media_filename: mediaFilename ?? undefined,
         }),
       },
       true
