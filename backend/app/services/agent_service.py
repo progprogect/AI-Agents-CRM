@@ -306,7 +306,7 @@ class AgentService:
         result = {
             "response": response,
             "escalate": False,
-            "rag_context_used": rag_context is not None,
+            "rag_context_used": bool(rag_context),
             "rag_media_url": rag_media_attachment["url"] if rag_media_attachment else None,
             "rag_media_type": rag_media_attachment["media_type"] if rag_media_attachment else None,
             "agent_message_id": agent_message_id,

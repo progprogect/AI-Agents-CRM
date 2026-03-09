@@ -291,7 +291,7 @@ class RAGService:
             return "", []
 
         if not raw_results:
-            return "No relevant context found.", []
+            return "", []
 
         # Build context string (identical format to rag_chain.get_relevant_context)
         context_parts: list[str] = []
