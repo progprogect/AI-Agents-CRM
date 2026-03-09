@@ -144,7 +144,8 @@ class PostgresRAGClient:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    """SELECT agent_id, document_id, title, content, embedding, file_url
+                    """SELECT agent_id, document_id, title, content, embedding,
+                              file_url, file_type
                        FROM rag_documents WHERE agent_id = $1""",
                     agent_id,
                 )
@@ -170,6 +171,7 @@ class PostgresRAGClient:
                         }
                         if row.get("file_url"):
                             r["file_url"] = row["file_url"]
+                            r["file_type"] = row.get("file_type") or "text"
                         results.append(r)
                 except (json.JSONDecodeError, ValueError, TypeError) as e:
                     logger.warning(f"Error processing document {row.get('document_id')}: {e}")

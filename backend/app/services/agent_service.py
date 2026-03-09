@@ -121,11 +121,12 @@ class AgentService:
             
             return result
 
-        # Retrieve RAG context if enabled
+        # Retrieve RAG context (text + any media attachments) in one DB call
         rag_context = None
+        rag_media_attachment = None   # first eligible RAGMediaAttachment, or None
         if self.agent_config.rag.enabled:
             try:
-                rag_context = await self.rag_service.get_formatted_context(
+                rag_context, rag_media_list = await self.rag_service.get_context_and_media(
                     query=user_message,
                     agent_id=self.agent_config.agent_id,
                     agent_config=self.agent_config,
@@ -139,7 +140,19 @@ class AgentService:
                             "conversation_id": conversation_id,
                             "agent_id": self.agent_config.agent_id,
                             "context_length": len(rag_context),
+                            "media_attachments": len(rag_media_list),
                         },
+                    )
+                # Take the highest-scored media item (already sorted by RAG search)
+                if rag_media_list:
+                    rag_media_attachment = rag_media_list[0]
+                    logger.info(
+                        "RAG media attachment selected for conversation %s: %s (%s, score=%.3f)",
+                        conversation_id,
+                        rag_media_attachment["title"],
+                        rag_media_attachment["media_type"],
+                        rag_media_attachment["score"],
+                        extra={"conversation_id": conversation_id},
                     )
             except Exception as e:
                 # Log error but continue without RAG
@@ -243,6 +256,10 @@ class AgentService:
         agent_message_id = None
         if conversation:
             agent_message_id = str(uuid.uuid4())
+            msg_metadata: dict = {}
+            if rag_media_attachment:
+                msg_metadata["media_url"] = rag_media_attachment["url"]
+                msg_metadata["media_type"] = rag_media_attachment["media_type"]
             agent_message = Message(
                 message_id=agent_message_id,
                 conversation_id=conversation_id,
@@ -252,26 +269,30 @@ class AgentService:
                 channel=conversation.channel,
                 external_user_id=conversation.external_user_id,
                 timestamp=utc_now(),
+                metadata=msg_metadata,
             )
             await self.dynamodb.create_message(agent_message)
 
-        # Send message through channel sender if provided and not web chat
-        # For web chat, sending is handled by WebSocket in websocket.py
+        # Send message through channel sender if provided and not web chat.
+        # For web chat, delivery is handled by WebSocket in websocket.py;
+        # the media metadata saved above will be picked up when the frontend polls.
         if self.channel_sender:
             try:
-                # Get conversation to determine channel
-                # Handle both enum and string channel (from DynamoDB)
                 conversation_channel = get_enum_value(conversation.channel) if conversation else None
                 if conversation_channel and conversation_channel != MessageChannel.WEB_CHAT.value:
                     await self.channel_sender.send_message(
                         conversation_id=conversation_id,
                         message_text=response,
+                        media_url=rag_media_attachment["url"] if rag_media_attachment else None,
+                        media_type=rag_media_attachment["media_type"] if rag_media_attachment else None,
                     )
                     logger.info(
-                        f"Sent message through channel sender for conversation {conversation_id}",
+                        "Sent agent message for conversation %s (media=%s)",
+                        conversation_id,
+                        rag_media_attachment["media_type"] if rag_media_attachment else "none",
                         extra={
                             "conversation_id": conversation_id,
-                            "channel": get_enum_value(conversation.channel) if conversation else None,
+                            "channel": conversation_channel,
                         },
                     )
             except Exception as e:
@@ -286,6 +307,8 @@ class AgentService:
             "response": response,
             "escalate": False,
             "rag_context_used": rag_context is not None,
+            "rag_media_url": rag_media_attachment["url"] if rag_media_attachment else None,
+            "rag_media_type": rag_media_attachment["media_type"] if rag_media_attachment else None,
             "agent_message_id": agent_message_id,
             "agent_message_timestamp": to_utc_iso_string(agent_message.timestamp) if conversation and agent_message_id else None,
         }
