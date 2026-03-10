@@ -123,6 +123,7 @@ class AgentService:
 
         # Retrieve RAG context (text + any media attachments) in one DB call
         rag_context = None
+        rag_media_list: list = []
         rag_media_attachment = None   # first eligible RAGMediaAttachment, or None
         if self.agent_config.rag.enabled:
             try:
@@ -171,6 +172,7 @@ class AgentService:
                 user_message=user_message,
                 conversation_history=conversation_history,
                 rag_context=rag_context,
+                rag_media_available=bool(rag_media_list),
             )
 
             # Normalize: some LLM backends (e.g. Claude via LangChain) return a list
@@ -202,6 +204,12 @@ class AgentService:
                 )
                 response = "I apologize, but I couldn't generate a response. Please try again."
             
+            # Only attach RAG media when LLM explicitly requested it via [ATTACH_MEDIA]
+            if rag_media_attachment and AgentChain.ATTACH_MEDIA_MARKER not in response:
+                rag_media_attachment = None
+            if AgentChain.ATTACH_MEDIA_MARKER in response:
+                response = response.replace(AgentChain.ATTACH_MEDIA_MARKER, "").strip()
+
             # Clean markdown formatting for plain text channels (Instagram, etc.)
             try:
                 from app.utils.text_formatting import clean_agent_response

@@ -197,11 +197,15 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         
         return "\n\n".join(prompt_parts)
 
+    # Marker the LLM must include when it wants to attach a RAG document to the response.
+    ATTACH_MEDIA_MARKER = "[ATTACH_MEDIA]"
+
     async def generate_response(
         self,
         user_message: str,
         conversation_history: Optional[list[dict]] = None,
         rag_context: Optional[str] = None,
+        rag_media_available: bool = False,
     ) -> str:
         """Generate response using agent chain."""
         executor = await self._get_executor()
@@ -210,6 +214,14 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         input_text = user_message
         if rag_context:
             input_text = f"Context:\n{rag_context}\n\nUser message: {user_message}"
+            if rag_media_available:
+                input_text += (
+                    "\n\nImportant: Some context documents have attached files (images, PDFs). "
+                    "Only include [ATTACH_MEDIA] at the end of your response when the user "
+                    "explicitly asks for a document, file, price list, or when attaching would "
+                    "directly help answer their question. Do NOT include [ATTACH_MEDIA] for "
+                    "greetings, simple questions, or casual conversation."
+                )
 
         # Prepare chat history (last 50 messages for context)
         # Note: Consider token limits - 50 messages ≈ 2000-3000 tokens
