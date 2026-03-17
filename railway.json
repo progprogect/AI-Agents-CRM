@@ -6,6 +6,6 @@
   },
   "deploy": {
     "healthcheckPath": "/health",
-    "preDeployCommand": "cd /app/backend && python scripts/init_db.py"
+    "preDeployCommand": "cd /app/backend && python3 scripts/init_db.py"
   }
 }

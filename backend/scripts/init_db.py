@@ -60,6 +60,8 @@ async def main() -> None:
                 err_msg = str(e).lower()
                 if "already exists" in err_msg:
                     print(f"Skip (exists): {stmt.split(chr(10))[0][:50]}...")
+                elif "duplicate key" in err_msg or "unique constraint" in err_msg:
+                    print(f"Skip (duplicate): {stmt.split(chr(10))[0][:50]}...")
                 elif "extension" in err_msg and "not available" in err_msg:
                     print(f"Skip (extension not available): {stmt.split(chr(10))[0][:50]}...")
                 else:

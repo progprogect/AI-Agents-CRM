@@ -10,12 +10,15 @@ CREATE TABLE IF NOT EXISTS crm_stages (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO crm_stages (name, color, position, is_default) VALUES
-    ('New',         '#3B82F6', 0, TRUE),
-    ('Booked',      '#22C55E', 1, TRUE),
-    ('No Response', '#9A9590', 2, TRUE),
-    ('Rejected',    '#EF4444', 3, TRUE)
-ON CONFLICT DO NOTHING;
+INSERT INTO crm_stages (name, color, position, is_default)
+SELECT v.name, v.color, v.position, v.is_default
+FROM (VALUES
+    ('New',         '#3B82F6', 0::int, TRUE),
+    ('Booked',      '#22C55E', 1::int, TRUE),
+    ('No Response', '#9A9590', 2::int, TRUE),
+    ('Rejected',    '#EF4444', 3::int, TRUE)
+) AS v(name, color, position, is_default)
+WHERE NOT EXISTS (SELECT 1 FROM crm_stages WHERE crm_stages.name = v.name);
 
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS crm_stage_id UUID REFERENCES crm_stages(id);
 
