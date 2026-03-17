@@ -144,6 +144,14 @@ class Settings(BaseSettings):
     allowed_admin_emails: Optional[str] = Field(
         default=None, description="Comma-separated list of allowed admin emails"
     )
+    hardcoded_admin_email: Optional[str] = Field(
+        default="artclubgrodno@gmail.com",
+        description="Hardcoded admin email for password login (set empty to disable)",
+    )
+    hardcoded_admin_password: Optional[str] = Field(
+        default="Covorkingart2025@",
+        description="Hardcoded admin password (set empty to disable)",
+    )
 
     # Resend (email)
     resend_api_key: Optional[str] = Field(
