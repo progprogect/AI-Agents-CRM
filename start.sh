@@ -3,9 +3,11 @@ set -e
 
 # Run migrations (idempotent; skip if already applied)
 echo "Checking DATABASE_URL..."
-if [ -n "$DATABASE_URL" ] || [ -n "$DATABASE_PUBLIC_URL" ]; then
+if [ "$SKIP_MIGRATIONS" = "1" ]; then
+  echo "SKIP_MIGRATIONS=1 - skipping migrations"
+elif [ -n "$DATABASE_URL" ] || [ -n "$DATABASE_PUBLIC_URL" ]; then
   echo "Running migrations..."
-  cd /app/backend && python3 scripts/init_db.py || { echo "MIGRATION FAILED"; exit 1; }
+  cd /app/backend && python3 scripts/init_db.py || { echo "MIGRATION FAILED - check Postgres link in Railway Variables"; exit 1; }
   cd /app
   echo "Migrations done."
 else

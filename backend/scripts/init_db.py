@@ -9,12 +9,21 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def _ensure_sslmode(url: str) -> str:
+    """Railway PostgreSQL requires SSL. Add sslmode if not present."""
+    if "sslmode=" in url:
+        return url
+    sep = "&" if "?" in url else "?"
+    return url + f"{sep}sslmode=require"
+
+
 async def main() -> None:
     database_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
     if not database_url:
         print("Error: DATABASE_URL or DATABASE_PUBLIC_URL must be set")
-        print("Railway: ensure PostgreSQL is linked to this service (Variables tab)")
+        print("Railway: Variables -> Add Reference -> select Postgres DATABASE_URL")
         sys.exit(1)
+    database_url = _ensure_sslmode(database_url)
     print("Connecting to database...")
 
     try:
@@ -51,17 +60,31 @@ async def main() -> None:
             if stmt:
                 statements.append(stmt + ";")
 
-    for attempt in range(3):
-        try:
-            conn = await asyncpg.connect(database_url)
+    urls_to_try = [database_url]
+    other = os.environ.get("DATABASE_PUBLIC_URL") or os.environ.get("DATABASE_URL")
+    if other and other != database_url:
+        urls_to_try.append(_ensure_sslmode(other))
+
+    conn = None
+    last_error = None
+    for url in urls_to_try:
+        for attempt in range(3):
+            try:
+                conn = await asyncpg.connect(url, timeout=30)
+                break
+            except Exception as e:
+                last_error = e
+                if attempt < 2:
+                    print(f"Attempt {attempt + 1} failed, retrying in 3s: {e}")
+                    await asyncio.sleep(3)
+                else:
+                    print(f"URL failed after 3 attempts")
+        if conn is not None:
             break
-        except Exception as e:
-            if attempt < 2:
-                print(f"Connection attempt {attempt + 1} failed, retrying in 2s: {e}")
-                await asyncio.sleep(2)
-            else:
-                print(f"Failed to connect after 3 attempts: {e}")
-                raise
+    if conn is None:
+        print(f"Failed to connect. Last error: {last_error}")
+        print("Railway: Variables -> Postgres ref: service name must match (Postgres/PostgreSQL/postgres)")
+        raise last_error
     try:
         for i, stmt in enumerate(statements):
             try:
