@@ -5,6 +5,7 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "healthcheckPath": "/health"
+    "healthcheckPath": "/health",
+    "preDeployCommand": "cd /app/backend && python scripts/init_db.py"
   }
 }

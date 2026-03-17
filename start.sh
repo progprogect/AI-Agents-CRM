@@ -1,6 +1,13 @@
 #!/bin/sh
 set -e
 
+# Run migrations (idempotent; skip if already applied)
+if [ -n "$DATABASE_URL" ] || [ -n "$DATABASE_PUBLIC_URL" ]; then
+  echo "Running migrations..."
+  cd /app/backend && python scripts/init_db.py || true
+  cd /app
+fi
+
 # Substitute PORT in nginx config
 PORT="${PORT:-8000}"
 sed "s/__PORT__/$PORT/g" /app/nginx.conf.template > /tmp/nginx.conf

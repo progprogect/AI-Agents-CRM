@@ -25,6 +25,10 @@ async def main() -> None:
     migration_files = [
         "001_initial.sql",
         "002_secrets.sql",
+        "003_doctor_to_agent_display_name.sql",
+        "004_rag_folders_and_documents.sql",
+        "005_admin_users.sql",
+        "006_crm_stages.sql",
     ]
 
     statements = []
