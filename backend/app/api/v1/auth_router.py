@@ -11,6 +11,7 @@ from pydantic import BaseModel, EmailStr
 from app.config import get_settings
 from app.api.auth import get_current_admin, require_super_admin
 from app.services.email_service import send_otp_email
+from app.services.password_service import hash_password, verify_password
 from app.services.otp_service import (
     check_rate_limit,
     create_otp,
@@ -35,6 +36,11 @@ class VerifyOTPBody(BaseModel):
     code: str
 
 
+class LoginPasswordBody(BaseModel):
+    email: EmailStr
+    password: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -54,6 +60,7 @@ class AdminUserResponse(BaseModel):
 
 class InviteUserBody(BaseModel):
     email: EmailStr
+    password: Optional[str] = None  # Optional: if set, user can login with password
 
 
 # --- Helpers ---
@@ -123,6 +130,56 @@ async def verify_otp_endpoint(body: VerifyOTPBody) -> TokenResponse:
     return TokenResponse(access_token=token)
 
 
+@router.post("/login-password", response_model=TokenResponse)
+async def login_with_password(body: LoginPasswordBody) -> TokenResponse:
+    """Login with email + password. Only for users who have a password set (regular admins)."""
+    email = body.email.lower()
+    password = body.password
+
+    # Super admins (from env) cannot use password — only OTP
+    if email in get_super_admin_emails():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Use email code to sign in.",
+        )
+
+    try:
+        from app.storage.postgres import get_pool
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            "SELECT password_hash FROM admin_users WHERE email=$1 AND is_active=true",
+            email,
+        )
+    except Exception as e:
+        logger.error(f"DB error during password login: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service error.",
+        )
+
+    if not row or not row["password_hash"]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+        )
+
+    if not verify_password(password, row["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+        )
+
+    try:
+        token = _create_jwt(email)
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service is not configured.",
+        )
+
+    return TokenResponse(access_token=token)
+
+
 # --- Me endpoint (requires auth) ---
 
 @router.get("/me", response_model=MeResponse)
@@ -176,6 +233,13 @@ async def invite_user(
     from app.storage.postgres import get_pool
     pool = await get_pool()
 
+    if body.password and len(body.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters.",
+        )
+    password_hash_val = hash_password(body.password) if body.password else None
+
     # Upsert: if exists but inactive, reactivate; if new, insert
     existing = await pool.fetchrow(
         "SELECT id, is_active FROM admin_users WHERE email=$1", email
@@ -186,14 +250,20 @@ async def invite_user(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="User already exists.",
             )
-        await pool.execute(
-            "UPDATE admin_users SET is_active=true, created_by=$1 WHERE email=$2",
-            current_user, email,
-        )
+        if password_hash_val:
+            await pool.execute(
+                "UPDATE admin_users SET is_active=true, created_by=$1, password_hash=$2 WHERE email=$3",
+                current_user, password_hash_val, email,
+            )
+        else:
+            await pool.execute(
+                "UPDATE admin_users SET is_active=true, created_by=$1 WHERE email=$2",
+                current_user, email,
+            )
     else:
         await pool.execute(
-            "INSERT INTO admin_users (email, created_by) VALUES ($1, $2)",
-            email, current_user,
+            "INSERT INTO admin_users (email, created_by, password_hash) VALUES ($1, $2, $3)",
+            email, current_user, password_hash_val,
         )
 
     logger.info(f"User {email} added by super admin {current_user}")

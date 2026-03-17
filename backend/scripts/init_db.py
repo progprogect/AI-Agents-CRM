@@ -40,6 +40,7 @@ async def main() -> None:
         "004_rag_folders_and_documents.sql",
         "005_admin_users.sql",
         "006_crm_stages.sql",
+        "007_admin_passwords.sql",
     ]
 
     statements = []

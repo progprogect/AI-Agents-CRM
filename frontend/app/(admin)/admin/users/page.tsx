@@ -37,6 +37,7 @@ export default function UsersPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -77,10 +78,20 @@ export default function UsersPage() {
     setInviteLoading(true);
     setInviteError(null);
     try {
+      const body: { email: string; password?: string } = {
+        email: inviteEmail.trim().toLowerCase(),
+      };
+      if (invitePassword.trim().length >= 8) {
+        body.password = invitePassword.trim();
+      } else if (invitePassword.trim().length > 0) {
+        setInviteError("Password must be at least 8 characters.");
+        setInviteLoading(false);
+        return;
+      }
       const res = await fetch(`${getApiUrl()}/api/v1/admin/auth/users`, {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ email: inviteEmail.trim().toLowerCase() }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -88,6 +99,7 @@ export default function UsersPage() {
         return;
       }
       setInviteEmail("");
+      setInvitePassword("");
       setShowInviteForm(false);
       await fetchUsers();
     } catch {
@@ -148,24 +160,35 @@ export default function UsersPage() {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Email address
           </label>
+          <input
+            type="email"
+            required
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            placeholder="colleague@company.com"
+            className="w-full mb-3 px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C]"
+            disabled={inviteLoading}
+          />
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Password (optional, min 8 chars — enables password login)
+          </label>
+          <input
+            type="password"
+            value={invitePassword}
+            onChange={(e) => setInvitePassword(e.target.value)}
+            placeholder="Leave empty for OTP-only"
+            className="w-full mb-3 px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C]"
+            disabled={inviteLoading}
+          />
           <div className="flex gap-2">
-            <input
-              type="email"
-              required
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="colleague@company.com"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C]"
-              disabled={inviteLoading}
-            />
             <Button type="submit" variant="primary" size="sm" isLoading={inviteLoading}>
-              Send Invite
+              Add User
             </Button>
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => { setShowInviteForm(false); setInviteEmail(""); setInviteError(null); }}
+              onClick={() => { setShowInviteForm(false); setInviteEmail(""); setInvitePassword(""); setInviteError(null); }}
             >
               Cancel
             </Button>
@@ -174,7 +197,7 @@ export default function UsersPage() {
             <p className="mt-2 text-sm text-red-600">{inviteError}</p>
           )}
           <p className="mt-2 text-xs text-gray-500">
-            The user will be able to log in via email OTP immediately.
+            User can login via OTP or password (if set).
           </p>
         </form>
       )}

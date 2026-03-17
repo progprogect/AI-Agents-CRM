@@ -344,13 +344,19 @@
   "Login": {
     "title": "Admin Login",
     "subtitle": "Enter your email to receive a login code.",
+    "subtitlePassword": "Or sign in with your password.",
     "checkEmail": "Check your email",
     "codeSentTo": "We sent a 6-digit code to",
     "emailLabel": "Email address",
     "emailPlaceholder": "you@company.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Enter your password",
     "loginCodeLabel": "Login code",
     "codePlaceholder": "000000",
     "sendCode": "Send Code",
+    "loginWithPassword": "Sign in with password",
+    "loginWithCode": "Sign in with code",
+    "signIn": "Sign in",
     "verify": "Verify",
     "resendIn": "Resend in {seconds}s",
     "resendCode": "Resend code",
@@ -359,6 +365,8 @@
     "somethingWentWrong": "Something went wrong. Please try again.",
     "unableToConnect": "Unable to connect. Please check your internet connection.",
     "enter6DigitCode": "Please enter the 6-digit code.",
-    "invalidOrExpiredCode": "Invalid or expired code. Please try again."
+    "invalidOrExpiredCode": "Invalid or expired code. Please try again.",
+    "invalidEmailOrPassword": "Invalid email or password.",
+    "useEmailCode": "Use email code to sign in."
   }
 }

@@ -344,13 +344,19 @@
   "Login": {
     "title": "Вход в панель",
     "subtitle": "Введите email для получения кода.",
+    "subtitlePassword": "Или войдите по паролю.",
     "checkEmail": "Проверьте почту",
     "codeSentTo": "Мы отправили 6-значный код на",
     "emailLabel": "Email",
     "emailPlaceholder": "you@company.com",
+    "passwordLabel": "Пароль",
+    "passwordPlaceholder": "Введите пароль",
     "loginCodeLabel": "Код входа",
     "codePlaceholder": "000000",
     "sendCode": "Отправить код",
+    "loginWithPassword": "Войти по паролю",
+    "loginWithCode": "Войти по коду",
+    "signIn": "Войти",
     "verify": "Подтвердить",
     "resendIn": "Повторить через {seconds} с",
     "resendCode": "Отправить код повторно",
@@ -359,6 +365,8 @@
     "somethingWentWrong": "Что-то пошло не так. Попробуйте снова.",
     "unableToConnect": "Нет соединения. Проверьте подключение к интернету.",
     "enter6DigitCode": "Введите 6-значный код.",
-    "invalidOrExpiredCode": "Неверный или истёкший код. Попробуйте снова."
+    "invalidOrExpiredCode": "Неверный или истёкший код. Попробуйте снова.",
+    "invalidEmailOrPassword": "Неверный email или пароль.",
+    "useEmailCode": "Используйте код из email для входа."
   }
 }

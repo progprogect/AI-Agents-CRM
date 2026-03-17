@@ -21,12 +21,16 @@ const getApiUrl = (): string => {
 
 type Step = "email" | "otp";
 
+type LoginMode = "otp" | "password";
+
 export default function LoginPage() {
   const router = useRouter();
   const t = useTranslations("Login");
 
   const [step, setStep] = useState<Step>("email");
+  const [loginMode, setLoginMode] = useState<LoginMode>("otp");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -123,6 +127,39 @@ export default function LoginPage() {
     }
   };
 
+  const handleLoginWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !password.trim()) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`${getApiUrl()}/api/v1/admin/auth/login-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: password.trim(),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(data?.detail ?? t("invalidEmailOrPassword"));
+        return;
+      }
+
+      setAdminToken(data.access_token);
+      router.replace("/admin/agents");
+    } catch {
+      setError(t("unableToConnect"));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleResend = async () => {
     if (resendCooldown > 0) return;
     setCode("");
@@ -156,10 +193,13 @@ export default function LoginPage() {
             <>
               <h1 className="text-xl font-semibold text-gray-900 mb-1">{t("title")}</h1>
               <p className="text-sm text-gray-500 mb-6">
-                {t("subtitle")}
+                {loginMode === "otp" ? t("subtitle") : t("subtitlePassword")}
               </p>
 
-              <form onSubmit={handleRequestOTP} noValidate>
+              <form
+                onSubmit={loginMode === "password" ? handleLoginWithPassword : handleRequestOTP}
+                noValidate
+              >
                 <div className="mb-4">
                   <label
                     htmlFor="email"
@@ -180,18 +220,58 @@ export default function LoginPage() {
                   />
                 </div>
 
+                {loginMode === "password" && (
+                  <div className="mb-4">
+                    <label
+                      htmlFor="password"
+                      className="block text-sm font-medium text-gray-700 mb-1"
+                    >
+                      {t("passwordLabel")}
+                    </label>
+                    <input
+                      id="password"
+                      type="password"
+                      autoComplete="current-password"
+                      required={loginMode === "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={t("passwordPlaceholder")}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-sm bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C] transition-colors"
+                      disabled={isLoading}
+                    />
+                  </div>
+                )}
+
                 {error && (
                   <p className="text-sm text-red-600 mb-4">{error}</p>
                 )}
 
                 <button
                   type="submit"
-                  disabled={isLoading || !email.trim()}
+                  disabled={
+                    isLoading ||
+                    !email.trim() ||
+                    (loginMode === "password" && !password.trim())
+                  }
                   className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#251D1C] text-white text-sm font-medium rounded-sm hover:bg-[#443C3C] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                 >
                   {isLoading ? <LoadingSpinner size="sm" /> : null}
-                  {t("sendCode")}
+                  {loginMode === "password" ? t("signIn") : t("sendCode")}
                 </button>
+
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginMode(loginMode === "otp" ? "password" : "otp");
+                      setError(null);
+                      setPassword("");
+                    }}
+                    className="text-sm text-[#251D1C] hover:text-[#443C3C] transition-colors"
+                  >
+                    {loginMode === "otp" ? t("loginWithPassword") : t("loginWithCode")}
+                  </button>
+                </div>
               </form>
             </>
           ) : (
