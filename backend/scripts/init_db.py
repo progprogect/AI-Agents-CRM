@@ -13,7 +13,9 @@ async def main() -> None:
     database_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
     if not database_url:
         print("Error: DATABASE_URL or DATABASE_PUBLIC_URL must be set")
+        print("Railway: ensure PostgreSQL is linked to this service (Variables tab)")
         sys.exit(1)
+    print("Connecting to database...")
 
     try:
         import asyncpg
@@ -49,7 +51,17 @@ async def main() -> None:
             if stmt:
                 statements.append(stmt + ";")
 
-    conn = await asyncpg.connect(database_url)
+    for attempt in range(3):
+        try:
+            conn = await asyncpg.connect(database_url)
+            break
+        except Exception as e:
+            if attempt < 2:
+                print(f"Connection attempt {attempt + 1} failed, retrying in 2s: {e}")
+                await asyncio.sleep(2)
+            else:
+                print(f"Failed to connect after 3 attempts: {e}")
+                raise
     try:
         for i, stmt in enumerate(statements):
             try:

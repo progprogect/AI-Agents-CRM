@@ -2,10 +2,14 @@
 set -e
 
 # Run migrations (idempotent; skip if already applied)
+echo "Checking DATABASE_URL..."
 if [ -n "$DATABASE_URL" ] || [ -n "$DATABASE_PUBLIC_URL" ]; then
   echo "Running migrations..."
-  cd /app/backend && python3 scripts/init_db.py || true
+  cd /app/backend && python3 scripts/init_db.py || { echo "MIGRATION FAILED"; exit 1; }
   cd /app
+  echo "Migrations done."
+else
+  echo "WARNING: DATABASE_URL and DATABASE_PUBLIC_URL not set - skipping migrations. Link PostgreSQL in Railway."
 fi
 
 # Substitute PORT in nginx config
