@@ -138,7 +138,7 @@ async def login_with_password(body: LoginPasswordBody) -> TokenResponse:
 
     # Hardcoded credentials (from config, for demo/convenience)
     settings = get_settings()
-    if settings.hardcoded_admin_email and settings.hardcoded_admin_password:
+    if settings.enable_hardcoded_admin and settings.hardcoded_admin_email and settings.hardcoded_admin_password:
         if email == settings.hardcoded_admin_email.lower() and password == settings.hardcoded_admin_password:
             try:
                 token = _create_jwt(email)
@@ -215,7 +215,7 @@ async def list_users(
     from app.storage.postgres import get_pool
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT email, created_by, is_active, created_at FROM admin_users ORDER BY created_at DESC"
+        "SELECT email, created_by, is_active, created_at FROM admin_users WHERE is_active = TRUE ORDER BY created_at DESC"
     )
     return [
         AdminUserResponse(
@@ -253,7 +253,7 @@ async def invite_user(
         )
     password_hash_val = hash_password(body.password) if body.password else None
 
-    # Upsert: if exists but inactive, reactivate; if new, insert
+    # Check if user exists
     existing = await pool.fetchrow(
         "SELECT id, is_active FROM admin_users WHERE email=$1", email
     )
@@ -263,21 +263,13 @@ async def invite_user(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="User already exists.",
             )
-        if password_hash_val:
-            await pool.execute(
-                "UPDATE admin_users SET is_active=true, created_by=$1, password_hash=$2 WHERE email=$3",
-                current_user, password_hash_val, email,
-            )
-        else:
-            await pool.execute(
-                "UPDATE admin_users SET is_active=true, created_by=$1 WHERE email=$2",
-                current_user, email,
-            )
-    else:
-        await pool.execute(
-            "INSERT INTO admin_users (email, created_by, password_hash) VALUES ($1, $2, $3)",
-            email, current_user, password_hash_val,
-        )
+        # Inactive user (legacy from soft delete): delete and re-add
+        await pool.execute("DELETE FROM admin_users WHERE email=$1", email)
+
+    await pool.execute(
+        "INSERT INTO admin_users (email, created_by, password_hash) VALUES ($1, $2, $3)",
+        email, current_user, password_hash_val,
+    )
 
     logger.info(f"User {email} added by super admin {current_user}")
     return {"message": f"User {email} added successfully."}
@@ -288,7 +280,7 @@ async def remove_user(
     email: str,
     current_user: str = Depends(require_super_admin),
 ) -> dict:
-    """Deactivate a regular admin user (soft delete)."""
+    """Permanently remove a regular admin user (hard delete)."""
     email = email.lower()
 
     # Cannot remove yourself
@@ -308,10 +300,10 @@ async def remove_user(
     from app.storage.postgres import get_pool
     pool = await get_pool()
     result = await pool.execute(
-        "UPDATE admin_users SET is_active=false WHERE email=$1 AND is_active=true", email
+        "DELETE FROM admin_users WHERE email=$1", email
     )
 
-    if result == "UPDATE 0":
+    if result == "DELETE 0":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found.",
