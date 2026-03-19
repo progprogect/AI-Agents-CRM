@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS admin_users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     created_by VARCHAR(255) NOT NULL,  -- email of the super admin who added this user
+    password_hash VARCHAR(255),        -- optional password hash for password login
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
