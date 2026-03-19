@@ -130,6 +130,7 @@ class EscalationService:
             EscalationType.MEDICAL: "Medical question requiring human expertise",
             EscalationType.BOOKING: "User wants to book an appointment",
             EscalationType.REPEAT_PATIENT: "Returning patient - requires human handling",
+            EscalationType.CUSTOM: "Custom escalation rule triggered",
             EscalationType.NONE: "No escalation needed",
         }
 

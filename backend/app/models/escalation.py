@@ -13,6 +13,7 @@ class EscalationType(str, Enum):
     MEDICAL = "medical"
     BOOKING = "booking"
     REPEAT_PATIENT = "repeat_patient"
+    CUSTOM = "custom"
     NONE = "none"
 
 
