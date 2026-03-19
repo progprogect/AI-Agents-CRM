@@ -1,5 +1,8 @@
 """LangChain chain for escalation detection."""
 
+import hashlib
+import json
+import logging
 from typing import Optional
 
 from langchain_classic.chains import LLMChain
@@ -12,6 +15,9 @@ from app.models.escalation import EscalationDecision, EscalationType
 from app.services.llm_factory import LLMFactory
 
 
+logger = logging.getLogger(__name__)
+
+
 class EscalationChain:
     """LangChain chain for detecting escalation needs."""
 
@@ -21,11 +27,49 @@ class EscalationChain:
         self.agent_config = agent_config
         self._chains: dict[str, LLMChain] = {}  # Cache per agent_id
 
+    def _make_cache_key(
+        self,
+        agent_id: Optional[str],
+        agent_config: Optional[AgentConfig],
+    ) -> str:
+        """Build stable cache key based on escalation configuration.
+
+        This ensures admin changes to escalation rules take effect without backend restart.
+        """
+        base_key = agent_id or "default"
+        if not agent_config:
+            return base_key
+
+        esc = agent_config.escalation
+
+        # Keep key reasonably small while still reacting to relevant rule changes.
+        relevant = {
+            "detect_contact": esc.detect_contact,
+            "custom_rules": esc.custom_rules,
+            "has_instructions": bool(esc.instructions),
+            "instructions": {
+                k: {
+                    "description": v.description,
+                    "guidance": v.guidance,
+                    "examples": v.examples,
+                }
+                for k, v in esc.instructions.items()
+            },
+        }
+
+        payload = json.dumps(relevant, sort_keys=True, ensure_ascii=False, default=str)
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+        return f"{base_key}:{digest}"
+
     def _build_system_prompt(self, agent_config: Optional[AgentConfig] = None) -> str:
         """Build system prompt from agent config instructions or use default."""
         config = agent_config or self.agent_config
 
         detect_contact = config.escalation.detect_contact if config else True
+        custom_rules_count = len(getattr(config.escalation, "custom_rules", []) or []) if config else 0
+        legacy_instructions_count = (
+            len(getattr(config.escalation, "instructions", {}) or {}) if config else 0
+        )
 
         # Build escalation types based on config
         escalation_type_lines = []
@@ -38,8 +82,17 @@ class EscalationChain:
 
         base_types = "Escalation types:\n" + "\n".join(escalation_type_lines)
 
-        # If no config or no instructions, use default prompt
-        if not config or not config.escalation.instructions:
+        # If no config and no rules of any kind, use default prompt.
+        # Important: custom_rules must be included even if legacy `instructions` is empty.
+        has_legacy_instructions = bool(config.escalation.instructions) if config else False
+        has_custom_rules = bool(config.escalation.custom_rules) if config else False
+        if not config or (not has_legacy_instructions and not has_custom_rules):
+            logger.debug(
+                "EscalationChain: using default prompt (no rules). agent_id=%s custom_rules=%d legacy_instructions=%d",
+                getattr(config, "agent_id", None),
+                custom_rules_count,
+                legacy_instructions_count,
+            )
             return f"""You are an escalation detection system for an AI agent.
 Your task is to analyze user messages and determine if they require human intervention.
 
@@ -125,6 +178,14 @@ Return a structured response with:
         instructions_text = ""
         if instructions_section:
             instructions_text = f"\n\nEscalation Detection Instructions:\n{chr(10).join(instructions_section)}"
+
+        logger.debug(
+            "EscalationChain: prompt built. agent_id=%s custom_rules=%d legacy_instructions=%d instructions_section_items=%d",
+            getattr(config, "agent_id", None),
+            custom_rules_count,
+            legacy_instructions_count,
+            len(instructions_section),
+        )
         
         return f"""You are an escalation detection system for an AI agent.
 Your task is to analyze user messages and determine if they require human intervention.
@@ -152,8 +213,8 @@ Return a structured response with:
         self, agent_id: Optional[str] = None, agent_config: Optional[AgentConfig] = None
     ) -> LLMChain:
         """Get or create escalation chain (cached per agent_id)."""
-        cache_key = agent_id or "default"
         config = agent_config or self.agent_config
+        cache_key = self._make_cache_key(agent_id=agent_id, agent_config=config)
 
         if cache_key not in self._chains:
             settings = get_settings()
@@ -172,6 +233,12 @@ Return a structured response with:
 
             # Build system prompt from config
             system_prompt = self._build_system_prompt(config)
+
+            logger.debug(
+                "EscalationChain: creating new LLMChain. cache_key=%s agent_id=%s",
+                cache_key,
+                getattr(config, "agent_id", agent_id),
+            )
 
             # Create prompt template
             prompt_template = ChatPromptTemplate.from_messages(
