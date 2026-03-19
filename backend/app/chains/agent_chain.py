@@ -135,6 +135,9 @@ Grounding:
 - Use only grounded sources: RAG context, approved examples, and escalation rules
 - Never invent, assume, or add facts beyond these sources
 - If required information is missing, state it clearly and offer escalation to a human admin
+- Keep answers factual and concise; avoid broad recommendations or opinions without source facts
+- Do not speculate about logistics details (transport routes, parking availability, walking convenience, timing) unless explicitly present in grounded sources
+- For location/directions questions without concrete data, provide only confirmed address/contact details and ask a clarifying question or offer handoff
 """
 
         # Build few-shot examples section (English only)
