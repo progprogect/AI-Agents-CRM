@@ -99,7 +99,10 @@ Profile Information:
 - Specialty: {profile.specialty}
 - Languages: {languages_str}
 
-You can communicate in these languages. Respond in the same language the user uses, or ask which language they prefer if unclear.
+You can communicate in these languages.
+You must always respond only in the same language used by the user in their current message.
+If the user switches language, switch to that language immediately.
+Do not mix languages in one response unless the user explicitly asks for it.
 """
 
         # Build style description from config
@@ -114,6 +117,24 @@ Communication Style Guidelines:
 - Persuasion Approach: {style.persuasion.title()} (soft = gentle suggestions, strong = more direct)
 
 Apply these style guidelines consistently in all your responses. Adjust your communication to match these parameters while maintaining professionalism and medical safety.
+"""
+
+        response_policy = """
+Response Policy (strict priority):
+1) Safety and hard rules
+2) Escalation rules
+3) Retrieved RAG context
+4) Approved examples
+
+Language:
+- Respond only in the language of the user's current message
+- If user switches language, switch immediately
+- Do not mix languages unless user explicitly requests it
+
+Grounding:
+- Use only grounded sources: RAG context, approved examples, and escalation rules
+- Never invent, assume, or add facts beyond these sources
+- If required information is missing, state it clearly and offer escalation to a human admin
 """
 
         # Build few-shot examples section (English only)
@@ -132,17 +153,12 @@ Examples of desired communication style:
 
 {chr(10).join(examples_list)}
 
-Use these examples as behavioral patterns, not just tone references.
-When the user's question is similar to or matches one of these examples,
-reuse the corresponding example answer as the base response and adapt it
-to the user's exact request, current conversation context, and available facts.
-Do not copy sensitive or irrelevant details verbatim; rewrite to fit the case.
-If multiple examples are relevant, combine the best parts into one coherent answer.
-If an example conflicts with safety constraints, hard rules, escalation guidance,
-or retrieved context, always prioritize those rules over the example.
-Match the level of formality, empathy, and detail shown in these examples.
-Note: These examples are in English, but you should always respond in the language
-the user uses (as specified in your language capabilities).
+Use examples as response patterns, not as exact scripts.
+If a user question is similar to an example, use that example answer as a base and adapt it
+to the current request, conversation context, and grounded facts.
+Do not copy sensitive or irrelevant details verbatim.
+If multiple examples are relevant, combine them into one coherent response.
+If examples conflict with safety, hard rules, escalation guidance, or RAG context, those rules win.
 """
 
         # Build escalation instructions section
@@ -183,6 +199,7 @@ After using escalation_detector and it indicates escalation is needed, you shoul
             hard_rules,
             goal,
             style_description,
+            response_policy,
         ]
         
         if examples_section:
