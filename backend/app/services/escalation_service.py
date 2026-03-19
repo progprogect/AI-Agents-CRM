@@ -78,11 +78,14 @@ class EscalationService:
                             decision.confidence = min(decision.confidence + 0.1, 1.0)
 
             if decision.needs_escalation:
+                escalation_type_str = getattr(
+                    decision.escalation_type, "value", decision.escalation_type
+                )
                 logger.info(
-                    f"Escalation detected: {decision.escalation_type.value}",
+                    f"Escalation detected: {escalation_type_str}",
                     extra={
                         "agent_id": agent_id,
-                        "escalation_type": decision.escalation_type.value,
+                        "escalation_type": escalation_type_str,
                         "confidence": decision.confidence,
                         "has_contacts": decision.extracted_contacts is not None,
                     },
@@ -125,16 +128,22 @@ class EscalationService:
         if not decision.needs_escalation:
             return "No escalation needed"
 
+        escalation_type_str = getattr(
+            decision.escalation_type, "value", decision.escalation_type
+        )
+
+        # Keys are plain strings because Pydantic may store enum values as `str`
+        # when `use_enum_values=True` (see `EscalationDecision.Config`).
         reason_map = {
-            EscalationType.URGENT: "Urgent medical situation detected",
-            EscalationType.MEDICAL: "Medical question requiring human expertise",
-            EscalationType.BOOKING: "User wants to book an appointment",
-            EscalationType.REPEAT_PATIENT: "Returning patient - requires human handling",
-            EscalationType.CUSTOM: "Custom escalation rule triggered",
-            EscalationType.NONE: "No escalation needed",
+            EscalationType.URGENT.value: "Urgent medical situation detected",
+            EscalationType.MEDICAL.value: "Medical question requiring human expertise",
+            EscalationType.BOOKING.value: "User wants to book an appointment",
+            EscalationType.REPEAT_PATIENT.value: "Returning patient - requires human handling",
+            EscalationType.CUSTOM.value: "Custom escalation rule triggered",
+            EscalationType.NONE.value: "No escalation needed",
         }
 
-        return reason_map.get(decision.escalation_type, decision.reason)
+        return reason_map.get(str(escalation_type_str), decision.reason)
 
 
 def create_escalation_service(

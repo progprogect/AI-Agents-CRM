@@ -57,8 +57,9 @@ class EscalationTool(BaseAgentTool):
         )
 
         if decision.needs_escalation:
+            escalation_type_str = getattr(decision.escalation_type, "value", decision.escalation_type)
             return (
-                f"ESCALATION NEEDED: {decision.escalation_type.value}\n"
+                f"ESCALATION NEEDED: {escalation_type_str}\n"
                 f"Reason: {decision.reason}\n"
                 f"Suggested action: {decision.suggested_action}\n"
                 f"Confidence: {decision.confidence:.2f}"

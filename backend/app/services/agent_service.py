@@ -88,19 +88,24 @@ class AgentService:
         )
 
         if escalation_decision.needs_escalation:
+            escalation_type_str = getattr(
+                escalation_decision.escalation_type,
+                "value",
+                escalation_decision.escalation_type,
+            )
             # Update conversation status
             await self.dynamodb.update_conversation(
                 conversation_id=conversation_id,
                 status=ConversationStatus.NEEDS_HUMAN,
                 handoff_reason=escalation_decision.reason,
-                request_type=escalation_decision.escalation_type.value,
+                request_type=escalation_type_str,
             )
 
             result = {
                 "response": None,
                 "escalate": True,
                 "escalation_reason": escalation_decision.reason,
-                "escalation_type": escalation_decision.escalation_type.value,
+                "escalation_type": escalation_type_str,
             }
             
             # Include extracted contacts if available
