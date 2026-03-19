@@ -132,9 +132,16 @@ Examples of desired communication style:
 
 {chr(10).join(examples_list)}
 
-Follow these examples as a guide for your communication style, tone, and approach. 
-Match the level of formality, empathy, and detail shown in these examples. 
-Note: These examples are in English, but you should respond in the language 
+Use these examples as behavioral patterns, not just tone references.
+When the user's question is similar to or matches one of these examples,
+reuse the corresponding example answer as the base response and adapt it
+to the user's exact request, current conversation context, and available facts.
+Do not copy sensitive or irrelevant details verbatim; rewrite to fit the case.
+If multiple examples are relevant, combine the best parts into one coherent answer.
+If an example conflicts with safety constraints, hard rules, escalation guidance,
+or retrieved context, always prioritize those rules over the example.
+Match the level of formality, empathy, and detail shown in these examples.
+Note: These examples are in English, but you should always respond in the language
 the user uses (as specified in your language capabilities).
 """
 
