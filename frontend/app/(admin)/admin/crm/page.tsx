@@ -186,7 +186,7 @@ function KanbanColumn({ stage, conversations, onRename, onDelete, onColorChange 
   }, [editing]);
 
   return (
-    <div className="flex-shrink-0 w-72 flex flex-col gap-3">
+    <div className="flex h-full min-h-0 w-[min(100%,18rem)] sm:w-72 flex-shrink-0 flex-col gap-3">
       {/* Column header */}
       <div className="flex items-center justify-between gap-2 px-1">
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -264,10 +264,10 @@ function KanbanColumn({ stage, conversations, onRename, onDelete, onColorChange 
         style={{ backgroundColor: stage.color }}
       />
 
-      {/* Cards drop zone */}
+      {/* Cards drop zone — scroll inside column (Kanban); min-h-0 + flex-1 needed for flex overflow */}
       <div
         ref={setNodeRef}
-        className={`flex flex-col gap-2 min-h-[120px] rounded-md p-2 transition-colors ${
+        className={`flex min-h-[8rem] flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden overscroll-y-contain rounded-md p-2 touch-pan-y transition-colors [scrollbar-width:thin] ${
           isOver ? "bg-[#EEEAE7]/70 ring-2 ring-[#251D1C]/20" : "bg-[#F7F5F3]"
         }`}
       >
@@ -315,7 +315,7 @@ function AddStageButton({ onAdd }: { onAdd: (name: string, color: string) => voi
 
   if (!open) {
     return (
-      <div className="flex-shrink-0 w-72">
+      <div className="w-[min(100%,18rem)] flex-shrink-0 sm:w-72">
         <button
           onClick={() => setOpen(true)}
           className="w-full flex items-center gap-2 px-4 py-3 rounded-md border-2 border-dashed border-[#BEBAB7] text-[#9A9590] hover:border-[#443C3C] hover:text-[#443C3C] transition-colors text-sm font-medium"
@@ -328,7 +328,7 @@ function AddStageButton({ onAdd }: { onAdd: (name: string, color: string) => voi
   }
 
   return (
-    <div className="flex-shrink-0 w-72 bg-white rounded-md border border-[#BEBAB7] p-3 space-y-3">
+    <div className="h-fit w-[min(100%,18rem)] sm:w-72 flex-shrink-0 bg-white rounded-md border border-[#BEBAB7] p-3 space-y-3">
       <div className="text-sm font-semibold text-[#251D1C]">{t("newStage")}</div>
       <input
         ref={inputRef}
@@ -520,7 +520,7 @@ export default function CRMPage() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col">
       {/* Header — stacks on mobile, side-by-side on desktop */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-4 sm:px-6 py-4 border-b border-[#BEBAB7] bg-white flex-shrink-0">
         <div className="min-w-0">
@@ -568,14 +568,14 @@ export default function CRMPage() {
         </div>
       )}
 
-      {/* Board */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden">
+      {/* Board: horizontal pan on small screens; each column scrolls vertically */}
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
         <DndContext
           sensors={sensors}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex gap-4 p-4 sm:p-6 h-full min-w-max items-start">
+          <div className="flex h-full min-h-0 min-w-max items-stretch gap-4 px-0 py-1 sm:px-2 sm:py-2">
             {stages.map((stage) => (
               <KanbanColumn
                 key={stage.id}
@@ -587,7 +587,9 @@ export default function CRMPage() {
               />
             ))}
 
-            <AddStageButton onAdd={handleAddStage} />
+            <div className="self-start">
+              <AddStageButton onAdd={handleAddStage} />
+            </div>
           </div>
 
           <DragOverlay>
