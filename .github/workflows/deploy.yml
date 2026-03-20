@@ -1,10 +1,8 @@
 name: Deploy
 
+# AWS ECS auto-deploy on push is disabled (deploy via Railway). Run manually if needed.
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch: # Позволяет запускать вручную
+  workflow_dispatch:
 
 env:
   AWS_REGION: me-central-1
