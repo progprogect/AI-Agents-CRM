@@ -136,19 +136,6 @@ async def login_with_password(body: LoginPasswordBody) -> TokenResponse:
     email = body.email.lower()
     password = body.password
 
-    # Hardcoded credentials (from config, for demo/convenience)
-    settings = get_settings()
-    if settings.enable_hardcoded_admin and settings.hardcoded_admin_email and settings.hardcoded_admin_password:
-        if email == settings.hardcoded_admin_email.lower() and password == settings.hardcoded_admin_password:
-            try:
-                token = _create_jwt(email)
-                return TokenResponse(access_token=token)
-            except RuntimeError:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Authentication service is not configured.",
-                )
-
     # Super admins (from env) cannot use password — only OTP
     if email in get_super_admin_emails():
         raise HTTPException(
