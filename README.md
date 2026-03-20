@@ -1,6 +1,6 @@
-# Doctor Agent MVP
+# AI Agents CRM
 
-AI-powered digital assistant for doctors to communicate with patients. Built with FastAPI (backend) and Next.js (frontend), using OpenAI API for LLM capabilities.
+AI-powered assistant platform for customer conversations and CRM workflows. Built with FastAPI (backend) and Next.js (frontend), using OpenAI API for LLM capabilities.
 
 ## Features
 

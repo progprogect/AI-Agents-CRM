@@ -87,7 +87,15 @@
     "takeOverTitle": "Взять разговор в работу",
     "takeOverMessage": "Вы уверены, что хотите взять этот разговор в работу? Вы сможете отвечать пользователю напрямую.",
     "takeOverFailed": "Не удалось взять разговор. Попробуйте снова.",
-    "requiresAttentionAria": "Требует внимания"
+    "requiresAttentionAria": "Требует внимания",
+    "sortCreatedNewest": "Создан: сначала новые",
+    "sortCreatedOldest": "Создан: сначала старые",
+    "sortUpdatedNewest": "Обновлён: сначала новые",
+    "sortUpdatedOldest": "Обновлён: сначала старые",
+    "attentionFirst": "Сначала требующие внимания",
+    "createdFromLabel": "Создан с",
+    "createdToLabel": "Создан по",
+    "resetDateFilter": "Сбросить даты"
   },
   "ConversationDetail": {
     "title": "Детали разговора",

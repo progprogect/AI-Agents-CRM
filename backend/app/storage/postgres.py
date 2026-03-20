@@ -277,6 +277,10 @@ class PostgreSQLClient:
         marketing_status: Optional[str] = None,
         crm_stage_id: Optional[str] = None,
         limit: int = 100,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        created_from: Optional[datetime] = None,
+        created_to: Optional[datetime] = None,
     ) -> list[Conversation]:
         where = []
         params = []
@@ -297,12 +301,22 @@ class PostgreSQLClient:
             where.append(f"crm_stage_id = ${i}")
             params.append(crm_stage_id)
             i += 1
+        if created_from is not None:
+            where.append(f"created_at >= ${i}")
+            params.append(created_from)
+            i += 1
+        if created_to is not None:
+            where.append(f"created_at <= ${i}")
+            params.append(created_to)
+            i += 1
+        order_col = "updated_at" if sort_by == "updated_at" else "created_at"
+        order_dir = "ASC" if sort_order == "asc" else "DESC"
         params.append(limit)
         clause = " AND ".join(where) if where else "TRUE"
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT * FROM conversations WHERE {clause} ORDER BY created_at DESC LIMIT ${i}",
+                f"SELECT * FROM conversations WHERE {clause} ORDER BY {order_col} {order_dir} LIMIT ${i}",
                 *params,
             )
         return [Conversation(**_row_to_conv(r)) for r in rows]

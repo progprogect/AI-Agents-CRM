@@ -19,7 +19,12 @@ from app.services.channel_sender import get_channel_sender
 from app.services.instagram_service import InstagramService
 from app.services.telegram_service import TelegramService
 from app.storage.resolver import get_secrets_manager
-from app.utils.datetime_utils import parse_utc_datetime, to_utc_iso_string, utc_now
+from app.utils.datetime_utils import (
+    parse_query_datetime,
+    parse_utc_datetime,
+    to_utc_iso_string,
+    utc_now,
+)
 from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
@@ -51,10 +56,49 @@ async def list_conversations(
     marketing_status: Optional[str] = Query(None, description="Filter by marketing status (legacy)"),
     crm_stage_id: Optional[str] = Query(None, description="Filter by CRM stage UUID"),
     limit: int = Query(default=100, ge=1, le=1000, description="Maximum number of conversations"),
+    sort_by: str = Query(
+        default="created_at",
+        description="Sort field: created_at or updated_at",
+    ),
+    sort_order: str = Query(
+        default="desc",
+        description="Sort direction: asc or desc",
+    ),
+    created_from: Optional[str] = Query(
+        None,
+        description="Filter: conversation created_at >= this (ISO date/datetime, UTC)",
+    ),
+    created_to: Optional[str] = Query(
+        None,
+        description="Filter: conversation created_at <= this (ISO date/datetime, UTC; date-only = end of day UTC)",
+    ),
     deps: CommonDependencies = Depends(),
     _admin: str = require_admin(),
 ):
     """List conversations (admin view)."""
+    if sort_by not in ("created_at", "updated_at"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid sort_by. Valid values: created_at, updated_at",
+        )
+    if sort_order not in ("asc", "desc"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid sort_order. Valid values: asc, desc",
+        )
+
+    try:
+        dt_from = parse_query_datetime(created_from, end_of_day=False)
+        dt_to = parse_query_datetime(created_to, end_of_day=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if dt_from is not None and dt_to is not None and dt_from > dt_to:
+        raise HTTPException(
+            status_code=400,
+            detail="created_from must be before or equal to created_to",
+        )
+
     status_enum = None
     if status:
         try:
@@ -79,6 +123,10 @@ async def list_conversations(
         marketing_status=marketing_status,
         crm_stage_id=crm_stage_id,
         limit=limit,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        created_from=dt_from,
+        created_to=dt_to,
     )
     return conversations
 

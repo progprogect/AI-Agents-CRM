@@ -5,7 +5,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useConversationsList, type ConversationFilter } from "@/lib/hooks/useConversationsList";
+import {
+  useConversationsList,
+  type ConversationFilter,
+  type ConversationSortBy,
+  type ConversationSortOrder,
+} from "@/lib/hooks/useConversationsList";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/shared/Button";
 import { Select } from "@/components/shared/Select";
@@ -92,6 +97,18 @@ function CRMStageSelector({
   );
 }
 
+type SortPreset = "created_desc" | "created_asc" | "updated_desc" | "updated_asc";
+
+const SORT_PRESET_MAP: Record<
+  SortPreset,
+  { sortBy: ConversationSortBy; sortOrder: ConversationSortOrder }
+> = {
+  created_desc: { sortBy: "created_at", sortOrder: "desc" },
+  created_asc: { sortBy: "created_at", sortOrder: "asc" },
+  updated_desc: { sortBy: "updated_at", sortOrder: "desc" },
+  updated_asc: { sortBy: "updated_at", sortOrder: "asc" },
+};
+
 const ViewIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -126,6 +143,12 @@ export default function ConversationsPage() {
   const [agents, setAgents] = useState<Map<string, Agent>>(new Map());
   const [isLoadingAgents, setIsLoadingAgents] = useState(true);
   const [crmStages, setCrmStages] = useState<CRMStage[]>([]);
+  const [sortPreset, setSortPreset] = useState<SortPreset>("created_desc");
+  const [attentionFirst, setAttentionFirst] = useState(false);
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
+
+  const sortCfg = SORT_PRESET_MAP[sortPreset];
 
   const {
     conversations,
@@ -139,6 +162,11 @@ export default function ConversationsPage() {
     crmStageId: crmStageFilter !== "all" ? crmStageFilter : undefined,
     limit: 100,
     enablePolling: true,
+    sortBy: sortCfg.sortBy,
+    sortOrder: sortCfg.sortOrder,
+    createdFrom: createdFrom || undefined,
+    createdTo: createdTo || undefined,
+    attentionFirst,
   });
 
   // Load agents and CRM stages
@@ -261,6 +289,18 @@ export default function ConversationsPage() {
               ]}
             />
           </div>
+          <div className="w-full sm:w-auto sm:min-w-[200px]">
+            <Select
+              value={sortPreset}
+              onChange={(e) => setSortPreset(e.target.value as SortPreset)}
+              options={[
+                { value: "created_desc", label: t("sortCreatedNewest") },
+                { value: "created_asc", label: t("sortCreatedOldest") },
+                { value: "updated_desc", label: t("sortUpdatedNewest") },
+                { value: "updated_asc", label: t("sortUpdatedOldest") },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
@@ -273,6 +313,50 @@ export default function ConversationsPage() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full max-w-full sm:max-w-md"
         />
+      </div>
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={attentionFirst}
+            onChange={(e) => setAttentionFirst(e.target.checked)}
+            className="rounded border-[#BEBAB7] text-[#251D1C] focus:ring-[#251D1C]"
+          />
+          {t("attentionFirst")}
+        </label>
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 flex-wrap">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs text-gray-500">{t("createdFromLabel")}</span>
+            <Input
+              type="date"
+              value={createdFrom}
+              onChange={(e) => setCreatedFrom(e.target.value)}
+              className="w-full sm:w-40"
+            />
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs text-gray-500">{t("createdToLabel")}</span>
+            <Input
+              type="date"
+              value={createdTo}
+              onChange={(e) => setCreatedTo(e.target.value)}
+              className="w-full sm:w-40"
+            />
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="self-start sm:self-end"
+            onClick={() => {
+              setCreatedFrom("");
+              setCreatedTo("");
+            }}
+          >
+            {t("resetDateFilter")}
+          </Button>
+        </div>
       </div>
 
       {error && (

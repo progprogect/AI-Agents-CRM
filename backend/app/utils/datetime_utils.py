@@ -5,7 +5,7 @@ to ensure all timestamps are timezone-aware and properly serialized with 'Z' suf
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -122,3 +122,22 @@ def parse_utc_datetime(iso_string: Optional[str]) -> Optional[datetime]:
             extra={"iso_string": iso_string}
         )
         raise ValueError(f"Invalid datetime string: {iso_string}") from e
+
+
+def parse_query_datetime(value: Optional[str], *, end_of_day: bool = False) -> Optional[datetime]:
+    """Parse admin list filter: ``YYYY-MM-DD`` (UTC day bounds) or full ISO 8601.
+
+    For date-only strings: start of UTC day, or end of UTC day if ``end_of_day``.
+    """
+    if value is None or not str(value).strip():
+        return None
+    s = str(value).strip()
+    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+        try:
+            d = date.fromisoformat(s)
+        except ValueError as e:
+            raise ValueError(f"Invalid date: {value}") from e
+        if end_of_day:
+            return datetime.combine(d, time(23, 59, 59, 999999, tzinfo=timezone.utc))
+        return datetime.combine(d, time(0, 0, 0, tzinfo=timezone.utc))
+    return parse_utc_datetime(s)

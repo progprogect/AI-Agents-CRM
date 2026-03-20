@@ -1,6 +1,6 @@
-# Doctor Agent Backend
+# AI Agents CRM — Backend
 
-Backend API for AI Agent MVP system.
+Backend API for the AI Agents CRM system.
 
 ## Setup
 

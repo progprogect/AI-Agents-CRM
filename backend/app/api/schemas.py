@@ -16,8 +16,8 @@ class ErrorResponse(BaseModel):
         examples=[
             {
                 "code": "AGENT_NOT_FOUND",
-                "message": "Agent with ID 'doctor_001' not found",
-                "details": {"agent_id": "doctor_001"},
+                "message": "Agent with ID 'example_agent' not found",
+                "details": {"agent_id": "example_agent"},
                 "request_id": "123e4567-e89b-12d3-a456-426614174000",
             }
         ],

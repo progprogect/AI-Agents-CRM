@@ -87,7 +87,15 @@
     "takeOverTitle": "Take Over Conversation",
     "takeOverMessage": "Are you sure you want to take over this conversation? You will be able to respond to the user directly.",
     "takeOverFailed": "Failed to take over conversation. Please try again.",
-    "requiresAttentionAria": "Requires attention"
+    "requiresAttentionAria": "Requires attention",
+    "sortCreatedNewest": "Created: newest first",
+    "sortCreatedOldest": "Created: oldest first",
+    "sortUpdatedNewest": "Updated: newest first",
+    "sortUpdatedOldest": "Updated: oldest first",
+    "attentionFirst": "Needs attention first",
+    "createdFromLabel": "Created from",
+    "createdToLabel": "Created to",
+    "resetDateFilter": "Clear dates"
   },
   "ConversationDetail": {
     "title": "Conversation Details",

@@ -296,7 +296,7 @@ class AgentConfig(BaseModel):
 
     version: str = Field(default="1.0")
     agent_id: str
-    role: str = Field(default="instagram_doctor_agent")
+    role: str = Field(default="chat_agent")
     project: str
     environment: str = Field(default="mvp")
 

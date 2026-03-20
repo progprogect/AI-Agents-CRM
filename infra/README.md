@@ -1,6 +1,6 @@
-# Terraform — AWS Infrastructure for Doctor Agent
+# Terraform — AWS Infrastructure for AI Agents CRM
 
-Deploys the Doctor Agent application on AWS using a **unified Docker container**
+Deploys the AI Agents CRM application on AWS using a **unified Docker container**
 (nginx + FastAPI + Next.js) — the same architecture as Railway, for consistency.
 
 ## Architecture

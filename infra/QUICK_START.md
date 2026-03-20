@@ -44,7 +44,7 @@ aws secretsmanager describe-secret \
 aws secretsmanager create-secret \
   --region me-central-1 \
   --name doctor-agent/openai \
-  --description "OpenAI API key for Doctor Agent" \
+  --description "OpenAI API key for AI Agents CRM" \
   --secret-string "sk-your-openai-api-key-here"
 ```
 

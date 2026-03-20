@@ -302,6 +302,10 @@ export const api = {
     marketing_status?: string;
     crm_stage_id?: string;
     limit?: number;
+    sort_by?: "created_at" | "updated_at";
+    sort_order?: "asc" | "desc";
+    created_from?: string;
+    created_to?: string;
   }): Promise<Conversation[]> {
     const queryParams = new URLSearchParams();
     if (params?.agent_id) queryParams.append("agent_id", params.agent_id);
@@ -311,6 +315,12 @@ export const api = {
     if (params?.crm_stage_id)
       queryParams.append("crm_stage_id", params.crm_stage_id);
     if (params?.limit) queryParams.append("limit", params.limit.toString());
+    if (params?.sort_by) queryParams.append("sort_by", params.sort_by);
+    if (params?.sort_order) queryParams.append("sort_order", params.sort_order);
+    if (params?.created_from?.trim())
+      queryParams.append("created_from", params.created_from.trim());
+    if (params?.created_to?.trim())
+      queryParams.append("created_to", params.created_to.trim());
 
     return request<Conversation[]>(
       `/api/v1/admin/conversations?${queryParams.toString()}`,

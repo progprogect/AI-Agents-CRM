@@ -22,13 +22,13 @@ export AWS_REGION="me-central-1"
 
 2. Запустите миграцию:
 ```bash
-python migrate_opensearch_to_dynamodb.py doctor_001
+python migrate_opensearch_to_dynamodb.py example_agent
 ```
 
 или
 
 ```bash
-python migrate_opensearch_to_dynamodb.py --agent-id doctor_001
+python migrate_opensearch_to_dynamodb.py --agent-id example_agent
 ```
 
 ### Примечания

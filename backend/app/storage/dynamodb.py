@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Optional
@@ -314,53 +314,108 @@ class DynamoDBClient:
         agent_id: Optional[str] = None,
         status: Optional[ConversationStatus] = None,
         marketing_status: Optional[str] = None,
+        crm_stage_id: Optional[str] = None,
         limit: int = 100,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+        created_from: Optional[datetime] = None,
+        created_to: Optional[datetime] = None,
     ) -> list[Conversation]:
-        """List conversations with optional filters."""
-        # For MVP, using scan (not efficient for large datasets)
-        # In production, use GSI for agent_id and status
-        filter_expression = None
-        expression_attribute_values = {}
-        expression_attribute_names = {}
+        """List conversations with optional filters.
+
+        Uses Scan + FilterExpression; matching rows are sorted in Python and
+        truncated to ``limit``. Large tables may need a GSI (e.g. on
+        ``created_at``) for complete or efficient results — MVP caveat.
+        """
+        order_col = "updated_at" if sort_by == "updated_at" else "created_at"
+        reverse = sort_order != "asc"
+
+        filter_expression: Optional[str] = None
+        expression_attribute_values: dict[str, Any] = {}
+        expression_attribute_names: dict[str, str] = {}
+
+        def append_filter(expr: str) -> None:
+            nonlocal filter_expression
+            if filter_expression:
+                filter_expression += " AND " + expr
+            else:
+                filter_expression = expr
 
         if agent_id:
-            filter_expression = "agent_id = :agent_id"
+            append_filter("agent_id = :agent_id")
             expression_attribute_values[":agent_id"] = agent_id
 
         if status:
-            # Use ExpressionAttributeNames for reserved keywords like "status"
-            status_filter = "#status = :status"
             expression_attribute_names["#status"] = "status"
-            if filter_expression:
-                filter_expression += " AND " + status_filter
-            else:
-                filter_expression = status_filter
+            append_filter("#status = :status")
             expression_attribute_values[":status"] = status.value
 
         if marketing_status:
-            marketing_status_filter = "marketing_status = :marketing_status"
-            if filter_expression:
-                filter_expression += " AND " + marketing_status_filter
-            else:
-                filter_expression = marketing_status_filter
+            append_filter("marketing_status = :marketing_status")
             expression_attribute_values[":marketing_status"] = marketing_status
 
-        scan_kwargs = {"Limit": limit}
-        if filter_expression:
-            scan_kwargs["FilterExpression"] = filter_expression
-            scan_kwargs["ExpressionAttributeValues"] = expression_attribute_values
-            # Only include ExpressionAttributeNames if it's not empty
-            # DynamoDB doesn't accept empty ExpressionAttributeNames
-            if expression_attribute_names:
-                scan_kwargs["ExpressionAttributeNames"] = expression_attribute_names
+        if crm_stage_id:
+            append_filter("crm_stage_id = :crm_stage_id")
+            expression_attribute_values[":crm_stage_id"] = crm_stage_id
 
-        response = self.tables["conversations"].scan(**scan_kwargs)
-        items = response.get("Items", [])
-        # Ensure marketing_status defaults to NEW for existing conversations
-        for item in items:
+        if created_from is not None:
+            append_filter("created_at >= :created_from")
+            expression_attribute_values[":created_from"] = to_utc_iso_string(created_from)
+
+        if created_to is not None:
+            append_filter("created_at <= :created_to")
+            expression_attribute_values[":created_to"] = to_utc_iso_string(created_to)
+
+        def item_sort_ts(item: dict[str, Any], field: str) -> datetime:
+            raw = item.get(field) or item.get("created_at")
+            if raw is None:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            if isinstance(raw, datetime):
+                if raw.tzinfo is None:
+                    return raw.replace(tzinfo=timezone.utc)
+                return raw.astimezone(timezone.utc)
+            try:
+                return parse_utc_datetime(raw)
+            except ValueError:
+                return datetime.min.replace(tzinfo=timezone.utc)
+
+        collected: list[dict[str, Any]] = []
+        exclusive_start_key: Optional[dict[str, Any]] = None
+        max_pages = 500
+        scan_segment_limit = 1000
+        max_collect = 10000
+
+        for _ in range(max_pages):
+            scan_kwargs: dict[str, Any] = {"Limit": scan_segment_limit}
+            if filter_expression:
+                scan_kwargs["FilterExpression"] = filter_expression
+                scan_kwargs["ExpressionAttributeValues"] = expression_attribute_values
+                if expression_attribute_names:
+                    scan_kwargs["ExpressionAttributeNames"] = expression_attribute_names
+            if exclusive_start_key:
+                scan_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+            response = self.tables["conversations"].scan(**scan_kwargs)
+            for item in response.get("Items", []):
+                collected.append(item)
+                if len(collected) >= max_collect:
+                    logger.warning(
+                        "list_conversations: DynamoDB scan hit max_collect=%s; results may be incomplete",
+                        max_collect,
+                    )
+                    break
+            if len(collected) >= max_collect:
+                break
+            exclusive_start_key = response.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                break
+
+        for item in collected:
             if "marketing_status" not in item or item["marketing_status"] is None:
                 item["marketing_status"] = MarketingStatus.NEW.value
-        return [Conversation(**item) for item in items]
+
+        collected.sort(key=lambda it: item_sort_ts(it, order_col), reverse=reverse)
+        return [Conversation(**item) for item in collected[:limit]]
 
     # Message operations
     async def create_message(self, message: Message) -> Message:
@@ -443,32 +498,6 @@ class DynamoDBClient:
         if reverse:
             result.reverse()
         
-        # #region agent log
-        try:
-            import json
-            import os
-            log_path = '/Users/mikitavalkunovich/Desktop/Doctor Agent/doctor-agent/.cursor/debug.log'
-            if os.path.exists(os.path.dirname(log_path)) or os.path.exists('/Users/mikitavalkunovich'):
-                with open(log_path, 'a') as f:
-                    log_data = {
-                        "sessionId":"debug-session",
-                        "runId":"run1",
-                        "hypothesisId":"A,E",
-                        "location":"dynamodb.py:345",
-                        "message":"list_messages exit",
-                        "data":{
-                            "conversation_id":conversation_id,
-                            "method":method_used,
-                            "count":len(result),
-                            "message_ids":[m.message_id for m in result[:5]] if result else []
-                        },
-                        "timestamp":int(__import__('time').time()*1000)
-                    }
-                    f.write(json.dumps(log_data) + '\n')
-        except Exception:
-            # Don't fail if logging fails
-            pass
-        # #endregion
         return result
 
     # Agent operations

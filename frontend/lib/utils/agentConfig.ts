@@ -324,12 +324,12 @@ function transliterate(text: string): string {
 }
 
 /**
- * Generate agent ID from clinic name and agent name.
+ * Generate agent ID from company name and optional person / secondary label.
  */
-export function generateAgentId(clinicName: string, doctorName?: string): string {
+export function generateAgentId(clinicName: string, personName?: string): string {
   let combined = clinicName.trim();
-  if (doctorName && doctorName.trim()) {
-    combined = `${clinicName.trim()}_${doctorName.trim()}`;
+  if (personName && personName.trim()) {
+    combined = `${clinicName.trim()}_${personName.trim()}`;
   }
   const transliterated = transliterate(combined);
   return transliterated

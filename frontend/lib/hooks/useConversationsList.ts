@@ -8,14 +8,52 @@ import type { Conversation } from "@/lib/types/conversation";
 
 export type ConversationFilter = "all" | "needs_attention" | "active" | "closed";
 
+export type ConversationSortBy = "created_at" | "updated_at";
+export type ConversationSortOrder = "asc" | "desc";
+
+function sortConversationsList(
+  list: Conversation[],
+  options: {
+    sortBy: ConversationSortBy;
+    sortOrder: ConversationSortOrder;
+    attentionFirst: boolean;
+  }
+): Conversation[] {
+  const mult = options.sortOrder === "asc" ? 1 : -1;
+  const field = options.sortBy;
+  const cmpTime = (a: Conversation, b: Conversation) =>
+    mult *
+    (new Date(a[field]).getTime() - new Date(b[field]).getTime());
+
+  if (!options.attentionFirst) {
+    return [...list].sort(cmpTime);
+  }
+
+  const rank = (c: Conversation) =>
+    c.status === "NEEDS_HUMAN" ? 0 : c.status === "HUMAN_ACTIVE" ? 1 : 2;
+
+  return [...list].sort((a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    return cmpTime(a, b);
+  });
+}
+
 interface UseConversationsListOptions {
   filter?: ConversationFilter;
   agentId?: string;
   marketingStatus?: string;
   crmStageId?: string;
   limit?: number;
-  enablePolling?: boolean; // Fallback if WebSocket is not available
-  pollingInterval?: number; // Polling interval in ms (default: 5000)
+  sortBy?: ConversationSortBy;
+  sortOrder?: ConversationSortOrder;
+  createdFrom?: string;
+  createdTo?: string;
+  /** When true, NEEDS_HUMAN / HUMAN_ACTIVE are shown first, then by sort field. */
+  attentionFirst?: boolean;
+  enablePolling?: boolean;
+  pollingInterval?: number;
 }
 
 export function useConversationsList(options: UseConversationsListOptions = {}) {
@@ -25,6 +63,11 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
     marketingStatus,
     crmStageId,
     limit = 100,
+    sortBy = "created_at",
+    sortOrder = "desc",
+    createdFrom,
+    createdTo,
+    attentionFirst = false,
     enablePolling = true,
     pollingInterval = 5000,
   } = options;
@@ -33,25 +76,23 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [needsHumanCount, setNeedsHumanCount] = useState(0);
-  
+
   const { isConnected, onConversationUpdate, onNewEscalation, onStatsUpdate } =
     useAdminWebSocket();
-  
+
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const sortOpts = { sortBy, sortOrder, attentionFirst };
 
   const loadConversations = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      const params: {
-        agent_id?: string;
-        status?: string;
-        marketing_status?: string;
-        crm_stage_id?: string;
-        limit?: number;
-      } = {
+
+      const params: Parameters<typeof api.listConversations>[0] = {
         limit,
+        sort_by: sortBy,
+        sort_order: sortOrder,
       };
 
       if (agentId) {
@@ -66,18 +107,21 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
         params.crm_stage_id = crmStageId;
       }
 
-      // Apply filter
+      if (createdFrom?.trim()) {
+        params.created_from = createdFrom.trim();
+      }
+      if (createdTo?.trim()) {
+        params.created_to = createdTo.trim();
+      }
+
       if (filter === "needs_attention") {
         params.status = "NEEDS_HUMAN";
-      } else if (filter === "active") {
-        // For active, we'll filter on frontend since API doesn't support multiple statuses
       } else if (filter === "closed") {
         params.status = "CLOSED";
       }
 
       const data = await api.listConversations(params);
-      
-      // Apply frontend filtering for "active" filter
+
       let filteredData = data;
       if (filter === "active") {
         filteredData = data.filter(
@@ -85,21 +129,9 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
         );
       }
 
-      // Sort conversations: NEEDS_HUMAN first, then HUMAN_ACTIVE, then others
-      filteredData.sort((a, b) => {
-        if (a.status === "NEEDS_HUMAN" && b.status !== "NEEDS_HUMAN") return -1;
-        if (a.status !== "NEEDS_HUMAN" && b.status === "NEEDS_HUMAN") return 1;
-        if (a.status === "HUMAN_ACTIVE" && b.status !== "HUMAN_ACTIVE") return -1;
-        if (a.status !== "HUMAN_ACTIVE" && b.status === "HUMAN_ACTIVE") return 1;
-        // Sort by updated_at descending
-        return (
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-        );
-      });
+      const ordered = sortConversationsList(filteredData, sortOpts);
+      setConversations(ordered);
 
-      setConversations(filteredData);
-      
-      // Update needs_human count
       const needsHuman = data.filter((c) => c.status === "NEEDS_HUMAN").length;
       setNeedsHumanCount(needsHuman);
     } catch (err) {
@@ -111,19 +143,26 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
     } finally {
       setIsLoading(false);
     }
-  }, [filter, agentId, marketingStatus, crmStageId, limit]);
+  }, [
+    filter,
+    agentId,
+    marketingStatus,
+    crmStageId,
+    limit,
+    sortBy,
+    sortOrder,
+    createdFrom,
+    createdTo,
+    attentionFirst,
+  ]);
 
-  // Initial load
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
 
-  // Set up WebSocket listeners
   useEffect(() => {
-    // Handle conversation updates
     const unsubscribeUpdate = onConversationUpdate((updatedConversation) => {
       setConversations((prev) => {
-        // Check if conversation matches current filter
         const matchesFilter = (conv: Conversation) => {
           if (filter === "needs_attention") {
             return conv.status === "NEEDS_HUMAN";
@@ -134,99 +173,58 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
           if (filter === "closed") {
             return conv.status === "CLOSED";
           }
-          return true; // "all"
+          return true;
         };
 
-        // Find and update existing conversation
         const index = prev.findIndex(
           (c) => c.conversation_id === updatedConversation.conversation_id
         );
 
-        // Track status change for counter update (outside setState)
         const oldConversation = index >= 0 ? prev[index] : null;
         const wasNeedsHuman = oldConversation?.status === "NEEDS_HUMAN";
         const isNeedsHuman = updatedConversation.status === "NEEDS_HUMAN";
 
-        // Update needs_human count based on status change (outside setState)
         if (oldConversation) {
           if (!wasNeedsHuman && isNeedsHuman) {
-            // Status changed to NEEDS_HUMAN - increment
             setNeedsHumanCount((count) => count + 1);
           } else if (wasNeedsHuman && !isNeedsHuman) {
-            // Status changed from NEEDS_HUMAN - decrement
             setNeedsHumanCount((count) => Math.max(0, count - 1));
           }
         } else if (isNeedsHuman) {
-          // New conversation with NEEDS_HUMAN status
           setNeedsHumanCount((count) => count + 1);
         }
 
         if (index === -1) {
-          // New conversation - add if matches filter
           if (matchesFilter(updatedConversation)) {
-            const newList = [...prev, updatedConversation];
-            // Re-sort
-            newList.sort((a, b) => {
-              if (a.status === "NEEDS_HUMAN" && b.status !== "NEEDS_HUMAN")
-                return -1;
-              if (a.status !== "NEEDS_HUMAN" && b.status === "NEEDS_HUMAN")
-                return 1;
-              if (a.status === "HUMAN_ACTIVE" && b.status !== "HUMAN_ACTIVE")
-                return -1;
-              if (a.status !== "HUMAN_ACTIVE" && b.status === "HUMAN_ACTIVE")
-                return 1;
-              return (
-                new Date(b.updated_at).getTime() -
-                new Date(a.updated_at).getTime()
-              );
-            });
-            return newList;
+            return sortConversationsList(
+              [...prev, updatedConversation],
+              sortOpts
+            );
           }
           return prev;
         }
 
-        // Update existing conversation
         const updated = [...prev];
         updated[index] = updatedConversation;
 
-        // Remove if no longer matches filter
         if (!matchesFilter(updatedConversation)) {
           updated.splice(index, 1);
-        } else {
-          // Re-sort
-          updated.sort((a, b) => {
-            if (a.status === "NEEDS_HUMAN" && b.status !== "NEEDS_HUMAN")
-              return -1;
-            if (a.status !== "NEEDS_HUMAN" && b.status === "NEEDS_HUMAN")
-              return 1;
-            if (a.status === "HUMAN_ACTIVE" && b.status !== "HUMAN_ACTIVE")
-              return -1;
-            if (a.status !== "HUMAN_ACTIVE" && b.status === "HUMAN_ACTIVE")
-              return 1;
-            return (
-              new Date(b.updated_at).getTime() -
-              new Date(a.updated_at).getTime()
-            );
-          });
+          return updated;
         }
 
-        return updated;
+        return sortConversationsList(updated, sortOpts);
       });
     });
 
-    // Handle new escalations
     const unsubscribeEscalation = onNewEscalation((conversation, reason) => {
-      // Show notification for new escalation
       showEscalationNotification(conversation.conversation_id, reason).catch(
         (err) => {
           console.error("Failed to show escalation notification:", err);
         }
       );
-      // Reload conversations to ensure we have the latest data
       loadConversations();
     });
 
-    // Handle stats updates
     const unsubscribeStats = onStatsUpdate((stats) => {
       if (stats.needs_human !== undefined) {
         setNeedsHumanCount(stats.needs_human);
@@ -238,12 +236,19 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
       unsubscribeEscalation();
       unsubscribeStats();
     };
-  }, [onConversationUpdate, onNewEscalation, onStatsUpdate, filter, loadConversations]);
+  }, [
+    onConversationUpdate,
+    onNewEscalation,
+    onStatsUpdate,
+    filter,
+    loadConversations,
+    sortBy,
+    sortOrder,
+    attentionFirst,
+  ]);
 
-  // Fallback polling if WebSocket is not connected
   useEffect(() => {
     if (!isConnected && enablePolling) {
-      // Start polling
       pollingIntervalRef.current = setInterval(() => {
         loadConversations();
       }, pollingInterval);
@@ -254,7 +259,6 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
         }
       };
     } else {
-      // Stop polling if WebSocket is connected
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
@@ -271,4 +275,3 @@ export function useConversationsList(options: UseConversationsListOptions = {}) 
     refresh: loadConversations,
   };
 }
-
