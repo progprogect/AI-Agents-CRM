@@ -95,7 +95,13 @@
     "attentionFirst": "Needs attention first",
     "createdFromLabel": "Created from",
     "createdToLabel": "Created to",
-    "resetDateFilter": "Clear dates"
+    "resetDateFilter": "Clear dates",
+    "filtersPanelTitle": "Search & filters",
+    "filtersPanelAria": "Search and filter the conversation list",
+    "searchLabel": "Search",
+    "fieldSort": "Sort order",
+    "dateRangeSection": "Created between",
+    "fieldOptions": "Display"
   },
   "ConversationDetail": {
     "title": "Conversation Details",

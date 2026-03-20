@@ -95,7 +95,13 @@
     "attentionFirst": "Сначала требующие внимания",
     "createdFromLabel": "Создан с",
     "createdToLabel": "Создан по",
-    "resetDateFilter": "Сбросить даты"
+    "resetDateFilter": "Сбросить даты",
+    "filtersPanelTitle": "Поиск и фильтры",
+    "filtersPanelAria": "Поиск и фильтрация списка разговоров",
+    "searchLabel": "Поиск",
+    "fieldSort": "Сортировка",
+    "dateRangeSection": "Период создания",
+    "fieldOptions": "Отображение"
   },
   "ConversationDetail": {
     "title": "Детали разговора",

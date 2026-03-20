@@ -236,61 +236,82 @@ export default function ConversationsPage() {
 
   return (
     <div>
-      {/* Header — stacks on mobile, side-by-side on desktop */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-4 sm:mb-6">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t("title")}</h1>
-          <p className="text-xs sm:text-sm text-gray-600 mt-1">
-            {needsHumanCount > 0 && (
-              <span className="text-[#F59E0B] font-medium">
-                {t("requireAttentionCount", { count: needsHumanCount })}
-              </span>
-            )}
-            {!needsHumanCount && filteredConversations.length > 0 && (
-              <span>{t("conversationCount", { count: filteredConversations.length })}</span>
-            )}
-          </p>
-        </div>
-        {/* Controls — stack on mobile, inline on desktop */}
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
-          {/* Connection status indicator */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <div
-              className={`w-2 h-2 rounded-full ${
-                isConnected ? "bg-green-500" : "bg-gray-400"
-              }`}
-              aria-label={isConnected ? t("liveConnection") : t("pollingMode")}
-            />
-            <span className="text-xs sm:text-sm text-gray-600">
-              {isConnected ? t("live") : t("polling")}
+      <header className="mb-5">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t("title")}</h1>
+        <p className="text-xs sm:text-sm text-gray-600 mt-1">
+          {needsHumanCount > 0 && (
+            <span className="text-[#F59E0B] font-medium">
+              {t("requireAttentionCount", { count: needsHumanCount })}
             </span>
-          </div>
+          )}
+          {!needsHumanCount && filteredConversations.length > 0 && (
+            <span>{t("conversationCount", { count: filteredConversations.length })}</span>
+          )}
+        </p>
+      </header>
 
-          {/* Filter dropdowns */}
-          <div className="w-full sm:w-auto sm:min-w-[140px]">
-            <Select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value as ConversationFilter)}
-              options={[
-                { value: "all", label: t("allConversations") },
-                { value: "needs_attention", label: t("requiresAttention") },
-                { value: "active", label: t("active") },
-                { value: "closed", label: t("closed") },
-              ]}
+      <section
+        className="mb-6 rounded-sm border border-[#251D1C]/15 bg-[#FAF9F8] p-4 sm:p-5 shadow-sm"
+        aria-label={t("filtersPanelAria")}
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#251D1C]/10 pb-4 mb-5">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-[#443C3C]">
+            {t("filtersPanelTitle")}
+          </h2>
+          <div
+            className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
+              isConnected
+                ? "border-emerald-200/80 bg-white text-emerald-900 shadow-sm"
+                : "border-gray-200 bg-white text-gray-600"
+            }`}
+            title={isConnected ? t("liveConnection") : t("pollingMode")}
+          >
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                isConnected ? "bg-emerald-500" : "bg-gray-400"
+              }`}
+              aria-hidden
             />
+            <span>{isConnected ? t("live") : t("polling")}</span>
           </div>
-          <div className="w-full sm:w-auto sm:min-w-[140px]">
+        </div>
+
+        <div className="mb-5">
+          <Input
+            label={t("searchLabel")}
+            type="text"
+            placeholder={t("searchPlaceholder")}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full"
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 mb-5">
+          <Select
+            label={t("status")}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as ConversationFilter)}
+            options={[
+              { value: "all", label: t("allConversations") },
+              { value: "needs_attention", label: t("requiresAttention") },
+              { value: "active", label: t("active") },
+              { value: "closed", label: t("closed") },
+            ]}
+          />
+          <Select
+            label={t("crmStage")}
+            value={crmStageFilter}
+            onChange={(e) => setCrmStageFilter(e.target.value)}
+            options={[
+              { value: "all", label: t("allCrmStages") },
+              ...crmStages.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
+          <div className="min-w-0 md:col-span-2 xl:col-span-1">
             <Select
-              value={crmStageFilter}
-              onChange={(e) => setCrmStageFilter(e.target.value)}
-              options={[
-                { value: "all", label: t("allCrmStages") },
-                ...crmStages.map((s) => ({ value: s.id, label: s.name })),
-              ]}
-            />
-          </div>
-          <div className="w-full sm:w-auto sm:min-w-[200px]">
-            <Select
+              label={t("fieldSort")}
               value={sortPreset}
               onChange={(e) => setSortPreset(e.target.value as SortPreset)}
               options={[
@@ -302,62 +323,68 @@ export default function ConversationsPage() {
             />
           </div>
         </div>
-      </div>
 
-      {/* Search bar */}
-      <div className="mb-4">
-        <Input
-          type="text"
-          placeholder={t("searchPlaceholder")}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full max-w-full sm:max-w-md"
-        />
-      </div>
+        <div className="border-t border-[#251D1C]/10 pt-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#443C3C] mb-3">
+            {t("dateRangeSection")}
+          </p>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
+            <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+              <div className="w-full min-w-0 sm:max-w-[200px] sm:flex-1">
+                <Input
+                  type="date"
+                  label={t("createdFromLabel")}
+                  value={createdFrom}
+                  onChange={(e) => setCreatedFrom(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <span
+                className="hidden shrink-0 self-center pb-2 text-sm text-gray-400 sm:block"
+                aria-hidden
+              >
+                —
+              </span>
+              <div className="w-full min-w-0 sm:max-w-[200px] sm:flex-1">
+                <Input
+                  type="date"
+                  label={t("createdToLabel")}
+                  value={createdTo}
+                  onChange={(e) => setCreatedTo(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-[42px] w-full shrink-0 sm:w-auto"
+                onClick={() => {
+                  setCreatedFrom("");
+                  setCreatedTo("");
+                }}
+              >
+                {t("resetDateFilter")}
+              </Button>
+            </div>
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={attentionFirst}
-            onChange={(e) => setAttentionFirst(e.target.checked)}
-            className="rounded border-[#BEBAB7] text-[#251D1C] focus:ring-[#251D1C]"
-          />
-          {t("attentionFirst")}
-        </label>
-        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 flex-wrap">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-xs text-gray-500">{t("createdFromLabel")}</span>
-            <Input
-              type="date"
-              value={createdFrom}
-              onChange={(e) => setCreatedFrom(e.target.value)}
-              className="w-full sm:w-40"
-            />
+            <div className="lg:border-l lg:border-[#251D1C]/10 lg:pl-6">
+              <span className="mb-1 block text-sm font-medium text-gray-700">
+                {t("fieldOptions")}
+              </span>
+              <label className="flex min-h-[42px] cursor-pointer items-center gap-3 rounded-sm border border-gray-300 bg-white px-3 py-2 shadow-sm transition-colors hover:border-gray-400">
+                <input
+                  type="checkbox"
+                  checked={attentionFirst}
+                  onChange={(e) => setAttentionFirst(e.target.checked)}
+                  className="h-4 w-4 shrink-0 rounded border-gray-300 text-[#251D1C] focus:ring-[#251D1C]"
+                />
+                <span className="text-sm text-gray-800 select-none">{t("attentionFirst")}</span>
+              </label>
+            </div>
           </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-xs text-gray-500">{t("createdToLabel")}</span>
-            <Input
-              type="date"
-              value={createdTo}
-              onChange={(e) => setCreatedTo(e.target.value)}
-              className="w-full sm:w-40"
-            />
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="self-start sm:self-end"
-            onClick={() => {
-              setCreatedFrom("");
-              setCreatedTo("");
-            }}
-          >
-            {t("resetDateFilter")}
-          </Button>
         </div>
-      </div>
+      </section>
 
       {error && (
         <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded-sm" role="alert">
