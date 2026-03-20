@@ -46,7 +46,6 @@ class AgentService:
         self.agent_chain = AgentChain(
             agent_config=agent_config,
             llm_factory=llm_factory,
-            escalation_service=escalation_service,
             rag_service=rag_service,
         )
 

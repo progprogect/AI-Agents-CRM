@@ -5,10 +5,59 @@ from typing import Optional
 
 from app.chains.escalation_chain import EscalationChain
 from app.models.agent_config import AgentConfig
-from app.models.escalation import EscalationDecision, EscalationType
+from app.models.escalation import (
+    BUILTIN_CONTACT_RULE_ID,
+    EscalationDecision,
+    EscalationType,
+    fail_closed_escalation_decision,
+)
 from app.services.llm_factory import LLMFactory, get_llm_factory
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_escalation_decision(decision: EscalationDecision) -> EscalationDecision:
+    """Enforce consistency: non-empty matched_rule_ids implies escalation; map type from ids."""
+    ids = [str(x).strip() for x in (decision.matched_rule_ids or []) if x and str(x).strip()]
+    if not ids:
+        return decision
+
+    decision.needs_escalation = True
+    decision.matched_rule_ids = ids
+    decision.confidence = max(float(decision.confidence), 0.95)
+
+    if BUILTIN_CONTACT_RULE_ID in ids:
+        decision.escalation_type = EscalationType.BOOKING
+        return decision
+
+    legacy_hit: Optional[EscalationType] = None
+    for rid in ids:
+        if not rid.startswith("legacy_"):
+            continue
+        suffix = rid[len("legacy_") :]
+        try:
+            et = EscalationType(suffix)
+        except ValueError:
+            continue
+        if et not in (EscalationType.NONE, EscalationType.CUSTOM):
+            legacy_hit = et
+            break
+
+    if legacy_hit is not None:
+        decision.escalation_type = legacy_hit
+    else:
+        decision.escalation_type = EscalationType.CUSTOM
+
+    return decision
+
+
+def _coerce_type_when_escalating(decision: EscalationDecision) -> None:
+    """If model escalates but leaves type as none, avoid storing request_type='none'."""
+    if not decision.needs_escalation:
+        return
+    val = getattr(decision.escalation_type, "value", decision.escalation_type)
+    if str(val) == EscalationType.NONE.value:
+        decision.escalation_type = EscalationType.CUSTOM
 
 
 class EscalationService:
@@ -28,65 +77,44 @@ class EscalationService:
         agent_config: Optional[AgentConfig] = None,
     ) -> EscalationDecision:
         """Detect if message requires escalation using LLM-based detection."""
-        # Use provided agent_config or fallback to instance config
         config = agent_config or self.agent_config
 
         try:
-            # LLM-based detection with contact extraction
             decision = await self.escalation_chain.detect(
                 message=message,
                 context=conversation_context,
                 agent_id=agent_id,
                 agent_config=config,
             )
+            decision = _normalize_escalation_decision(decision)
+            _coerce_type_when_escalating(decision)
 
-            # Process extracted contacts from LLM
-            detect_contact = config.escalation.detect_contact if config else True
             if decision.extracted_contacts:
-                contacts = decision.extracted_contacts
-
-                # Log extracted contacts if any found
-                if contacts.phone_numbers or contacts.emails:
+                c = decision.extracted_contacts
+                if c.phone_numbers or c.emails:
                     logger.info(
-                        f"Contacts extracted: phones={contacts.phone_numbers}, emails={contacts.emails}",
+                        "Contacts extracted: phones=%s, emails=%s",
+                        c.phone_numbers,
+                        c.emails,
                         extra={
                             "agent_id": agent_id,
-                            "phone_numbers": contacts.phone_numbers,
-                            "emails": contacts.emails,
+                            "phone_numbers": c.phone_numbers,
+                            "emails": c.emails,
                         },
                     )
-
-                if detect_contact:
-                    # If phone numbers found but no escalation yet, trigger booking escalation
-                    if contacts.phone_numbers and not decision.needs_escalation:
-                        decision.needs_escalation = True
-                        decision.escalation_type = EscalationType.BOOKING
-                        decision.confidence = max(decision.confidence, 0.9)
-                        decision.reason = f"Phone number(s) detected: {', '.join(contacts.phone_numbers)}"
-                        decision.suggested_action = "handoff_for_booking"
-                        logger.info(
-                            f"Escalation triggered by phone number detection",
-                            extra={
-                                "agent_id": agent_id,
-                                "phone_numbers": contacts.phone_numbers,
-                            },
-                        )
-                    # If escalation already detected and phone numbers found, enhance reason
-                    elif contacts.phone_numbers and decision.needs_escalation:
-                        if decision.escalation_type == EscalationType.BOOKING:
-                            decision.reason = f"{decision.reason} (Phone: {', '.join(contacts.phone_numbers)})"
-                            decision.confidence = min(decision.confidence + 0.1, 1.0)
 
             if decision.needs_escalation:
                 escalation_type_str = getattr(
                     decision.escalation_type, "value", decision.escalation_type
                 )
                 logger.info(
-                    f"Escalation detected: {escalation_type_str}",
+                    "Escalation detected: %s",
+                    escalation_type_str,
                     extra={
                         "agent_id": agent_id,
                         "escalation_type": escalation_type_str,
                         "confidence": decision.confidence,
+                        "matched_rule_ids": decision.matched_rule_ids,
                         "has_contacts": decision.extracted_contacts is not None,
                     },
                 )
@@ -94,18 +122,13 @@ class EscalationService:
             return decision
         except Exception as e:
             logger.error(
-                f"Escalation detection error for agent {agent_id}: {str(e)}",
+                "Escalation detection error for agent %s: %s",
+                agent_id,
+                e,
                 exc_info=True,
                 extra={"agent_id": agent_id, "message_length": len(message)},
             )
-            # On error, default to no escalation to avoid blocking conversation
-            return EscalationDecision(
-                needs_escalation=False,
-                escalation_type=EscalationType.NONE,
-                confidence=0.0,
-                reason=f"Error in escalation detection: {str(e)}",
-                suggested_action="continue_with_ai",
-            )
+            return fail_closed_escalation_decision()
 
     async def should_escalate(
         self,
@@ -132,8 +155,6 @@ class EscalationService:
             decision.escalation_type, "value", decision.escalation_type
         )
 
-        # Keys are plain strings because Pydantic may store enum values as `str`
-        # when `use_enum_values=True` (see `EscalationDecision.Config`).
         reason_map = {
             EscalationType.URGENT.value: "Urgent medical situation detected",
             EscalationType.MEDICAL.value: "Medical question requiring human expertise",
@@ -154,8 +175,6 @@ def create_escalation_service(
     return EscalationService(llm_factory, agent_config)
 
 
-# Keep backward compatibility
 def get_escalation_service() -> EscalationService:
     """Get escalation service instance without agent config (backward compatibility)."""
     return create_escalation_service(None)
-

@@ -6,16 +6,159 @@ import logging
 from typing import Optional
 
 from langchain_classic.chains import LLMChain
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_classic.output_parsers import PydanticOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 
 from app.config import get_settings
 from app.models.agent_config import AgentConfig
-from app.models.escalation import EscalationDecision, EscalationType
+from app.models.escalation import (
+    BUILTIN_CONTACT_RULE_ID,
+    EscalationDecision,
+    fail_closed_escalation_decision,
+)
 from app.services.llm_factory import LLMFactory
 
-
 logger = logging.getLogger(__name__)
+
+ESCALATION_PROMPT_VERSION = 2
+
+
+def _collect_escalation_rules(config: Optional[AgentConfig]) -> list[tuple[str, str, str]]:
+    """Build (rule_id, title, criteria) tuples for the prompt."""
+    rules: list[tuple[str, str, str]] = []
+    if not config:
+        rules.append(
+            (
+                BUILTIN_CONTACT_RULE_ID,
+                "Contact info detection",
+                "Escalate when the user shares a phone number or email address (any format, any language).",
+            )
+        )
+        return rules
+
+    esc = config.escalation
+    if esc.detect_contact:
+        rules.append(
+            (
+                BUILTIN_CONTACT_RULE_ID,
+                "Contact info detection",
+                "Escalate when the user shares a phone number or email address (any format, any language).",
+            )
+        )
+
+    for i, rule in enumerate(esc.custom_rules or []):
+        if not isinstance(rule, dict):
+            continue
+        name = (rule.get("name") or "").strip()
+        desc = (rule.get("description") or "").strip()
+        rid = (rule.get("id") or "").strip() or f"rule_{i}"
+        if not desc:
+            continue
+        if not name:
+            name = f"Custom rule {i + 1}"
+        rules.append((rid, name, desc))
+
+    for esc_type, instruction in (esc.instructions or {}).items():
+        rid = f"legacy_{esc_type}"
+        parts = [instruction.description.strip()]
+        if instruction.guidance:
+            parts.append(f"Guidance: {instruction.guidance.strip()}")
+        if instruction.examples:
+            ex = "\n".join(f"  - {e}" for e in instruction.examples[:5])
+            parts.append(f"Examples:\n{ex}")
+        criteria = "\n".join(parts)
+        rules.append((rid, str(esc_type), criteria))
+
+    return rules
+
+
+def _build_rules_and_output_section(
+    config: Optional[AgentConfig],
+    rules: list[tuple[str, str, str]],
+) -> str:
+    policies_section = ""
+    triggers_section = ""
+    if config:
+        escalation_config = config.escalation
+        policies_dict: dict = {}
+        if escalation_config.policies:
+            policies_dict = dict(escalation_config.policies)
+        else:
+            if escalation_config.medical_question_policy:
+                policies_dict["medical_question"] = escalation_config.medical_question_policy
+            if escalation_config.urgent_case_policy:
+                policies_dict["urgent_case"] = escalation_config.urgent_case_policy
+            if escalation_config.repeat_patient_policy:
+                policies_dict["repeat_patient"] = escalation_config.repeat_patient_policy
+            if escalation_config.pre_procedure_policy:
+                policies_dict["pre_procedure"] = escalation_config.pre_procedure_policy
+        if policies_dict:
+            policies_list = "\n".join(f"- {k}: {v}" for k, v in policies_dict.items())
+            policies_section = f"\n\nEscalation policies (follow when they apply):\n{policies_list}"
+
+        if escalation_config.triggers:
+            triggers_list = []
+            for trigger_type, keywords in escalation_config.triggers.items():
+                if isinstance(keywords, list) and keywords:
+                    kw = ", ".join(keywords[:10])
+                    triggers_list.append(f"- {trigger_type}: {kw}")
+            if triggers_list:
+                triggers_section = (
+                    "\n\nKeyword hints (examples only, not exhaustive):\n" + "\n".join(triggers_list)
+                )
+
+    if not rules and not policies_section and not triggers_section:
+        return f"""No escalation rules are configured. Set needs_escalation to false and escalation_type to none.
+
+Contact information extraction (always fill when present in the message):
+- Phone numbers in any format; emails; empty lists if none
+
+Structured response fields:
+- needs_escalation: boolean
+- escalation_type: none
+- confidence: float 0-1
+- reason: brief explanation
+- suggested_action: string
+- matched_rule_ids: [] (empty)
+- extracted_contacts: {{ "phone_numbers": [], "emails": [] }}"""
+
+    lines = []
+    for rid, title, criteria in rules:
+        lines.append(f"- id `{rid}` | {title}\n  Criteria: {criteria}")
+
+    rules_block = "Escalation rules (use exact `id` values in matched_rule_ids):\n" + "\n".join(lines)
+
+    type_help = """
+Escalation types (escalation_type):
+- none — no rule matched; AI may continue
+- booking — matched_rule_ids contains `__builtin_contact__` (contact info rule)
+- custom — matched at least one custom rule (id not starting with legacy_)
+- urgent | medical | repeat_patient — matched a legacy_* rule whose suffix matches that type; otherwise use custom
+
+Consistency (mandatory):
+- If matched_rule_ids is non-empty, needs_escalation MUST be true.
+- If needs_escalation is true, matched_rule_ids MUST list every rule id that fired (at least one)."""
+
+    extraction = """
+Contact information extraction:
+- Extract all phone numbers and emails found in the message (any format / language)
+- If none, use empty lists in extracted_contacts
+
+Structured response fields:
+- needs_escalation: boolean
+- escalation_type: one of none, booking, custom, urgent, medical, repeat_patient
+- confidence: float between 0 and 1
+- reason: brief explanation
+- suggested_action: what should happen next
+- matched_rule_ids: list of rule ids that matched (exact strings from the rules list)
+- extracted_contacts: object with phone_numbers and emails (lists of strings)"""
+
+    return f"""You are an escalation detection system for an AI agent.
+Analyze the latest user message and conversation context. Decide if a human must take over.
+
+{rules_block}{policies_section}{triggers_section}
+{type_help}
+{extraction}"""
 
 
 class EscalationChain:
@@ -25,25 +168,21 @@ class EscalationChain:
         """Initialize escalation chain."""
         self.llm_factory = llm_factory
         self.agent_config = agent_config
-        self._chains: dict[str, LLMChain] = {}  # Cache per agent_id
+        self._chains: dict[str, LLMChain] = {}
 
     def _make_cache_key(
         self,
         agent_id: Optional[str],
         agent_config: Optional[AgentConfig],
     ) -> str:
-        """Build stable cache key based on escalation configuration.
-
-        This ensures admin changes to escalation rules take effect without backend restart.
-        """
+        """Build stable cache key based on escalation configuration."""
         base_key = agent_id or "default"
         if not agent_config:
-            return base_key
+            return f"{base_key}:v{ESCALATION_PROMPT_VERSION}"
 
         esc = agent_config.escalation
-
-        # Keep key reasonably small while still reacting to relevant rule changes.
         relevant = {
+            "prompt_v": ESCALATION_PROMPT_VERSION,
             "detect_contact": esc.detect_contact,
             "custom_rules": esc.custom_rules,
             "has_instructions": bool(esc.instructions),
@@ -55,203 +194,64 @@ class EscalationChain:
                 }
                 for k, v in esc.instructions.items()
             },
+            "policies": esc.policies,
+            "medical_question_policy": esc.medical_question_policy,
+            "urgent_case_policy": esc.urgent_case_policy,
+            "repeat_patient_policy": esc.repeat_patient_policy,
+            "pre_procedure_policy": esc.pre_procedure_policy,
+            "triggers": esc.triggers,
         }
-
         payload = json.dumps(relevant, sort_keys=True, ensure_ascii=False, default=str)
         digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
         return f"{base_key}:{digest}"
 
     def _build_system_prompt(self, agent_config: Optional[AgentConfig] = None) -> str:
-        """Build system prompt from agent config instructions or use default."""
-        config = agent_config or self.agent_config
+        rules = _collect_escalation_rules(agent_config)
+        return _build_rules_and_output_section(agent_config, rules)
 
-        detect_contact = config.escalation.detect_contact if config else True
-        custom_rules_count = len(getattr(config.escalation, "custom_rules", []) or []) if config else 0
-        legacy_instructions_count = (
-            len(getattr(config.escalation, "instructions", {}) or {}) if config else 0
-        )
-
-        # Build escalation types based on config
-        escalation_type_lines = []
-        if detect_contact:
-            escalation_type_lines.append(
-                "- booking: User shares a phone number or email address (contact info detected) — always escalate"
-            )
-        escalation_type_lines.append("- custom: Custom escalation rule defined by the agent configuration")
-        escalation_type_lines.append("- none: No escalation needed, AI can handle")
-
-        base_types = "Escalation types:\n" + "\n".join(escalation_type_lines)
-
-        # If no config and no rules of any kind, use default prompt.
-        # Important: custom_rules must be included even if legacy `instructions` is empty.
-        has_legacy_instructions = bool(config.escalation.instructions) if config else False
-        has_custom_rules = bool(config.escalation.custom_rules) if config else False
-        if not config or (not has_legacy_instructions and not has_custom_rules):
-            logger.debug(
-                "EscalationChain: using default prompt (no rules). agent_id=%s custom_rules=%d legacy_instructions=%d",
-                getattr(config, "agent_id", None),
-                custom_rules_count,
-                legacy_instructions_count,
-            )
-            return f"""You are an escalation detection system for an AI agent.
-Your task is to analyze user messages and determine if they require human intervention.
-
-{base_types}
-
-IMPORTANT: Only escalate based on the rules above. Do NOT escalate for any other reason unless a custom rule explicitly defines it.
-
-Contact Information Extraction:
-When analyzing messages, also extract contact information:
-- Phone numbers: Extract ALL phone numbers in ANY format (international like +1-555-123-4567, local like 8-800-555-35-35, with spaces/dashes/parentheses, written in different languages)
-- Email addresses: Extract ALL email addresses found in the message
-- Return contacts even if they're written in different languages, formats, or embedded in text
-- If no contacts found, return empty lists
-
-Return a structured response with:
-- needs_escalation: boolean
-- escalation_type: one of the types above
-- confidence: float between 0 and 1
-- reason: brief explanation
-- suggested_action: what should happen next
-- extracted_contacts: object with phone_numbers (list of strings) and emails (list of strings)"""
-
-        # Build prompt from instructions
-        instructions_section = []
-        escalation_config = config.escalation
-
-        # Add free-form custom rules (new format)
-        if escalation_config.custom_rules:
-            for rule in escalation_config.custom_rules:
-                name = rule.get("name", "").strip()
-                description = rule.get("description", "").strip()
-                if name and description:
-                    instructions_section.append(f"- {name}: {description}")
-
-        # Add structured instructions (legacy format)
-        for esc_type, instruction in escalation_config.instructions.items():
-            examples_text = ""
-            if instruction.examples:
-                examples_list = "\n".join(f"  - {ex}" for ex in instruction.examples)
-                examples_text = f"\nExamples:\n{examples_list}"
-
-            instructions_section.append(
-                f"- {esc_type}: {instruction.description}{examples_text}\n"
-                f"  Guidance: {instruction.guidance}"
-            )
-
-        # Add policies if available (use policies dict or fallback to individual fields)
-        policies_section = ""
-        policies_dict = {}
-        
-        # Use policies dict if available, otherwise fallback to individual policy fields (backward compatibility)
-        if escalation_config.policies:
-            policies_dict = dict(escalation_config.policies)
-        else:
-            # Fallback to individual policy fields
-            if escalation_config.medical_question_policy:
-                policies_dict["medical_question"] = escalation_config.medical_question_policy
-            if escalation_config.urgent_case_policy:
-                policies_dict["urgent_case"] = escalation_config.urgent_case_policy
-            if escalation_config.repeat_patient_policy:
-                policies_dict["repeat_patient"] = escalation_config.repeat_patient_policy
-            if escalation_config.pre_procedure_policy:
-                policies_dict["pre_procedure"] = escalation_config.pre_procedure_policy
-        
-        if policies_dict:
-            policies_list = "\n".join(
-                f"- {k}: {v}" for k, v in policies_dict.items()
-            )
-            policies_section = f"\n\nEscalation Policies:\n{policies_list}"
-
-        # Add trigger keywords as hints
-        triggers_section = ""
-        if escalation_config.triggers:
-            triggers_list = []
-            for trigger_type, keywords in escalation_config.triggers.items():
-                if isinstance(keywords, list) and keywords:
-                    keywords_str = ", ".join(keywords[:10])  # Limit to 10 keywords
-                    triggers_list.append(f"- {trigger_type}: {keywords_str}")
-            if triggers_list:
-                triggers_section = f"\n\nKeyword Hints (examples, not exhaustive):\n" + "\n".join(triggers_list)
-
-        # Build instructions text
-        instructions_text = ""
-        if instructions_section:
-            instructions_text = f"\n\nEscalation Detection Instructions:\n{chr(10).join(instructions_section)}"
-
-        logger.debug(
-            "EscalationChain: prompt built. agent_id=%s custom_rules=%d legacy_instructions=%d instructions_section_items=%d",
-            getattr(config, "agent_id", None),
-            custom_rules_count,
-            legacy_instructions_count,
-            len(instructions_section),
-        )
-        
-        return f"""You are an escalation detection system for an AI agent.
-Your task is to analyze user messages and determine if they require human intervention.
-
-{base_types}{instructions_text}{policies_section}{triggers_section}
-
-IMPORTANT: Only escalate based on the rules defined above. Do NOT escalate for reasons not listed.
-
-Contact Information Extraction:
-When analyzing messages, also extract contact information:
-- Phone numbers: Extract ALL phone numbers in ANY format (international like +1-555-123-4567, local like 8-800-555-35-35, with spaces/dashes/parentheses, written in different languages)
-- Email addresses: Extract ALL email addresses found in the message
-- Return contacts even if they're written in different languages, formats, or embedded in text
-- If no contacts found, return empty lists
-
-Return a structured response with:
-- needs_escalation: boolean
-- escalation_type: one of the types above
-- confidence: float between 0 and 1
-- reason: brief explanation
-- suggested_action: what should happen next
-- extracted_contacts: object with phone_numbers (list of strings) and emails (list of strings)"""
+    def _escalation_llm_config(self, config: AgentConfig) -> AgentConfig:
+        """Classifier: deterministic, bounded output size."""
+        max_out = min(config.llm.max_output_tokens, 512)
+        new_llm = config.llm.model_copy(update={"temperature": 0.0, "max_output_tokens": max_out})
+        return config.model_copy(update={"llm": new_llm})
 
     async def _get_chain(
         self, agent_id: Optional[str] = None, agent_config: Optional[AgentConfig] = None
     ) -> LLMChain:
-        """Get or create escalation chain (cached per agent_id)."""
+        """Get or create escalation chain (cached per agent_id + config hash)."""
         config = agent_config or self.agent_config
         cache_key = self._make_cache_key(agent_id=agent_id, agent_config=config)
 
         if cache_key not in self._chains:
             settings = get_settings()
-            # Use agent's LLM when config available, else fallback to default OpenAI config
             if config:
-                llm = await self.llm_factory.get_chat_model(config)
+                llm_cfg = self._escalation_llm_config(config)
+                llm = await self.llm_factory.get_chat_model(llm_cfg)
             else:
                 from langchain_openai import ChatOpenAI
+
                 client = await self.llm_factory.get_client(agent_id)
                 llm = ChatOpenAI(
                     model=settings.openai_model,
-                    temperature=0.5,
+                    temperature=0.0,
                     openai_api_key=client.api_key,
                     timeout=settings.openai_timeout,
                 )
 
-            # Build system prompt from config
             system_prompt = self._build_system_prompt(config)
-
             logger.debug(
                 "EscalationChain: creating new LLMChain. cache_key=%s agent_id=%s",
                 cache_key,
                 getattr(config, "agent_id", agent_id),
             )
 
-            # Create prompt template
             prompt_template = ChatPromptTemplate.from_messages(
                 [
                     ("system", system_prompt),
                     ("human", "User message: {message}\n\nConversation context: {context}"),
                 ]
             )
-
-            # Create output parser
             output_parser = PydanticOutputParser(pydantic_object=EscalationDecision)
-
-            # Create chain
             self._chains[cache_key] = LLMChain(
                 llm=llm,
                 prompt=prompt_template,
@@ -260,6 +260,20 @@ Return a structured response with:
 
         return self._chains[cache_key]
 
+    def _parse_chain_output(self, result: object) -> EscalationDecision:
+        if isinstance(result, EscalationDecision):
+            return result
+        if isinstance(result, dict):
+            if "text" in result:
+                parsed = result["text"]
+                if isinstance(parsed, EscalationDecision):
+                    return parsed
+                if isinstance(parsed, dict):
+                    return EscalationDecision(**parsed)
+                raise ValueError(f"Unexpected text payload type: {type(parsed)}")
+            return EscalationDecision(**result)
+        raise ValueError(f"Unexpected chain result type: {type(result)}")
+
     async def detect(
         self,
         message: str,
@@ -267,53 +281,35 @@ Return a structured response with:
         agent_id: Optional[str] = None,
         agent_config: Optional[AgentConfig] = None,
     ) -> EscalationDecision:
-        """Detect if escalation is needed."""
+        """Detect if escalation is needed. One retry on failure, then fail-closed."""
         chain = await self._get_chain(agent_id, agent_config)
 
-        # Prepare context string
         context_str = ""
         if context:
             context_str = f"Previous messages: {context.get('previous_messages', [])}"
             if context.get("conversation_status"):
                 context_str += f"\nStatus: {context['conversation_status']}"
+        if not context_str:
+            context_str = "No previous context"
 
-        try:
-            result = await chain.ainvoke(
-                {
-                    "message": message,
-                    "context": context_str or "No previous context",
-                }
-            )
-            # LLMChain with PydanticOutputParser returns dict with 'text' key
-            # The 'text' value contains the parsed EscalationDecision as dict
-            if isinstance(result, dict):
-                # Extract from 'text' key (LLMChain output format)
-                if 'text' in result:
-                    parsed = result['text']
-                    if isinstance(parsed, EscalationDecision):
-                        return parsed
-                    elif isinstance(parsed, dict):
-                        return EscalationDecision(**parsed)
-                # If no 'text' key, try to create EscalationDecision directly from result
-                return EscalationDecision(**result)
-            # If result is already EscalationDecision, return as-is
-            if isinstance(result, EscalationDecision):
-                return result
-            # Fallback: try to create from result
-            return EscalationDecision(**result) if hasattr(result, '__dict__') else EscalationDecision(
-                needs_escalation=False,
-                escalation_type=EscalationType.NONE,
-                confidence=0.0,
-                reason=f"Unexpected result type: {type(result)}",
-                suggested_action="continue_with_ai",
-            )
-        except Exception as e:
-            # On error, default to no escalation
-            return EscalationDecision(
-                needs_escalation=False,
-                escalation_type=EscalationType.NONE,
-                confidence=0.0,
-                reason=f"Error in escalation detection: {str(e)}",
-                suggested_action="continue_with_ai",
-            )
+        last_error: Optional[Exception] = None
+        for attempt in range(2):
+            try:
+                result = await chain.ainvoke({"message": message, "context": context_str})
+                decision = self._parse_chain_output(result)
+                return decision
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "EscalationChain.detect attempt %s failed: %s",
+                    attempt + 1,
+                    e,
+                    exc_info=attempt == 1,
+                )
 
+        logger.error(
+            "EscalationChain.detect failed after retries; fail-closed. last_error=%s",
+            last_error,
+            exc_info=True,
+        )
+        return fail_closed_escalation_decision()

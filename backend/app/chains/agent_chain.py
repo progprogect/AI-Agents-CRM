@@ -8,9 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from app.models.agent_config import AgentConfig
 from app.services.llm_factory import LLMFactory
-from app.tools.escalation_tool import EscalationTool
 from app.tools.booking_tool import BookingTool
-from app.services.escalation_service import EscalationService
 from app.services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
@@ -23,13 +21,11 @@ class AgentChain:
         self,
         agent_config: AgentConfig,
         llm_factory: LLMFactory,
-        escalation_service: EscalationService,
         rag_service: RAGService,
     ):
         """Initialize agent chain."""
         self.agent_config = agent_config
         self.llm_factory = llm_factory
-        self.escalation_service = escalation_service
         self.rag_service = rag_service
         self._executor: Optional[AgentExecutor] = None
 
@@ -38,15 +34,7 @@ class AgentChain:
         if self._executor is None:
             llm = await self.llm_factory.get_chat_model(self.agent_config)
 
-            # Create tools
-            tools = [
-                EscalationTool(
-                    escalation_service=self.escalation_service,
-                    agent_id=self.agent_config.agent_id,
-                    agent_config=self.agent_config,
-                ),
-                BookingTool(agent_id=self.agent_config.agent_id),
-            ]
+            tools = [BookingTool(agent_id=self.agent_config.agent_id)]
 
             # Build system prompt from config
             system_prompt = self._build_system_prompt()
@@ -164,35 +152,33 @@ If multiple examples are relevant, combine them into one coherent response.
 If examples conflict with safety, hard rules, escalation guidance, or RAG context, those rules win.
 """
 
-        # Build escalation instructions section
         escalation_section = ""
-        if self.agent_config.escalation.instructions:
-            escalation_instructions = []
-            for esc_type, instruction in self.agent_config.escalation.instructions.items():
-                examples_text = ""
-                if instruction.examples:
-                    examples_list = "\n".join(f"  - {ex}" for ex in instruction.examples[:3])  # Limit to 3 examples
-                    examples_text = f"\n  Examples: {examples_list}"
-                
-                escalation_instructions.append(
-                    f"- {esc_type}: {instruction.description}{examples_text}"
-                )
-            
-            if escalation_instructions:
-                escalation_section = f"""
-Escalation Guidelines:
-You have access to the escalation_detector tool. Use it when you detect:
+        escalation_lines: list[str] = []
+        for i, rule in enumerate(self.agent_config.escalation.custom_rules or []):
+            if not isinstance(rule, dict):
+                continue
+            name = (rule.get("name") or "").strip()
+            desc = (rule.get("description") or "").strip()
+            if not desc:
+                continue
+            label = name or f"Rule {i + 1}"
+            escalation_lines.append(f"- {label}: {desc}")
+        for esc_type, instruction in self.agent_config.escalation.instructions.items():
+            examples_text = ""
+            if instruction.examples:
+                examples_list = "\n".join(f"  - {ex}" for ex in instruction.examples[:3])
+                examples_text = f"\n  Examples: {examples_list}"
+            escalation_lines.append(
+                f"- {esc_type}: {instruction.description}{examples_text}"
+            )
+        if escalation_lines:
+            escalation_section = f"""
+Human handoff (platform-controlled):
+Escalation to a human is evaluated automatically before you see the user's message. If you are generating a reply, the conversation is currently allowed to continue under those rules.
 
-{chr(10).join(escalation_instructions)}
+Align your tone and boundaries with these configured expectations (there is no separate escalation tool in this agent):
 
-When to use escalation_detector tool:
-- Always use it when you detect urgent medical situations, severe symptoms, or life-threatening conditions
-- Use it for medical questions requiring diagnosis or treatment advice
-- Use it when user wants to book an appointment
-- Use it when user indicates they are a returning/previous patient
-- When in doubt about whether escalation is needed, use the tool to check
-
-After using escalation_detector and it indicates escalation is needed, you should stop responding and let the human admin take over.
+{chr(10).join(escalation_lines)}
 """
 
         # Build final prompt with proper spacing
@@ -214,7 +200,7 @@ After using escalation_detector and it indicates escalation is needed, you shoul
         prompt_parts.append("""Remember:
 - Be friendly and professional
 - Never provide medical diagnoses or treatment advice
-- Escalate urgent or medical questions to human using escalation_detector tool
+- For urgent or medical situations, direct the user toward appropriate care and human support per your guidelines above (handoff is handled by the system when rules require it)
 - Help with booking appointments
 - Use available tools when needed
 
