@@ -17,10 +17,13 @@ from app.models.escalation import (
     fail_closed_escalation_decision,
 )
 from app.services.llm_factory import LLMFactory
+from app.utils.langchain_prompt import escape_braces_for_chat_template
 
 logger = logging.getLogger(__name__)
 
-ESCALATION_PROMPT_VERSION = 4
+# Bump when escalation system/human prompt text or how it is assembled changes so
+# cached LLMChain instances in EscalationChain._chains are invalidated (long-lived workers).
+ESCALATION_PROMPT_VERSION = 5
 
 # Classifier output cap (long system prompt + format_instructions needs headroom)
 _ESCALATION_MAX_OUTPUT_TOKENS = 768
@@ -322,7 +325,7 @@ class EscalationChain:
                 )
 
             base_system = self._build_system_prompt(config)
-            system_prompt = (
+            system_prompt = escape_braces_for_chat_template(
                 f"{base_system}\n{ESCALATION_JSON_ENVELOPE}\n"
                 f"{_ESCALATION_OUTPUT_PARSER.get_format_instructions()}"
             )
