@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Max file size 10MB
-MAX_FILE_SIZE = 10 * 1024 * 1024
+# Max upload size per RAG file (PDF, images, text)
+MAX_FILE_SIZE = 50 * 1024 * 1024
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 TEXT_EXTENSIONS = {".txt", ".md", ".json"}
 PDF_EXTENSIONS = {".pdf"}
