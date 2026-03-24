@@ -131,6 +131,7 @@ class TwilioWhatsAppService:
             binding_service=binding_service,
             media_url=media_url,
             media_type=media_type,
+            media_content_type=media_content_type,
         )
 
     async def _find_binding_by_to_number(
@@ -176,6 +177,7 @@ class TwilioWhatsAppService:
         binding_service: Any,
         media_url: str | None = None,
         media_type: str | None = None,
+        media_content_type: str = "",
     ) -> None:
         """Create/update conversation and call the agent."""
         conversation_id = f"twilio_wa_{binding.binding_id}_{sender_phone}"
@@ -195,9 +197,46 @@ class TwilioWhatsAppService:
             )
             await self.dynamodb.create_conversation(conversation)
 
+        final_media_url = media_url
+        agent_user_message = body
         msg_metadata: dict = {"twilio_message_sid": message_sid}
-        if media_url:
-            msg_metadata["media_url"] = media_url
+        agent_row: dict | None = None
+
+        if media_type == "image" and media_url:
+            account_sid = (binding.metadata or {}).get("account_sid", "") or ""
+            if account_sid:
+                try:
+                    auth_token = await binding_service.get_access_token(binding.binding_id)
+                    agent_row = await self.dynamodb.get_agent(binding.agent_id)
+                    if agent_row and agent_row.get("config"):
+                        from app.services.inbound_media_pipeline import (
+                            compose_user_message_for_agent,
+                            prepare_inbound_image_for_chat,
+                        )
+
+                        prepared = await prepare_inbound_image_for_chat(
+                            download_url=media_url,
+                            http_basic_auth=(account_sid, auth_token),
+                            content_type_hint=media_content_type or "image/jpeg",
+                            agent_id=binding.agent_id,
+                            agent_config=agent_row["config"],
+                        )
+                        if prepared:
+                            final_media_url = prepared.public_url
+                            msg_metadata["inbound_media_source"] = "twilio_cloudinary"
+                            msg_metadata["image_context"] = prepared.summary
+                            agent_user_message = compose_user_message_for_agent(
+                                body, prepared.summary
+                            )
+                except Exception as exc:
+                    logger.warning(
+                        "Twilio inbound image pipeline skipped: %s",
+                        exc,
+                        exc_info=True,
+                    )
+
+        if final_media_url:
+            msg_metadata["media_url"] = final_media_url
         if media_type:
             msg_metadata["media_type"] = media_type
 
@@ -212,7 +251,7 @@ class TwilioWhatsAppService:
             external_user_id=sender_phone,
             timestamp=utc_now(),
             metadata=msg_metadata,
-            media_url=media_url,
+            media_url=final_media_url,
             media_type=media_type,
         )
         await self.dynamodb.create_message(message)
@@ -234,7 +273,7 @@ class TwilioWhatsAppService:
             from app.services.agent_service import create_agent_service
             from app.services.channel_sender import WhatsAppSender
 
-            agent_data = await self.dynamodb.get_agent(binding.agent_id)
+            agent_data = agent_row or await self.dynamodb.get_agent(binding.agent_id)
             if not agent_data or "config" not in agent_data:
                 logger.error(f"Agent {binding.agent_id} not found or has no config")
                 return
@@ -257,7 +296,7 @@ class TwilioWhatsAppService:
             wa_sender = WhatsAppSender(None, self.dynamodb, twilio_service=self)
             agent_service = create_agent_service(agent_config, self.dynamodb, wa_sender)
             await agent_service.process_message(
-                user_message=body,
+                user_message=agent_user_message,
                 conversation_id=conversation_id,
                 conversation_history=conversation_history,
             )

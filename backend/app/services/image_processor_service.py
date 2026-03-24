@@ -10,6 +10,7 @@ from app.prompts.image_description import (
     INITIAL_DESCRIPTION_PROMPT,
     get_comparative_prompt,
 )
+from app.prompts.user_attachment_vision import CHAT_USER_IMAGE_PROMPT
 from app.services.llm_factory import LLMFactory, get_llm_factory
 from app.utils.llm_provider import _get_vision_provider
 
@@ -82,6 +83,23 @@ class ImageProcessorService:
             return await self._call_vision(content, agent_id, agent_config, max_tokens=300)
         except Exception as e:
             logger.error(f"Vision describe_image failed: {e}", exc_info=True)
+            raise
+
+    async def describe_image_for_chat_context(
+        self,
+        image_url: str,
+        agent_id: Optional[str] = None,
+        agent_config: Optional[dict[str, Any]] = None,
+    ) -> str:
+        """Short description of a user-uploaded image for text-only chat context."""
+        content = [
+            {"type": "text", "text": CHAT_USER_IMAGE_PROMPT},
+            {"type": "image_url", "image_url": {"url": image_url}},
+        ]
+        try:
+            return await self._call_vision(content, agent_id, agent_config, max_tokens=250)
+        except Exception as e:
+            logger.error(f"Vision describe_image_for_chat_context failed: {e}", exc_info=True)
             raise
 
     async def describe_images_comparatively(
