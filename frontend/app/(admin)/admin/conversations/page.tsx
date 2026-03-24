@@ -39,12 +39,15 @@ function CRMStageSelector({
   conversationId,
   onChanged,
   noStageLabel,
+  selectClassName,
 }: {
   stages: CRMStage[];
   currentStageId?: string | null;
   conversationId: string;
   onChanged: () => void;
   noStageLabel: string;
+  /** Override default max width (e.g. w-full on mobile cards). */
+  selectClassName?: string;
 }) {
   const [loading, setLoading] = useState(false);
 
@@ -78,7 +81,10 @@ function CRMStageSelector({
           <select
             value={currentStageId ?? ""}
             onChange={handleChange}
-            className="text-xs border border-[#BEBAB7] rounded px-1.5 py-0.5 text-[#443C3C] bg-white outline-none focus:border-[#251D1C] max-w-[130px]"
+            className={
+              selectClassName ??
+              "text-xs border border-[#BEBAB7] rounded px-1.5 py-0.5 text-[#443C3C] bg-white outline-none focus:border-[#251D1C] max-w-[130px]"
+            }
           >
             {!currentStageId && (
               <option value="" disabled>
@@ -108,6 +114,22 @@ const SORT_PRESET_MAP: Record<
   updated_desc: { sortBy: "updated_at", sortOrder: "desc" },
   updated_asc: { sortBy: "updated_at", sortOrder: "asc" },
 };
+
+function isNeedsHumanStatus(status: ConversationStatus): boolean {
+  return status === "NEEDS_HUMAN";
+}
+
+function getConversationListDerived(conv: Conversation, agents: Map<string, Agent>) {
+  const needsAttention = isNeedsHumanStatus(conv.status);
+  const agent = agents.get(conv.agent_id);
+  const agentName = agent
+    ? agent.config?.profile?.agent_display_name ||
+      agent.config?.profile?.doctor_display_name ||
+      conv.agent_id
+    : conv.agent_id;
+  const agentCompany = agent?.config?.profile?.company_display_name ?? null;
+  return { needsAttention, agentName, agentCompany };
+}
 
 const ViewIcon = () => (
   <svg
@@ -224,8 +246,6 @@ export default function ConversationsPage() {
     }
   };
 
-  const isNeedsHuman = (status: ConversationStatus) => status === "NEEDS_HUMAN";
-
   if (isLoading && conversations.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -235,9 +255,11 @@ export default function ConversationsPage() {
   }
 
   return (
-    <div>
-      <header className="mb-5">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{t("title")}</h1>
+    <div className="w-full min-w-0 max-w-full">
+      <header className="mb-4 min-w-0 sm:mb-5">
+        <h1 className="min-w-0 break-words text-xl font-bold text-gray-900 sm:text-2xl">
+          {t("title")}
+        </h1>
         <p className="text-xs sm:text-sm text-gray-600 mt-1">
           {needsHumanCount > 0 && (
             <span className="text-[#F59E0B] font-medium">
@@ -251,7 +273,7 @@ export default function ConversationsPage() {
       </header>
 
       <section
-        className="mb-6 rounded-sm border border-[#251D1C]/15 bg-[#FAF9F8] p-4 sm:p-5 shadow-sm"
+        className="mb-6 min-w-0 rounded-sm border border-[#251D1C]/15 bg-[#FAF9F8] p-3 shadow-sm sm:p-5"
         aria-label={t("filtersPanelAria")}
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#251D1C]/10 pb-4 mb-5">
@@ -401,9 +423,176 @@ export default function ConversationsPage() {
           }
         />
       ) : (
-        <div className="bg-white rounded-sm shadow border border-[#251D1C]/20 overflow-hidden">
+        <>
+          {/* Mobile: stacked cards */}
+          <div className="flex flex-col gap-3 md:hidden">
+            {filteredConversations.map((conv) => {
+              const { needsAttention, agentName, agentCompany } = getConversationListDerived(
+                conv,
+                agents,
+              );
+              const showWaitingCol = filter === "all" || filter === "needs_attention";
+
+              return (
+                <article
+                  key={conv.conversation_id}
+                  className={`min-w-0 rounded-sm border border-[#251D1C]/20 bg-white p-4 shadow-sm ${
+                    needsAttention
+                      ? "border-l-4 border-l-[#F59E0B] bg-[#F59E0B]/[0.07]"
+                      : ""
+                  }`}
+                >
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      {needsAttention && (
+                        <span className="shrink-0 text-lg" aria-label={t("requiresAttentionAria")}>
+                          ⚠️
+                        </span>
+                      )}
+                      {(conv.external_user_name || conv.external_user_profile_pic) && (
+                        <UserAvatar
+                          src={conv.external_user_profile_pic}
+                          name={conv.external_user_name}
+                          size="sm"
+                        />
+                      )}
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <p
+                          className={`truncate text-sm ${
+                            needsAttention ? "font-bold text-gray-900" : "font-medium text-gray-900"
+                          }`}
+                        >
+                          {conv.external_user_name
+                            ? conv.external_user_name
+                            : getConversationDisplayId(conv, "list")}
+                        </p>
+                        {conv.external_user_username && (
+                          <p className="truncate text-xs text-gray-500">@{conv.external_user_username}</p>
+                        )}
+                        {!conv.external_user_username &&
+                          conv.external_user_id &&
+                          (conv.channel === "whatsapp" || conv.channel === "telegram") && (
+                            <p className="truncate text-xs text-gray-500">📞 +{conv.external_user_id}</p>
+                          )}
+                        {!conv.external_user_name && (
+                          <p className="truncate font-mono text-xs text-gray-500">
+                            {conv.conversation_id.substring(0, 8)}…
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <Tooltip content={`${t("viewConversation")} ${conv.conversation_id}`}>
+                      <Link
+                        href={`/admin/conversations/${conv.conversation_id}`}
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-sm text-[#251D1C] transition-colors hover:bg-[#EEEAE7]/40"
+                        aria-label={t("viewConversation")}
+                      >
+                        <ViewIcon />
+                      </Link>
+                    </Tooltip>
+                  </div>
+
+                  <dl className="mt-4 grid grid-cols-1 gap-3 border-t border-gray-100 pt-4 text-sm">
+                    <div className="min-w-0">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-[#443C3C]/80">
+                        {t("agent")}
+                      </dt>
+                      <dd className="mt-0.5 min-w-0 break-words text-gray-900">
+                        {isLoadingAgents ? (
+                          <span className="text-gray-400">{tCommon("loading")}</span>
+                        ) : (
+                          <>
+                            <span className="font-medium">{agentName}</span>
+                            {agentCompany && (
+                              <span className="mt-0.5 block text-xs text-gray-500">{agentCompany}</span>
+                            )}
+                          </>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="flex flex-wrap gap-x-6 gap-y-2">
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-[#443C3C]/80">
+                          {t("channel")}
+                        </dt>
+                        <dd className="mt-0.5 text-gray-700">{getChannelDisplay(conv.channel)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-[#443C3C]/80">
+                          {t("status")}
+                        </dt>
+                        <dd className="mt-0.5">
+                          <StatusBadge status={toConversationStatus(conv.status)} size="sm" />
+                        </dd>
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-[#443C3C]/80">
+                        {t("crmStage")}
+                      </dt>
+                      <dd className="mt-1 min-w-0">
+                        {crmStages.length > 0 ? (
+                          <CRMStageSelector
+                            stages={crmStages}
+                            currentStageId={conv.crm_stage_id}
+                            conversationId={conv.conversation_id}
+                            onChanged={refresh}
+                            noStageLabel={tCommon("noStage")}
+                            selectClassName="w-full max-w-full min-w-0 text-xs border border-[#BEBAB7] rounded px-1.5 py-0.5 text-[#443C3C] bg-white outline-none focus:border-[#251D1C]"
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </dd>
+                    </div>
+                    <div className="flex flex-wrap gap-x-6 gap-y-2">
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-[#443C3C]/80">
+                          {t("created")}
+                        </dt>
+                        <dd className="mt-0.5 text-gray-600">{formatDate(conv.created_at)}</dd>
+                      </div>
+                      {showWaitingCol && (
+                        <div>
+                          <dt className="text-xs font-semibold uppercase tracking-wide text-[#443C3C]/80">
+                            {t("waiting")}
+                          </dt>
+                          <dd className="mt-0.5">
+                            {needsAttention ? (
+                              <span className="font-medium text-[#F59E0B]">
+                                {getWaitingTime(conv.updated_at)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </dd>
+                        </div>
+                      )}
+                    </div>
+                  </dl>
+
+                  {needsAttention && (
+                    <div className="mt-4 border-t border-gray-100 pt-4">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="w-full sm:w-auto"
+                        onClick={() => setTakeOverConversationId(conv.conversation_id)}
+                        disabled={isTakingOver}
+                      >
+                        {t("takeOver")}
+                      </Button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+
+          {/* Tablet/desktop: table */}
+          <div className="hidden min-w-0 overflow-hidden rounded-sm border border-[#251D1C]/20 bg-white shadow-sm md:block">
           <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-[640px] w-full divide-y divide-gray-200">
             <thead className="bg-[#EEEAE7]/10">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-[#443C3C] uppercase tracking-wider">
@@ -436,12 +625,10 @@ export default function ConversationsPage() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredConversations.map((conv) => {
-                const needsAttention = isNeedsHuman(conv.status);
-                const agent = agents.get(conv.agent_id);
-                const agentName = agent
-                  ? (agent.config?.profile?.agent_display_name || agent.config?.profile?.doctor_display_name || conv.agent_id)
-                  : conv.agent_id;
-                const agentCompany = agent?.config?.profile?.company_display_name || null;
+                const { needsAttention, agentName, agentCompany } = getConversationListDerived(
+                  conv,
+                  agents,
+                );
 
                 return (
                   <tr
@@ -576,6 +763,7 @@ export default function ConversationsPage() {
           </table>
           </div>
         </div>
+        </>
       )}
 
       {/* Take Over Confirmation Modal */}
