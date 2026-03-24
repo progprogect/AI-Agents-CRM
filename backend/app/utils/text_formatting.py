@@ -9,6 +9,7 @@ def remove_markdown(text: str) -> str:
     Remove markdown formatting from text.
     
     Removes common markdown syntax:
+    - Markdown images ![alt](url) and [Image: url] -> bare URL (before link pass)
     - Bold: **text** -> text
     - Italic: *text* -> text
     - Links: [text](url) -> text
@@ -36,7 +37,21 @@ def remove_markdown(text: str) -> str:
     
     # Remove inline code (`code`) - but preserve the content
     text = re.sub(r'`([^`\n]+)`', r'\1', text)
-    
+
+    # Markdown images ![alt](url) and [Image: url] → bare URL *before* the generic
+    # [text](url) pass. Otherwise the link regex matches the [...](...) inside
+    # ![...](...) and replaces with alt text only, leaving a stray "!" (breaks web_chat).
+    text = re.sub(
+        r"!\[[^\]]*\]\((https?://[^)\s]+)\)",
+        r"\1",
+        text,
+    )
+    text = re.sub(
+        r"(?i)\[Image:\s*(https?://[^\]]+)\]",
+        r"\1",
+        text,
+    )
+
     # Remove links [text](url) -> text
     text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
     
@@ -84,31 +99,13 @@ def clean_agent_response(text: Optional[str]) -> Optional[str]:
 
 
 def format_agent_text_for_whatsapp(text: str) -> str:
-    """Normalize agent text for WhatsApp: bare image URLs, then strip markdown.
+    """Normalize agent text for WhatsApp (same pipeline as web_chat / Instagram cleanup).
 
-    The LLM is prompted to use ``[Image: URL]`` and ``![alt](URL)``. Plain
-    ``remove_markdown`` would drop URLs from markdown links; here we first
-    expand image patterns to raw ``https://`` URLs so they stay tappable in WhatsApp.
-
-    Use stable, direct HTTPS URLs (e.g. public CDN); expiring signed URLs may stop
-    working after a short time in the client.
+    Image patterns are expanded inside :func:`remove_markdown` before generic link
+    stripping so bare ``https://`` URLs stay tappable in WhatsApp.
     """
     if not text or not isinstance(text, str):
         return text if isinstance(text, str) else ""
-
-    # Markdown images: ![alt](url) -> url (must run before remove_markdown)
-    text = re.sub(
-        r"!\[[^\]]*\]\((https?://[^)\s]+)\)",
-        r"\1",
-        text,
-    )
-
-    # Agent/RAG style: [Image: https://...] (case-insensitive)
-    text = re.sub(
-        r"(?i)\[Image:\s*(https?://[^\]]+)\]",
-        r"\1",
-        text,
-    )
 
     return remove_markdown(text)
 

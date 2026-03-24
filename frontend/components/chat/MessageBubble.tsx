@@ -4,36 +4,6 @@ import React, { memo } from "react";
 import type { Message } from "@/lib/types/message";
 import { formatMessageTime } from "@/lib/utils/timeFormat";
 
-/** Parse content and render [Image: URL] and ![alt](url) as <img> elements. */
-function parseContentWithImages(content: string): React.ReactNode[] {
-  const parts: React.ReactNode[] = [];
-  const regex = /\[Image:\s*(https?:\/\/[^\]]+)\]|!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g;
-  let lastIndex = 0;
-  let match;
-  while ((match = regex.exec(content)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(
-        <span key={`t-${lastIndex}`}>{content.slice(lastIndex, match.index)}</span>
-      );
-    }
-    const url = match[1] || match[3];
-    const alt = match[2] || "Image";
-    parts.push(
-      <img
-        key={`img-${match.index}`}
-        src={url}
-        alt={alt}
-        className="max-w-full max-h-64 rounded-sm my-2 object-contain"
-      />
-    );
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < content.length) {
-    parts.push(<span key="t-end">{content.slice(lastIndex)}</span>);
-  }
-  return parts.length > 0 ? parts : [content];
-}
-
 /** Render a media attachment based on media_type. */
 function MediaAttachment({
   url,
@@ -177,7 +147,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = memo(({ message }) =>
           {/* Text content */}
           {message.content && (
             <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-              {parseContentWithImages(message.content)}
+              {message.content}
             </div>
           )}
 

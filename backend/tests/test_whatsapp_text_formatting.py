@@ -2,7 +2,7 @@
 
 import unittest
 
-from app.utils.text_formatting import format_agent_text_for_whatsapp
+from app.utils.text_formatting import format_agent_text_for_whatsapp, remove_markdown
 
 
 class TestFormatAgentTextForWhatsapp(unittest.TestCase):
@@ -32,6 +32,14 @@ class TestFormatAgentTextForWhatsapp(unittest.TestCase):
 
     def test_empty_string(self) -> None:
         self.assertEqual(format_agent_text_for_whatsapp(""), "")
+
+    def test_remove_markdown_does_not_corrupt_markdown_image(self) -> None:
+        """Regression: link strip must not turn ![alt](url) into '!alt' (web_chat path)."""
+        raw = "See ![stairs](https://img.com/1.jpg) here."
+        out = remove_markdown(raw)
+        self.assertIn("https://img.com/1.jpg", out)
+        self.assertNotIn("![", out)
+        self.assertNotIn("!stairs", out)
 
 
 if __name__ == "__main__":
