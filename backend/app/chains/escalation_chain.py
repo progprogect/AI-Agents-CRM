@@ -20,7 +20,7 @@ from app.services.llm_factory import LLMFactory
 
 logger = logging.getLogger(__name__)
 
-ESCALATION_PROMPT_VERSION = 2
+ESCALATION_PROMPT_VERSION = 3
 
 
 def _collect_escalation_rules(config: Optional[AgentConfig]) -> list[tuple[str, str, str]]:
@@ -113,6 +113,8 @@ def _build_rules_and_output_section(
 Contact information extraction (always fill when present in the message):
 - Phone numbers in any format; emails; empty lists if none
 
+You MUST output one JSON object with EVERY field below.
+
 Structured response fields:
 - needs_escalation: boolean
 - escalation_type: none
@@ -143,6 +145,8 @@ Consistency (mandatory):
 Contact information extraction:
 - Extract all phone numbers and emails found in the message (any format / language)
 - If none, use empty lists in extracted_contacts
+
+You MUST output one JSON object including EVERY field below (models often omit keys; all are required).
 
 Structured response fields:
 - needs_escalation: boolean

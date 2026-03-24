@@ -1,9 +1,9 @@
 """Escalation models."""
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # Built-in "contact info" rule when detect_contact is enabled (prompt + normalization)
 BUILTIN_CONTACT_RULE_ID = "__builtin_contact__"
@@ -57,6 +57,43 @@ class EscalationDecision(BaseModel):
         default=None,
         description="Contact information extracted from message (phone numbers, emails)"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_missing_llm_fields(cls, data: Any) -> Any:
+        """LLMs often return only needs_escalation + escalation_type; PydanticOutputParser then fails.
+
+        Normalize before validation so web/WhatsApp and other channels do not hit fail-closed
+        escalation on benign incomplete JSON.
+        """
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        if "needs_escalation" not in d:
+            d["needs_escalation"] = False
+        needs = bool(d["needs_escalation"])
+        if needs:
+            d.setdefault("confidence", 0.85)
+            d.setdefault("reason", "Escalation indicated by classifier")
+            d.setdefault("suggested_action", "human_review")
+            et = d.get("escalation_type")
+            if et is None or et == EscalationType.NONE.value or et == "none":
+                d["escalation_type"] = EscalationType.CUSTOM.value
+        else:
+            d.setdefault("confidence", 1.0)
+            d.setdefault("reason", "No escalation")
+            d.setdefault("suggested_action", "continue_ai")
+            d.setdefault("escalation_type", EscalationType.NONE.value)
+        d.setdefault("matched_rule_ids", [])
+        ec = d.get("extracted_contacts")
+        if ec is None or ec == []:
+            d["extracted_contacts"] = {"phone_numbers": [], "emails": []}
+        elif isinstance(ec, dict):
+            ec = dict(ec)
+            ec.setdefault("phone_numbers", [])
+            ec.setdefault("emails", [])
+            d["extracted_contacts"] = ec
+        return d
 
 
 FAIL_CLOSED_ESCALATION_REASON = (
