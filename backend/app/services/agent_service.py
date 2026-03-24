@@ -170,6 +170,9 @@ class AgentService:
                     },
                 )
 
+        # Filled after successful LLM response (single fetch for channel + save/send).
+        conversation = None
+
         # Generate response
         try:
             response = await self.agent_chain.generate_response(
@@ -214,12 +217,22 @@ class AgentService:
             if AgentChain.ATTACH_MEDIA_MARKER in response:
                 response = response.replace(AgentChain.ATTACH_MEDIA_MARKER, "").strip()
 
-            # Clean markdown formatting for plain text channels (Instagram, etc.)
+            conversation = await self.dynamodb.get_conversation(conversation_id)
+            channel_val = get_enum_value(conversation.channel) if conversation else None
+
+            # WhatsApp: bare image URLs + markdown strip; other plain-text channels: existing cleaner
             try:
-                from app.utils.text_formatting import clean_agent_response
-                cleaned = clean_agent_response(response)
-                if cleaned is not None:
-                    response = cleaned
+                from app.utils.text_formatting import (
+                    clean_agent_response,
+                    format_agent_text_for_whatsapp,
+                )
+
+                if channel_val == MessageChannel.WHATSAPP.value:
+                    response = format_agent_text_for_whatsapp(response)
+                else:
+                    cleaned = clean_agent_response(response)
+                    if cleaned is not None:
+                        response = cleaned
             except Exception as e:
                 logger.error(
                     f"Failed to clean markdown for conversation {conversation_id}: {str(e)}",
@@ -263,8 +276,7 @@ class AgentService:
                     "moderation_result": moderation_result,
                 }
 
-        # Save agent message to database first
-        conversation = await self.dynamodb.get_conversation(conversation_id)
+        # Save agent message to database first (conversation loaded after LLM step above)
         agent_message_id = None
         if conversation:
             agent_message_id = str(uuid.uuid4())

@@ -82,3 +82,33 @@ def clean_agent_response(text: Optional[str]) -> Optional[str]:
     
     return remove_markdown(text)
 
+
+def format_agent_text_for_whatsapp(text: str) -> str:
+    """Normalize agent text for WhatsApp: bare image URLs, then strip markdown.
+
+    The LLM is prompted to use ``[Image: URL]`` and ``![alt](URL)``. Plain
+    ``remove_markdown`` would drop URLs from markdown links; here we first
+    expand image patterns to raw ``https://`` URLs so they stay tappable in WhatsApp.
+
+    Use stable, direct HTTPS URLs (e.g. public CDN); expiring signed URLs may stop
+    working after a short time in the client.
+    """
+    if not text or not isinstance(text, str):
+        return text if isinstance(text, str) else ""
+
+    # Markdown images: ![alt](url) -> url (must run before remove_markdown)
+    text = re.sub(
+        r"!\[[^\]]*\]\((https?://[^)\s]+)\)",
+        r"\1",
+        text,
+    )
+
+    # Agent/RAG style: [Image: https://...] (case-insensitive)
+    text = re.sub(
+        r"(?i)\[Image:\s*(https?://[^\]]+)\]",
+        r"\1",
+        text,
+    )
+
+    return remove_markdown(text)
+
