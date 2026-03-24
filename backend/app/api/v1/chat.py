@@ -1,21 +1,21 @@
 """Chat API endpoints."""
 
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel, Field, model_validator
 
 from app.api.exceptions import AgentNotFoundError, ConversationNotFoundError
-from app.api.schemas import (
-    AgentIDValidator,
-    MessageContentValidator,
-)
+from app.api.schemas import AgentIDValidator
+from app.api.v1.media import MediaUploadResponse, store_chat_media_bytes
 from app.dependencies import CommonDependencies
 from app.models.agent_config import AgentConfig
 from app.models.conversation import Conversation, ConversationStatus, MarketingStatus
 from app.models.message import Message, MessageChannel, MessageRole
 from app.services.agent_service import create_agent_service
 from app.services.channel_sender import get_channel_sender
+from app.services.web_chat_user_media import enrich_web_chat_user_message_for_agent
 from app.services.channel_binding_service import ChannelBindingService
 from app.services.instagram_service import InstagramService
 from app.services.telegram_service import TelegramService
@@ -48,10 +48,27 @@ class CloseConversationResponse(BaseModel):
     status: str
 
 
-class SendMessageRequest(BaseModel, MessageContentValidator):
-    """Request to send a message."""
+class SendMessageRequest(BaseModel):
+    """Request to send a message (text and/or image from web chat upload)."""
 
-    content: str = Field(..., description="Message content", min_length=1, max_length=10000)
+    content: str = Field(default="", description="Caption / text", max_length=10000)
+    media_url: Optional[str] = Field(None, description="Public URL from POST .../media/upload")
+    media_type: Optional[str] = Field(None, description="image | video | … (web chat: image only)")
+    media_filename: Optional[str] = Field(None, description="Original filename")
+
+    @model_validator(mode="after")
+    def validate_has_body_or_media(self) -> "SendMessageRequest":
+        text = (self.content or "").strip()
+        has_media = bool(self.media_url and self.media_type)
+        if not text and not has_media:
+            raise ValueError("Message must include text or an image attachment")
+        if bool(self.media_url) != bool(self.media_type):
+            raise ValueError("media_url and media_type must be sent together")
+        if has_media and self.media_type != "image":
+            raise ValueError("Web chat supports image attachments only")
+        if self.media_url and not self.media_url.startswith(("https://", "http://")):
+            raise ValueError("media_url must be an http(s) URL")
+        return self
 
 
 class SendMessageResponse(BaseModel):
@@ -154,6 +171,37 @@ async def close_conversation(
 
 
 @router.post(
+    "/conversations/{conversation_id}/media/upload",
+    response_model=MediaUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_web_chat_media(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    deps: CommonDependencies = Depends(),
+):
+    """Upload chat media for a web_chat conversation (no admin token; same CDN as /media/upload)."""
+    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    if not conversation:
+        raise ConversationNotFoundError(conversation_id)
+
+    channel_value = get_enum_value(conversation.channel)
+    if channel_value != MessageChannel.WEB_CHAT.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Media upload is only allowed for web chat conversations",
+        )
+
+    status_value = get_enum_value(conversation.status)
+    if status_value == ConversationStatus.CLOSED.value:
+        raise HTTPException(status_code=400, detail="Conversation is closed")
+
+    file_bytes = await file.read()
+    filename = file.filename or "upload"
+    return store_chat_media_bytes(file_bytes, filename, file.content_type)
+
+
+@router.post(
     "/conversations/{conversation_id}/messages",
     response_model=SendMessageResponse,
     status_code=status.HTTP_201_CREATED,
@@ -176,6 +224,39 @@ async def send_message(
     if status_value == ConversationStatus.CLOSED.value:
         raise HTTPException(status_code=400, detail="Conversation is closed")
 
+    content_stripped = (request.content or "").strip()
+
+    msg_metadata: dict = {}
+    if request.media_url:
+        msg_metadata["media_url"] = request.media_url
+        msg_metadata["media_type"] = request.media_type
+    if request.media_filename:
+        msg_metadata["media_filename"] = request.media_filename
+
+    agent_user_message = content_stripped
+    agent_data_cached: dict | None = None
+
+    human_handling = status_value in [
+        ConversationStatus.NEEDS_HUMAN.value,
+        ConversationStatus.HUMAN_ACTIVE.value,
+    ]
+    if (
+        not human_handling
+        and request.media_type == "image"
+        and request.media_url
+    ):
+        agent_data_cached = await deps.dynamodb.get_agent(conversation.agent_id)
+        if agent_data_cached and agent_data_cached.get("config"):
+            enriched, vision_meta = await enrich_web_chat_user_message_for_agent(
+                content_stripped,
+                request.media_url,
+                request.media_type,
+                conversation.agent_id,
+                agent_data_cached["config"],
+            )
+            agent_user_message = enriched
+            msg_metadata.update(vision_meta)
+
     # Create user message
     message_id = str(uuid.uuid4())
     user_message = Message(
@@ -183,10 +264,13 @@ async def send_message(
         conversation_id=conversation_id,
         agent_id=conversation.agent_id,
         role=MessageRole.USER,
-        content=request.content,
+        content=content_stripped,
         channel=conversation.channel,
         external_user_id=conversation.external_user_id,
         timestamp=utc_now(),
+        metadata=msg_metadata,
+        media_url=request.media_url,
+        media_type=request.media_type,
     )
 
     await deps.dynamodb.create_message(user_message)
@@ -206,7 +290,7 @@ async def send_message(
         )
 
     # Get agent configuration
-    agent_data = await deps.dynamodb.get_agent(conversation.agent_id)
+    agent_data = agent_data_cached or await deps.dynamodb.get_agent(conversation.agent_id)
     if not agent_data or "config" not in agent_data:
         raise HTTPException(status_code=404, detail="Agent not found or invalid configuration")
 
@@ -238,7 +322,7 @@ async def send_message(
         # Check if last message is from user and matches current message
         if (
             last_msg.get("role", "").lower() == "user"
-            and last_msg.get("content", "").strip() == request.content.strip()
+            and last_msg.get("content", "").strip() == content_stripped
         ):
             # Remove the duplicate current message from history
             conversation_history = conversation_history[:-1]
@@ -269,7 +353,7 @@ async def send_message(
     # Process message through agent service
     agent_service = create_agent_service(agent_config, deps.dynamodb, channel_sender)
     result = await agent_service.process_message(
-        user_message=request.content,
+        user_message=agent_user_message,
         conversation_id=conversation_id,
         conversation_history=conversation_history,
     )
@@ -283,7 +367,7 @@ async def send_message(
         return SendMessageResponse(
             message_id=message_id,
             role=role_value,
-            content=request.content,
+            content=user_message.content,
             timestamp=to_utc_iso_string(user_message.timestamp),
         )
 

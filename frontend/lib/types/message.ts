@@ -18,6 +18,15 @@ export interface Message {
 
 export interface SendMessageRequest {
   content: string;
+  media_url?: string;
+  media_type?: string;
+  media_filename?: string;
+}
+
+/** Payload from the chat input (text and/or file to upload). */
+export interface ChatSendPayload {
+  content: string;
+  file?: File | null;
 }
 
 export interface SendMessageResponse {

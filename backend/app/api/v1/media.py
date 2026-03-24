@@ -2,6 +2,7 @@
 
 import logging
 import mimetypes
+from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
@@ -47,36 +48,19 @@ def _classify_mimetype(mimetype: str) -> str:
     return "document"
 
 
-@router.post(
-    "/media/upload",
-    response_model=MediaUploadResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def upload_chat_media(
-    file: UploadFile = File(...),
-    _admin: str = require_admin(),
-):
-    """Upload a chat media file (image / video / audio / document) to Cloudinary.
-
-    Returns the public Cloudinary URL that can be included in admin messages
-    or displayed in conversation view.
-
-    - Max file size: 20 MB
-    - Allowed: images, videos, audio, PDF, Word documents
-    """
-    # Read file bytes
-    file_bytes = await file.read()
-
+def store_chat_media_bytes(
+    file_bytes: bytes,
+    filename: str,
+    content_type: Optional[str] = None,
+) -> MediaUploadResponse:
+    """Validate size/type, upload to chat CDN. Raises HTTPException on failure."""
     if len(file_bytes) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024 * 1024)} MB.",
         )
 
-    filename = file.filename or "upload"
-
-    # Determine MIME type
-    mimetype = file.content_type or ""
+    mimetype = (content_type or "").strip()
     if not mimetype or mimetype == "application/octet-stream":
         guessed, _ = mimetypes.guess_type(filename)
         mimetype = guessed or "application/octet-stream"
@@ -98,11 +82,38 @@ async def upload_chat_media(
         )
 
     media_type = _classify_mimetype(mimetype)
-    logger.info(f"Chat media uploaded: {filename} ({media_type}, {len(file_bytes)} bytes) → {url}")
-
+    logger.info(
+        "Chat media stored: %s (%s, %s bytes) → %s",
+        filename,
+        media_type,
+        len(file_bytes),
+        url,
+    )
     return MediaUploadResponse(
         url=url,
         media_type=media_type,
         filename=filename,
         size_bytes=len(file_bytes),
     )
+
+
+@router.post(
+    "/media/upload",
+    response_model=MediaUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_chat_media(
+    file: UploadFile = File(...),
+    _admin: str = require_admin(),
+):
+    """Upload a chat media file (image / video / audio / document) to Cloudinary.
+
+    Returns the public Cloudinary URL that can be included in admin messages
+    or displayed in conversation view.
+
+    - Max file size: 20 MB
+    - Allowed: images, videos, audio, PDF, Word documents
+    """
+    file_bytes = await file.read()
+    filename = file.filename or "upload"
+    return store_chat_media_bytes(file_bytes, filename, file.content_type)

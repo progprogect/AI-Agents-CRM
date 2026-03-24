@@ -18,6 +18,20 @@ from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
 
+# https://core.telegram.org/bots/api#sendmessage — text max 4096 characters
+TELEGRAM_MESSAGE_MAX_LENGTH = 4096
+
+
+def _truncate_for_telegram_text(text: str, max_len: int = TELEGRAM_MESSAGE_MAX_LENGTH) -> str:
+    """Telegram returns 400 if text exceeds the limit (e.g. long LLM escalation reasons)."""
+    if len(text) <= max_len:
+        return text
+    suffix = "\n…(truncated)"
+    take = max_len - len(suffix)
+    if take < 64:
+        return text[:max_len]
+    return text[:take] + suffix
+
 
 class TelegramService:
     """Service for Telegram Bot messaging integration."""
@@ -352,8 +366,16 @@ class TelegramService:
     ) -> dict[str, Any]:
         """Send notification message directly (without ChannelBinding)."""
         url = f"{self.TELEGRAM_API_BASE_URL}{bot_token}/sendMessage"
+        text = _truncate_for_telegram_text(message_text)
+        if len(text) < len(message_text):
+            logger.warning(
+                "Telegram notification truncated: %s → %s chars (API limit %s)",
+                len(message_text),
+                len(text),
+                TELEGRAM_MESSAGE_MAX_LENGTH,
+            )
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json={"chat_id": chat_id, "text": message_text})
+            response = await client.post(url, json={"chat_id": chat_id, "text": text})
             response.raise_for_status()
             result = response.json()
             if not result.get("ok"):

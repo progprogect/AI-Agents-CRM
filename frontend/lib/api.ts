@@ -304,6 +304,26 @@ export const api = {
     );
   },
 
+  async uploadWebChatMedia(
+    conversationId: string,
+    file: File
+  ): Promise<{ url: string; media_type: string; filename: string; size_bytes: number }> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(
+      `/api/v1/chat/conversations/${conversationId}/media/upload`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new ApiError(res.status.toString(), err.detail || "Media upload failed");
+    }
+    return res.json();
+  },
+
   // Admin endpoints
   async listConversations(params?: {
     agent_id?: string;

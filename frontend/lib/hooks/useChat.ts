@@ -3,7 +3,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { api, ApiError } from "@/lib/api";
 import { WebSocketClient } from "@/lib/websocket";
-import type { Message, WebSocketMessage } from "@/lib/types/message";
+import type {
+  ChatSendPayload,
+  Message,
+  WebSocketMessage,
+} from "@/lib/types/message";
 
 export function useChat(conversationId: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -53,13 +57,16 @@ export function useChat(conversationId: string | null) {
     wsClientRef.current = client;
 
     const unsubscribeMessage = client.onMessage((message: WebSocketMessage) => {
-      if (message.type === "message" && message.content) {
+      if (
+        message.type === "message" &&
+        (message.content || message.media_url)
+      ) {
         const newMessage: Message = {
           message_id: message.message_id || `temp-${Date.now()}`,
           conversation_id: conversationId,
           agent_id: "", // Will be filled from conversation
           role: message.role || "agent",
-          content: message.content,
+          content: message.content || "",
           timestamp: message.timestamp || new Date().toISOString(),
           media_url: message.media_url ?? null,
           media_type: message.media_type ?? null,
@@ -128,35 +135,67 @@ export function useChat(conversationId: string | null) {
   }, [messages]);
 
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!conversationId || !content.trim()) {
+    async ({ content, file }: ChatSendPayload) => {
+      if (!conversationId) {
         return;
       }
 
-      // Optimistically add user message
+      const trimmed = (content || "").trim();
+      let uploaded:
+        | { url: string; media_type: string; filename: string }
+        | undefined;
+      if (file) {
+        try {
+          uploaded = await api.uploadWebChatMedia(conversationId, file);
+        } catch (err) {
+          if (err instanceof ApiError) {
+            setError(err.message);
+          } else {
+            setError("Failed to upload image");
+          }
+          return;
+        }
+      }
+
+      if (!trimmed && !uploaded) {
+        return;
+      }
+
       const userMessage: Message = {
         message_id: `temp-${Date.now()}`,
         conversation_id: conversationId,
         agent_id: "",
         role: "user",
-        content: content.trim(),
+        content: trimmed,
         timestamp: new Date().toISOString(),
+        media_url: uploaded?.url ?? null,
+        media_type: uploaded?.media_type ?? null,
+        media_filename: uploaded?.filename ?? null,
       };
 
       setMessages((prev) => [...prev, userMessage]);
 
       try {
+        if (uploaded) {
+          await api.sendMessage(conversationId, {
+            content: trimmed,
+            media_url: uploaded.url,
+            media_type: uploaded.media_type,
+            media_filename: uploaded.filename,
+          });
+          const updatedMessages = await api.getMessages(conversationId);
+          setMessages(updatedMessages);
+          return;
+        }
+
         if (isConnected && wsClientRef.current) {
-          wsClientRef.current.sendMessage(content.trim());
+          wsClientRef.current.sendMessage(trimmed);
         } else {
-          // Fallback to REST API
-          await api.sendMessage(conversationId, { content: content.trim() });
-          // Reload messages to get the response
+          await api.sendMessage(conversationId, { content: trimmed });
           const updatedMessages = await api.getMessages(conversationId);
           setMessages(updatedMessages);
         }
       } catch (err) {
-        // Remove optimistic message on error
         setMessages((prev) =>
           prev.filter((m) => m.message_id !== userMessage.message_id)
         );

@@ -528,7 +528,7 @@ export default function ConversationDetailPage() {
             </div>
 
             <MessageInput
-              onSend={handleSendAdminMessage}
+              onSend={({ content }) => void handleSendAdminMessage(content)}
               placeholder={pendingMedia ? t("addCaptionPlaceholder") : t("typeMessagePlaceholder")}
               disabled={isUploadingMedia}
               allowEmpty={!!pendingMedia}
