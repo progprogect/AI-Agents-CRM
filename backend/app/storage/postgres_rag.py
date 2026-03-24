@@ -27,6 +27,18 @@ def cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     return dot / (m1 * m2)
 
 
+def _is_user_chat_media_storage_url(file_url: str | None) -> bool:
+    """User chat images use ``upload_chat_media`` (path contains ``/chat-media/``).
+
+    RAG documents use ``upload_file`` under ``{agent_id}/…`` and never that segment.
+    Excluding chat-media URLs from retrieval is defense in depth: user uploads are
+    not part of the knowledge corpus and must not appear in semantic search results.
+    """
+    if not file_url:
+        return False
+    return "/chat-media/" in file_url.lower()
+
+
 class PostgresRAGClient:
     """PostgreSQL RAG client with JSONB embeddings."""
 
@@ -160,6 +172,8 @@ class PostgresRAGClient:
                     else:
                         emb = []
                     if not emb:
+                        continue
+                    if _is_user_chat_media_storage_url(row.get("file_url")):
                         continue
                     sim = cosine_similarity(query_embedding, emb)
                     if sim >= score_threshold:
@@ -306,7 +320,8 @@ class PostgresRAGClient:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     """SELECT document_id, content, embedding FROM rag_documents
-                       WHERE agent_id = $1 AND file_type = 'image'""",
+                       WHERE agent_id = $1 AND file_type = 'image'
+                         AND (file_url IS NULL OR file_url NOT ILIKE '%/chat-media/%')""",
                     agent_id,
                 )
             result = []

@@ -35,6 +35,9 @@ class StorageService(ABC):
 
         Path convention: {base_folder}/{agent_id}/{folder_path}/{document_id}.ext
 
+        This is the only storage path indexed into RAG (``rag_documents``). Do not use
+        for end-user chat attachments; those use :meth:`upload_chat_media` instead.
+
         Returns the public URL of the uploaded file.
         """
 
@@ -47,7 +50,9 @@ class StorageService(ABC):
     ) -> str:
         """Upload a chat media file (image/video/audio/document).
 
-        Path convention: {base_folder}/chat-media/{uuid}.ext
+        Path convention: {base_folder}/chat-media/{uuid}.ext — **not** indexed to RAG;
+        user messages reference this URL only. Knowledge-base files must use
+        :meth:`upload_file` via the RAG admin pipeline.
 
         Returns the public URL.
         """
