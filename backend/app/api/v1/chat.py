@@ -41,6 +41,13 @@ class CreateConversationResponse(BaseModel):
     status: str
 
 
+class CloseConversationResponse(BaseModel):
+    """Response after closing a web chat conversation (idempotent)."""
+
+    conversation_id: str
+    status: str
+
+
 class SendMessageRequest(BaseModel, MessageContentValidator):
     """Request to send a message."""
 
@@ -104,6 +111,46 @@ async def get_conversation(
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
     return conversation
+
+
+@router.post(
+    "/conversations/{conversation_id}/close",
+    response_model=CloseConversationResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def close_conversation(
+    conversation_id: str,
+    deps: CommonDependencies = Depends(),
+):
+    """Close a web chat conversation (public). Idempotent if already closed."""
+    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    if not conversation:
+        raise ConversationNotFoundError(conversation_id)
+
+    channel_value = get_enum_value(conversation.channel)
+    if channel_value != MessageChannel.WEB_CHAT.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Only web_chat conversations can be closed via this endpoint",
+        )
+
+    status_value = get_enum_value(conversation.status)
+    if status_value == ConversationStatus.CLOSED.value:
+        return CloseConversationResponse(
+            conversation_id=conversation_id,
+            status=ConversationStatus.CLOSED.value,
+        )
+
+    closed_at_iso = to_utc_iso_string(utc_now())
+    await deps.dynamodb.update_conversation(
+        conversation_id=conversation_id,
+        status=ConversationStatus.CLOSED,
+        closed_at=closed_at_iso,
+    )
+    return CloseConversationResponse(
+        conversation_id=conversation_id,
+        status=ConversationStatus.CLOSED.value,
+    )
 
 
 @router.post(

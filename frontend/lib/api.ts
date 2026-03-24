@@ -265,6 +265,15 @@ export const api = {
     );
   },
 
+  async closePublicConversation(
+    conversationId: string
+  ): Promise<{ conversation_id: string; status: string }> {
+    return request<{ conversation_id: string; status: string }>(
+      `/api/v1/chat/conversations/${conversationId}/close`,
+      { method: "POST" }
+    );
+  },
+
   async getAdminConversation(conversationId: string): Promise<Conversation> {
     return request<Conversation>(
       `/api/v1/admin/conversations/${conversationId}`,

@@ -14,6 +14,10 @@ export function useChat(conversationId: string | null) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsClientRef = useRef<WebSocketClient | null>(null);
 
+  useEffect(() => {
+    setError(null);
+  }, [conversationId]);
+
   // Load initial messages
   useEffect(() => {
     if (!conversationId) {
