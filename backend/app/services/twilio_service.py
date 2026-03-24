@@ -16,6 +16,17 @@ from app.utils.datetime_utils import utc_now
 logger = logging.getLogger(__name__)
 
 TWILIO_API_BASE = "https://api.twilio.com/2010-04-01"
+_TWILIO_LOG_BODY_MAX = 2000
+_TWILIO_LOG_URL_MAX = 200
+
+
+def _twilio_media_url_for_log(url: str | None) -> str:
+    if not url:
+        return ""
+    u = url.strip()
+    if len(u) > _TWILIO_LOG_URL_MAX:
+        return f"{u[:_TWILIO_LOG_URL_MAX]}…(len={len(u)})"
+    return u
 
 
 class TwilioWhatsAppService:
@@ -281,14 +292,49 @@ class TwilioWhatsAppService:
         if media_url:
             data["MediaUrl"] = media_url
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, data=data, auth=(account_sid, auth_token))
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(url, data=data, auth=(account_sid, auth_token))
+        except httpx.RequestError as exc:
+            logger.error(
+                "Twilio WhatsApp send request failed (network): account_sid=%s from=%s to=%s "
+                "has_media=%s media_type=%s body_len=%s media_url=%s error=%s",
+                account_sid,
+                from_addr,
+                to_addr,
+                bool(media_url),
+                media_type or "",
+                len(text or ""),
+                _twilio_media_url_for_log(media_url),
+                exc,
+                exc_info=True,
+            )
+            return {}
 
         if not response.is_success:
-            logger.error(f"Twilio send_message failed: {response.status_code} {response.text}")
+            body = (response.text or "")[:_TWILIO_LOG_BODY_MAX]
+            logger.error(
+                "Twilio WhatsApp send rejected: status=%s account_sid=%s from=%s to=%s "
+                "has_media=%s media_type=%s body_len=%s media_url=%s response=%s",
+                response.status_code,
+                account_sid,
+                from_addr,
+                to_addr,
+                bool(media_url),
+                media_type or "",
+                len(text or ""),
+                _twilio_media_url_for_log(media_url),
+                body,
+            )
         else:
             label = f"{media_type} + text" if (media_url and text) else ("media" if media_url else "text")
-            logger.info(f"Twilio WhatsApp {label} sent to {to}")
+            logger.info(
+                "Twilio WhatsApp sent: kind=%s to=%s body_len=%s has_media=%s",
+                label,
+                to,
+                len(text or ""),
+                bool(media_url),
+            )
 
         return response.json() if response.content else {}
 

@@ -16,6 +16,18 @@ logger = logging.getLogger(__name__)
 
 GRAPH_API_BASE = "https://graph.facebook.com/v18.0"
 
+_LOG_BODY_MAX = 2000
+_LOG_URL_MAX = 200
+
+
+def _url_for_log(url: str | None) -> str:
+    if not url:
+        return ""
+    u = url.strip()
+    if len(u) > _LOG_URL_MAX:
+        return f"{u[:_LOG_URL_MAX]}…(len={len(u)})"
+    return u
+
 
 class WhatsAppService:
     """Service for WhatsApp Cloud API messaging integration."""
@@ -254,14 +266,57 @@ class WhatsAppService:
                 if text and wa_media_type in ("image", "video", "document"):
                     media_payload[wa_media_type]["caption"] = text
 
-                resp = await client.post(url, json=media_payload, headers=headers)
-                if not resp.is_success:
-                    logger.error(f"WhatsApp media send failed: {resp.status_code} {resp.text}")
-                    # Fall through to send text separately
+                try:
+                    resp = await client.post(url, json=media_payload, headers=headers)
+                except httpx.RequestError as exc:
+                    logger.error(
+                        "WhatsApp Cloud API media request failed (network): phone_number_id=%s to=%s "
+                        "wa_media_type=%s client_media_type=%s link=%s caption_len=%s error=%s",
+                        phone_number_id,
+                        to,
+                        wa_media_type,
+                        media_type,
+                        _url_for_log(media_url),
+                        len(text or ""),
+                        exc,
+                        exc_info=True,
+                    )
                     if text:
+                        logger.warning(
+                            "WhatsApp: retrying as text-only after media transport error to=%s",
+                            to,
+                        )
                         return await self.send_message(phone_number_id, access_token, to, text)
+                    return {}
+
+                if not resp.is_success:
+                    body = (resp.text or "")[:_LOG_BODY_MAX]
+                    logger.error(
+                        "WhatsApp Cloud API media send rejected: status=%s phone_number_id=%s to=%s "
+                        "wa_media_type=%s client_media_type=%s link=%s caption_len=%s response=%s",
+                        resp.status_code,
+                        phone_number_id,
+                        to,
+                        wa_media_type,
+                        media_type,
+                        _url_for_log(media_url),
+                        len(text or ""),
+                        body,
+                    )
+                    if text:
+                        logger.warning(
+                            "WhatsApp: falling back to text-only after media API error to=%s",
+                            to,
+                        )
+                        return await self.send_message(phone_number_id, access_token, to, text)
+                    return {}
                 else:
-                    logger.info(f"WhatsApp {media_type} sent to {to}")
+                    logger.info(
+                        "WhatsApp media sent: to=%s wa_media_type=%s client_media_type=%s",
+                        to,
+                        wa_media_type,
+                        media_type,
+                    )
                 return resp.json() if resp.content else {}
 
             # Text-only
@@ -273,11 +328,37 @@ class WhatsAppService:
                     "type": "text",
                     "text": {"preview_url": False, "body": text},
                 }
-                response = await client.post(url, json=payload, headers=headers)
+                try:
+                    response = await client.post(url, json=payload, headers=headers)
+                except httpx.RequestError as exc:
+                    logger.error(
+                        "WhatsApp Cloud API text request failed (network): phone_number_id=%s to=%s "
+                        "body_len=%s error=%s",
+                        phone_number_id,
+                        to,
+                        len(text),
+                        exc,
+                        exc_info=True,
+                    )
+                    return {}
                 if not response.is_success:
-                    logger.error(f"WhatsApp send_message failed: {response.status_code} {response.text}")
+                    body = (response.text or "")[:_LOG_BODY_MAX]
+                    logger.error(
+                        "WhatsApp Cloud API text send rejected: status=%s phone_number_id=%s to=%s "
+                        "body_len=%s response=%s",
+                        response.status_code,
+                        phone_number_id,
+                        to,
+                        len(text),
+                        body,
+                    )
                 else:
-                    logger.info(f"WhatsApp message sent to {to}")
+                    logger.info("WhatsApp text sent: to=%s len=%s", to, len(text))
                 return response.json() if response.content else {}
 
+        logger.warning(
+            "WhatsApp send_message: nothing to send (empty text and no media) phone_number_id=%s to=%s",
+            phone_number_id,
+            to,
+        )
         return {}

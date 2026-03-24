@@ -259,6 +259,18 @@ class WhatsAppSender(ChannelSender):
         access_token = await binding_service.get_access_token(binding_id)
         provider = (binding.metadata or {}).get("provider", "meta")
 
+        logger.info(
+            "WhatsApp outbound: conversation_id=%s binding_id=%s provider=%s to=%s "
+            "has_media=%s media_type=%s text_chars=%s",
+            conversation_id,
+            binding_id,
+            provider,
+            external_user_id,
+            bool(media_url),
+            media_type or "",
+            len(message_text or ""),
+        )
+
         if provider == "twilio":
             from app.services.twilio_service import TwilioWhatsAppService
 
@@ -272,15 +284,25 @@ class WhatsAppSender(ChannelSender):
                 raise ValueError(
                     f"Twilio binding {binding_id} is missing metadata.account_sid"
                 )
-            await twilio_svc.send_message(
-                account_sid=account_sid,
-                auth_token=access_token,
-                from_number=from_number,
-                to=external_user_id,
-                text=message_text,
-                media_url=media_url,
-                media_type=media_type,
-            )
+            try:
+                await twilio_svc.send_message(
+                    account_sid=account_sid,
+                    auth_token=access_token,
+                    from_number=from_number,
+                    to=external_user_id,
+                    text=message_text,
+                    media_url=media_url,
+                    media_type=media_type,
+                )
+            except Exception:
+                logger.error(
+                    "WhatsAppSender Twilio send raised: conversation_id=%s binding_id=%s to=%s",
+                    conversation_id,
+                    binding_id,
+                    external_user_id,
+                    exc_info=True,
+                )
+                raise
         else:
             # Default: Meta Cloud API
             if not self.whatsapp_service:
@@ -293,14 +315,26 @@ class WhatsAppSender(ChannelSender):
                 _bs = ChannelBindingService(self.dynamodb, _sm)
                 self.whatsapp_service = WhatsAppService(_bs, self.dynamodb, get_settings())
 
-            await self.whatsapp_service.send_message(
-                phone_number_id=binding.channel_account_id,
-                access_token=access_token,
-                to=external_user_id,
-                text=message_text,
-                media_url=media_url,
-                media_type=media_type,
-            )
+            try:
+                await self.whatsapp_service.send_message(
+                    phone_number_id=binding.channel_account_id,
+                    access_token=access_token,
+                    to=external_user_id,
+                    text=message_text,
+                    media_url=media_url,
+                    media_type=media_type,
+                )
+            except Exception:
+                logger.error(
+                    "WhatsAppSender Meta Cloud API send raised: conversation_id=%s "
+                    "binding_id=%s phone_number_id=%s to=%s",
+                    conversation_id,
+                    binding_id,
+                    binding.channel_account_id,
+                    external_user_id,
+                    exc_info=True,
+                )
+                raise
 
 
 def get_channel_sender(
