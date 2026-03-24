@@ -3,7 +3,7 @@
 import hashlib
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from langchain_classic.chains import LLMChain
 from langchain_classic.output_parsers import PydanticOutputParser
@@ -20,7 +20,86 @@ from app.services.llm_factory import LLMFactory
 
 logger = logging.getLogger(__name__)
 
-ESCALATION_PROMPT_VERSION = 3
+ESCALATION_PROMPT_VERSION = 4
+
+# Classifier output cap (long system prompt + format_instructions needs headroom)
+_ESCALATION_MAX_OUTPUT_TOKENS = 768
+
+ESCALATION_JSON_ENVELOPE = """
+Output format (strict):
+- Reply with ONLY one valid JSON object matching the schema in the next section.
+- Do not wrap in markdown code fences (no ```).
+- No preamble, no explanation before or after the JSON.
+"""
+
+_ESCALATION_OUTPUT_PARSER = PydanticOutputParser(pydantic_object=EscalationDecision)
+
+
+def _extract_llm_text(result: Any) -> str:
+    """Normalize LLMChain / chat model return payload to a single string."""
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        return result.strip()
+    if isinstance(result, dict):
+        t = result.get("text")
+        if t is None:
+            return ""
+        if hasattr(t, "content"):
+            content = getattr(t, "content", None)
+            if isinstance(content, str):
+                return content.strip()
+            if isinstance(content, list):
+                parts: list[str] = []
+                for block in content:
+                    if isinstance(block, str):
+                        parts.append(block)
+                    elif isinstance(block, dict) and "text" in block:
+                        parts.append(str(block["text"]))
+                    else:
+                        parts.append(str(block))
+                return "".join(parts).strip()
+        if isinstance(t, str):
+            return t.strip()
+    return str(result).strip()
+
+
+def _parse_escalation_json_lenient_dict(raw: str) -> dict:
+    """Extract a JSON object from model output (markdown fences, leading prose)."""
+    s = raw.strip()
+    if "```" in s:
+        for chunk in s.split("```"):
+            chunk = chunk.strip()
+            if chunk.lower().startswith("json"):
+                chunk = chunk[4:].strip()
+            if chunk.startswith("{"):
+                s = chunk
+                break
+    start = s.find("{")
+    if start < 0:
+        raise ValueError("No JSON object found in escalation LLM output")
+    decoder = json.JSONDecoder()
+    obj, _end = decoder.raw_decode(s[start:])
+    if not isinstance(obj, dict):
+        raise ValueError("Escalation JSON root must be an object")
+    return obj
+
+
+def parse_escalation_from_llm_text(raw: str) -> EscalationDecision:
+    """Try strict PydanticOutputParser, then lenient JSON + model_validate (fill_missing_llm_fields)."""
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError("Empty escalation LLM output")
+    try:
+        return _ESCALATION_OUTPUT_PARSER.parse(text)
+    except Exception as first_err:
+        logger.debug(
+            "Escalation strict parse failed, trying lenient JSON: %s",
+            first_err,
+            exc_info=False,
+        )
+        data = _parse_escalation_json_lenient_dict(text)
+        return EscalationDecision.model_validate(data)
 
 
 def _collect_escalation_rules(config: Optional[AgentConfig]) -> list[tuple[str, str, str]]:
@@ -215,7 +294,7 @@ class EscalationChain:
 
     def _escalation_llm_config(self, config: AgentConfig) -> AgentConfig:
         """Classifier: deterministic, bounded output size."""
-        max_out = min(config.llm.max_output_tokens, 512)
+        max_out = min(config.llm.max_output_tokens, _ESCALATION_MAX_OUTPUT_TOKENS)
         new_llm = config.llm.model_copy(update={"temperature": 0.0, "max_output_tokens": max_out})
         return config.model_copy(update={"llm": new_llm})
 
@@ -242,7 +321,11 @@ class EscalationChain:
                     timeout=settings.openai_timeout,
                 )
 
-            system_prompt = self._build_system_prompt(config)
+            base_system = self._build_system_prompt(config)
+            system_prompt = (
+                f"{base_system}\n{ESCALATION_JSON_ENVELOPE}\n"
+                f"{_ESCALATION_OUTPUT_PARSER.get_format_instructions()}"
+            )
             logger.debug(
                 "EscalationChain: creating new LLMChain. cache_key=%s agent_id=%s",
                 cache_key,
@@ -255,28 +338,10 @@ class EscalationChain:
                     ("human", "User message: {message}\n\nConversation context: {context}"),
                 ]
             )
-            output_parser = PydanticOutputParser(pydantic_object=EscalationDecision)
-            self._chains[cache_key] = LLMChain(
-                llm=llm,
-                prompt=prompt_template,
-                output_parser=output_parser,
-            )
+            # Parsing in detect(): strict parser first, then lenient JSON (phase 2 fallback).
+            self._chains[cache_key] = LLMChain(llm=llm, prompt=prompt_template)
 
         return self._chains[cache_key]
-
-    def _parse_chain_output(self, result: object) -> EscalationDecision:
-        if isinstance(result, EscalationDecision):
-            return result
-        if isinstance(result, dict):
-            if "text" in result:
-                parsed = result["text"]
-                if isinstance(parsed, EscalationDecision):
-                    return parsed
-                if isinstance(parsed, dict):
-                    return EscalationDecision(**parsed)
-                raise ValueError(f"Unexpected text payload type: {type(parsed)}")
-            return EscalationDecision(**result)
-        raise ValueError(f"Unexpected chain result type: {type(result)}")
 
     async def detect(
         self,
@@ -300,7 +365,8 @@ class EscalationChain:
         for attempt in range(2):
             try:
                 result = await chain.ainvoke({"message": message, "context": context_str})
-                decision = self._parse_chain_output(result)
+                text = _extract_llm_text(result)
+                decision = parse_escalation_from_llm_text(text)
                 return decision
             except Exception as e:
                 last_error = e
