@@ -217,6 +217,10 @@ class ModerationConfig(BaseModel):
     """Moderation configuration."""
 
     provider: str = Field(default="openai")
+    model: Optional[str] = Field(
+        default=None,
+        description="Moderation model id (OpenAI: omni-moderation-latest; Google: gemini-*).",
+    )
     enabled: bool = Field(default=True)
     mode: str = Field(default="pre_and_post")
     categories: list[str] = Field(default_factory=list)
@@ -226,12 +230,29 @@ class ModerationConfig(BaseModel):
     @classmethod
     def validate_provider(cls, v: str) -> str:
         """Validate moderation provider."""
-        valid_providers = ["openai"]
+        valid_providers = ["openai", "google_ai_studio"]
         if v not in valid_providers:
             raise ValueError(
                 f"Moderation provider must be one of: {', '.join(valid_providers)}"
             )
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_moderation_model(cls, data: Any) -> Any:
+        """Set default model when omitted (legacy configs without model field)."""
+        if not isinstance(data, dict):
+            return data
+        model = data.get("model")
+        if model is not None and str(model).strip():
+            return data
+        provider = data.get("provider", "openai")
+        data["model"] = (
+            "omni-moderation-latest"
+            if provider == "openai"
+            else "gemini-2.0-flash"
+        )
+        return data
 
     @field_validator("mode")
     @classmethod

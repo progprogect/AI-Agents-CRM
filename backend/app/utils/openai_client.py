@@ -161,9 +161,12 @@ class OpenAIClientWrapper:
         retry=retry_if_exception_type((Exception,)),
         reraise=True,
     )
-    async def moderate(self, input_text: str):
-        """Moderate content with retry."""
-        return await self.async_client.moderations.create(input=input_text)
+    async def moderate(self, input_text: str, model: Optional[str] = None):
+        """Moderate content with retry. Optional model (e.g. omni-moderation-latest)."""
+        kwargs: dict = {"input": input_text}
+        if model:
+            kwargs["model"] = model
+        return await self.async_client.moderations.create(**kwargs)
 
 
 class LLMFactory:

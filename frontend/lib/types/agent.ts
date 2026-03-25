@@ -131,6 +131,7 @@ export interface EmbeddingsConfig {
 
 export interface ModerationConfig {
   provider: string;
+  model?: string;
   enabled: boolean;
   mode: string;
   categories: string[];

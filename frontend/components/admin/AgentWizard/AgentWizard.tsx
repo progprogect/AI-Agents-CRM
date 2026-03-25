@@ -150,6 +150,7 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
           <ReviewStep
             config={state.config}
             isSubmitting={state.isSubmitting}
+            onUpdate={updateConfig}
             onSubmit={async (result) => {
               handleSuccess(result);
             }}

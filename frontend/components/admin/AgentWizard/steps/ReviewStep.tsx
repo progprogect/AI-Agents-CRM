@@ -8,6 +8,7 @@ import { Button } from "@/components/shared/Button";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { YAMLEditor } from "@/components/shared/YAMLEditor";
 import { Textarea } from "@/components/shared/Textarea";
+import { Select } from "@/components/shared/Select";
 import { api, ApiError } from "@/lib/api";
 import type { AgentConfigFormData } from "@/lib/utils/agentConfig";
 import { formDataToAgentConfig, generateAgentId } from "@/lib/utils/agentConfig";
@@ -18,9 +19,27 @@ export interface AgentWizardSuccessResult {
   ragEnabled: boolean;
 }
 
+const MODERATION_PROVIDER_OPTIONS = [
+  { value: "openai", label: "OpenAI Moderation API" },
+  { value: "google_ai_studio", label: "Google AI Studio (Gemini classifier)" },
+];
+
+const MODERATION_OPENAI_MODELS = [
+  { value: "omni-moderation-latest", label: "omni-moderation-latest" },
+  { value: "text-moderation-latest", label: "text-moderation-latest" },
+];
+
+const MODERATION_GEMINI_MODELS = [
+  { value: "gemini-2.0-flash", label: "gemini-2.0-flash" },
+  { value: "gemini-2.5-flash", label: "gemini-2.5-flash" },
+  { value: "gemini-2.5-flash-lite", label: "gemini-2.5-flash-lite" },
+  { value: "gemini-1.5-flash", label: "gemini-1.5-flash" },
+];
+
 interface ReviewStepProps {
   config: Partial<AgentConfigFormData>;
   isSubmitting?: boolean;
+  onUpdate: (config: Partial<AgentConfigFormData>) => void;
   onSubmit: (result?: AgentWizardSuccessResult) => Promise<void> | void;
   onStartOver?: () => void;
   onBack?: () => void;
@@ -44,6 +63,7 @@ If the service does not match the user's needs — suggest another direction and
 export const ReviewStep: React.FC<ReviewStepProps> = ({
   config,
   isSubmitting: externalIsSubmitting,
+  onUpdate,
   onSubmit,
   onStartOver,
   onBack,
@@ -231,6 +251,19 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
 
   const submitting = isSubmitting || externalIsSubmitting;
 
+  const modProvider = config.moderation_provider || "openai";
+  const modModelOptions =
+    modProvider === "google_ai_studio" ? MODERATION_GEMINI_MODELS : MODERATION_OPENAI_MODELS;
+  const defaultModModel =
+    modProvider === "google_ai_studio" ? "gemini-2.0-flash" : "omni-moderation-latest";
+  const modModel = config.moderation_model || defaultModModel;
+
+  const handleModerationProviderChange = (newProvider: string) => {
+    const nextModel =
+      newProvider === "google_ai_studio" ? "gemini-2.0-flash" : "omni-moderation-latest";
+    onUpdate({ moderation_provider: newProvider, moderation_model: nextModel });
+  };
+
   const tabButton = (mode: typeof editMode, label: string) => (
     <Button
       variant={editMode === mode ? "primary" : "secondary"}
@@ -304,7 +337,36 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
               {config.llm_model || "gpt-4o-mini"}
             </span>
           </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-gray-600 shrink-0">{t("moderationProviderSummary")}:</span>
+            <span className="font-medium text-gray-900 text-right break-all">
+              {modProvider === "google_ai_studio" ? "Google AI Studio" : "OpenAI"} / {modModel}
+            </span>
+          </div>
         </div>
+      </div>
+
+      {/* Moderation (provider + model) */}
+      <div className="bg-white rounded-sm border border-gray-200 p-6 space-y-4">
+        <h4 className="text-md font-medium text-gray-900">{t("moderationSectionTitle")}</h4>
+        <p className="text-sm text-gray-600">{t("moderationSectionDesc")}</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Select
+            label={t("moderationProvider")}
+            value={modProvider}
+            onChange={(e) => handleModerationProviderChange(e.target.value)}
+            options={MODERATION_PROVIDER_OPTIONS}
+          />
+          <Select
+            label={t("moderationModel")}
+            value={modModel}
+            onChange={(e) => onUpdate({ moderation_model: e.target.value })}
+            options={modModelOptions.map(({ value, label }) => ({ value, label }))}
+          />
+        </div>
+        {modProvider === "google_ai_studio" && (
+          <p className="text-xs text-gray-500">{t("moderationGeminiHint")}</p>
+        )}
       </div>
 
       {/* Configuration views */}

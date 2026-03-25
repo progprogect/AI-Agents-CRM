@@ -82,6 +82,11 @@ export interface AgentConfigFormData {
   system_persona?: string;
   system_hard_rules?: string;
   system_goal?: string;
+
+  /** Moderation (Step 7 — Review) */
+  moderation_provider?: string;
+  moderation_model?: string;
+  moderation_enabled?: boolean;
 }
 
 /**
@@ -111,6 +116,9 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     llm_model: "gpt-4o-mini",
     llm_temperature: 0.2,
     llm_max_tokens: 600,
+    moderation_provider: "openai",
+    moderation_model: "omni-moderation-latest",
+    moderation_enabled: true,
     // System prompt defaults (empty — user fills in)
     system_persona: "",
     system_hard_rules: "",
@@ -182,6 +190,9 @@ export function agentConfigToFormData(
     // RAG providers
     rag_embeddings_provider: agentConfig.rag?.embeddings_provider || agentConfig.embeddings?.provider || "openai",
     rag_vision_provider: agentConfig.rag?.vision_provider || agentConfig.llm?.provider || "openai",
+    moderation_provider: agentConfig.moderation?.provider || "openai",
+    moderation_model: agentConfig.moderation?.model,
+    moderation_enabled: agentConfig.moderation?.enabled !== false,
   };
 
   return formData;
@@ -273,8 +284,13 @@ export function formDataToAgentConfig(
         : [],
     },
     moderation: {
-      provider: "openai",
-      enabled: true,
+      provider: formData.moderation_provider || "openai",
+      model:
+        formData.moderation_model ||
+        (formData.moderation_provider === "google_ai_studio"
+          ? "gemini-2.0-flash"
+          : "omni-moderation-latest"),
+      enabled: formData.moderation_enabled !== false,
       mode: "pre_and_post",
     },
     escalation: {

@@ -70,7 +70,7 @@ def validate_embeddings_provider(provider: str) -> str:
 
 def validate_moderation_provider(provider: str) -> str:
     """Validate moderation provider."""
-    valid_providers = ["openai"]
+    valid_providers = ["openai", "google_ai_studio"]
     if provider not in valid_providers:
         raise ValueError(
             f"Moderation provider must be one of: {', '.join(valid_providers)}"

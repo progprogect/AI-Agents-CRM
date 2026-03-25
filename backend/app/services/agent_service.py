@@ -59,7 +59,7 @@ class AgentService:
         if not self.agent_config.moderation.enabled:
             return None
         flagged, moderation_result = await self.moderation_service.check_pre_moderation(
-            user_message, self.agent_config.agent_id
+            user_message, self.agent_config
         )
         if flagged:
             await self.dynamodb.update_conversation(
@@ -281,7 +281,7 @@ class AgentService:
         # Post-moderation check
         if self.agent_config.moderation.enabled:
             flagged, moderation_result = await self.moderation_service.check_post_moderation(
-                response, self.agent_config.agent_id
+                response, self.agent_config
             )
             if flagged:
                 # Update conversation status
