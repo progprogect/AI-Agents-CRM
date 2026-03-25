@@ -4,9 +4,11 @@ This is the main entry point for the Agent API.
 Supports PostgreSQL or DynamoDB backend for storage, cache, and RAG.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Optional
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -67,8 +69,21 @@ async def lifespan(app: FastAPI):
     llm_factory.clear_cache()
 
     logger.info("All caches cleared on startup")
+
+    debounce_shutdown: Optional[asyncio.Event] = None
+    debounce_task: Optional[asyncio.Task] = None
+    if settings.agent_reply_debounce_seconds > 0:
+        from app.services.agent_reply_coordinator import run_debounce_poll_loop
+
+        debounce_shutdown = asyncio.Event()
+        debounce_task = asyncio.create_task(run_debounce_poll_loop(debounce_shutdown))
+
     yield
     # Shutdown
+    if debounce_shutdown is not None:
+        debounce_shutdown.set()
+    if debounce_task is not None:
+        await debounce_task
     if settings.database_backend == "postgres":
         from app.storage.postgres import close_pool
         await close_pool()

@@ -1,0 +1,318 @@
+"""Debounced agent replies: Redis-backed version + due queue + multi-worker safety."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from typing import Literal
+
+from app.config import get_settings
+from app.models.conversation import ConversationStatus
+from app.models.message import MessageChannel
+from app.services.agent_service import create_agent_service
+from app.services.conversation_service import build_conversation_history_for_agent
+from app.storage.redis import get_redis_client
+from app.utils.datetime_utils import to_utc_iso_string, utc_now
+from app.utils.enum_helpers import get_enum_value
+
+logger = logging.getLogger(__name__)
+
+KEY_VER_PREFIX = "agent_reply:ver:"
+KEY_LAST_INPUT_PREFIX = "agent_reply:last_input:"
+KEY_LAST_PLAIN_PREFIX = "agent_reply:last_plain:"
+KEY_DUE = "agent_reply:due"
+KEY_LOCK_PREFIX = "agent_reply:lock:"
+LOCK_TTL_SECONDS = 120
+
+
+def _last_input_ttl_seconds(debounce_seconds: int) -> int:
+    return max(300, debounce_seconds * 3)
+
+
+NotifyResult = Literal["disabled", "scheduled", "fallback"]
+
+
+async def notify_user_message_saved(
+    conversation_id: str,
+    *,
+    agent_user_message: str,
+    last_user_plain_content: str,
+) -> NotifyResult:
+    """
+    Bump reply version, store last user texts for the worker, schedule fire in due ZSET.
+
+    Returns:
+        disabled — debounce is 0; caller runs the synchronous agent path.
+        scheduled — Redis updated; poll loop will run the agent.
+        fallback — Redis unavailable; caller should run process_message immediately.
+    """
+    settings = get_settings()
+    debounce = settings.agent_reply_debounce_seconds
+    if debounce <= 0:
+        return "disabled"
+
+    redis = get_redis_client()
+    if not await redis.ping():
+        logger.warning(
+            "Redis unavailable for agent reply debounce; falling back to immediate reply",
+            extra={"conversation_id": conversation_id},
+        )
+        return "fallback"
+
+    ttl = _last_input_ttl_seconds(debounce)
+    ver_key = f"{KEY_VER_PREFIX}{conversation_id}"
+    fire_at_ms = int(time.time() * 1000) + debounce * 1000
+
+    try:
+        await redis.incr(ver_key)
+        await redis.set(f"{KEY_LAST_INPUT_PREFIX}{conversation_id}", agent_user_message, ttl=ttl)
+        await redis.set(
+            f"{KEY_LAST_PLAIN_PREFIX}{conversation_id}",
+            last_user_plain_content,
+            ttl=ttl,
+        )
+        await redis.zadd(KEY_DUE, {conversation_id: float(fire_at_ms)})
+    except Exception as exc:
+        logger.warning(
+            "Redis error scheduling debounced reply: %s; falling back to immediate reply",
+            exc,
+            extra={"conversation_id": conversation_id},
+            exc_info=True,
+        )
+        return "fallback"
+
+    return "scheduled"
+
+
+async def _current_reply_version(redis, conversation_id: str) -> int:
+    v = await redis.get(f"{KEY_VER_PREFIX}{conversation_id}")
+    try:
+        return int(v or 0)
+    except ValueError:
+        return 0
+
+
+async def execute_agent_reply(conversation_id: str, expected_version: int) -> None:
+    """Load context and run the agent once; skip if conversation state or version is stale."""
+    from app.dependencies import get_dynamodb
+
+    dynamodb = get_dynamodb()
+    settings = get_settings()
+    redis = get_redis_client()
+
+    conversation = await dynamodb.get_conversation(conversation_id)
+    if not conversation:
+        logger.debug("execute_agent_reply: conversation missing %s", conversation_id)
+        return
+
+    status_value = get_enum_value(conversation.status)
+    if status_value == ConversationStatus.CLOSED.value:
+        return
+    if status_value in (
+        ConversationStatus.NEEDS_HUMAN.value,
+        ConversationStatus.HUMAN_ACTIVE.value,
+    ):
+        return
+
+    if await _current_reply_version(redis, conversation_id) != expected_version:
+        return
+
+    agent_input = await redis.get(f"{KEY_LAST_INPUT_PREFIX}{conversation_id}")
+    plain = await redis.get(f"{KEY_LAST_PLAIN_PREFIX}{conversation_id}")
+    if not agent_input:
+        agent_input = plain or ""
+    if not plain:
+        plain = agent_input
+
+    if not agent_input.strip() and not plain.strip():
+        msgs = await dynamodb.list_messages(conversation_id, limit=50, reverse=True)
+        for m in msgs:
+            if get_enum_value(m.role) == "user":
+                plain = m.content
+                agent_input = m.content
+                break
+
+    if not agent_input.strip():
+        logger.warning(
+            "execute_agent_reply: empty user message for %s",
+            conversation_id,
+        )
+        return
+
+    last_plain_for_history = plain.strip() if plain else agent_input.strip()
+    conversation_history = await build_conversation_history_for_agent(
+        dynamodb,
+        conversation_id,
+        last_plain_for_history,
+    )
+
+    agent_data = await dynamodb.get_agent(conversation.agent_id)
+    if not agent_data or "config" not in agent_data:
+        logger.error("execute_agent_reply: agent %s missing", conversation.agent_id)
+        return
+
+    from app.models.agent_config import AgentConfig
+    from app.services.channel_binding_service import ChannelBindingService
+    from app.services.channel_sender import get_channel_sender
+    from app.services.instagram_service import InstagramService
+    from app.services.telegram_service import TelegramService
+    from app.storage.resolver import get_secrets_manager
+
+    agent_config = AgentConfig.from_dict(agent_data["config"])
+    conversation_channel = get_enum_value(conversation.channel)
+
+    instagram_service = None
+    telegram_service = None
+    if conversation_channel != MessageChannel.WEB_CHAT.value:
+        secrets_manager = get_secrets_manager()
+        binding_service = ChannelBindingService(dynamodb, secrets_manager)
+        if conversation_channel == MessageChannel.INSTAGRAM.value:
+            instagram_service = InstagramService(binding_service, dynamodb, settings)
+        elif conversation_channel == MessageChannel.TELEGRAM.value:
+            telegram_service = TelegramService(binding_service, dynamodb, settings)
+
+    channel_enum = (
+        MessageChannel(conversation_channel)
+        if isinstance(conversation_channel, str)
+        else conversation.channel
+    )
+    channel_sender = get_channel_sender(
+        channel_enum, dynamodb, instagram_service, telegram_service
+    )
+
+    async def is_reply_stale() -> bool:
+        cur = await _current_reply_version(redis, conversation_id)
+        return cur != expected_version
+
+    agent_service = create_agent_service(agent_config, dynamodb, channel_sender)
+    try:
+        result = await agent_service.process_message(
+            user_message=agent_input,
+            conversation_id=conversation_id,
+            conversation_history=conversation_history,
+            is_reply_stale=is_reply_stale,
+        )
+    except Exception as exc:
+        logger.error(
+            "execute_agent_reply failed for %s: %s",
+            conversation_id,
+            exc,
+            exc_info=True,
+        )
+        return
+
+    if result.get("aborted"):
+        return
+
+    if get_enum_value(conversation.channel) == MessageChannel.WEB_CHAT.value:
+        from app.api.websocket import connection_manager
+
+        if result.get("escalate"):
+            await connection_manager.send_message(
+                conversation_id,
+                {
+                    "type": "handoff",
+                    "conversation_id": conversation_id,
+                    "reason": result.get("escalation_reason", "Escalation required"),
+                    "status": ConversationStatus.NEEDS_HUMAN.value,
+                    "timestamp": None,
+                },
+            )
+            return
+
+        agent_response = result.get("response")
+        agent_message_id = result.get("agent_message_id")
+        agent_message_timestamp = result.get("agent_message_timestamp")
+        if agent_response and agent_message_id:
+            timestamp = agent_message_timestamp or to_utc_iso_string(utc_now())
+            ws_payload: dict = {
+                "type": "message",
+                "message_id": agent_message_id,
+                "role": "agent",
+                "content": agent_response,
+                "timestamp": timestamp,
+            }
+            if result.get("rag_media_url"):
+                ws_payload["media_url"] = result["rag_media_url"]
+                ws_payload["media_type"] = result.get("rag_media_type")
+            await connection_manager.send_message(conversation_id, ws_payload)
+    elif result.get("escalate"):
+        return
+
+    if not result.get("escalate"):
+        conv_after = await dynamodb.get_conversation(conversation_id)
+        if conv_after and get_enum_value(conv_after.status) != ConversationStatus.AI_ACTIVE.value:
+            await dynamodb.update_conversation(
+                conversation_id=conversation_id,
+                status=ConversationStatus.AI_ACTIVE,
+            )
+
+
+async def _poll_due_once() -> None:
+    settings = get_settings()
+    if settings.agent_reply_debounce_seconds <= 0:
+        return
+
+    redis = get_redis_client()
+    if not await redis.ping():
+        return
+
+    now_ms = int(time.time() * 1000)
+    try:
+        due = await redis.zrangebyscore(KEY_DUE, "-inf", now_ms, num=50)
+    except Exception as exc:
+        logger.debug("agent_reply poll zrangebyscore: %s", exc)
+        return
+
+    for conversation_id in due:
+        lock_key = f"{KEY_LOCK_PREFIX}{conversation_id}"
+        acquired = await redis.set_nx_ex(lock_key, "1", LOCK_TTL_SECONDS)
+        if not acquired:
+            continue
+
+        try:
+            score = await redis.zscore(KEY_DUE, conversation_id)
+            if score is None or score > now_ms:
+                continue
+
+            expected_version = await _current_reply_version(redis, conversation_id)
+            if expected_version <= 0:
+                await redis.zrem(KEY_DUE, conversation_id)
+                continue
+
+            await redis.zrem(KEY_DUE, conversation_id)
+
+            async def _run(cid: str, ver: int) -> None:
+                try:
+                    await execute_agent_reply(cid, ver)
+                except Exception as exc:
+                    logger.error(
+                        "Debounced agent reply task failed: %s",
+                        exc,
+                        extra={"conversation_id": cid},
+                        exc_info=True,
+                    )
+
+            asyncio.create_task(_run(conversation_id, expected_version))
+        finally:
+            await redis.delete(lock_key)
+
+
+async def run_debounce_poll_loop(shutdown: asyncio.Event) -> None:
+    """Poll Redis due set periodically until shutdown is set."""
+    settings = get_settings()
+    if settings.agent_reply_debounce_seconds <= 0:
+        return
+
+    logger.info(
+        "Agent reply debounce poll loop started (%ss)",
+        settings.agent_reply_debounce_seconds,
+    )
+    while True:
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=0.5)
+            break
+        except asyncio.TimeoutError:
+            await _poll_due_once()
+    logger.info("Agent reply debounce poll loop stopped")

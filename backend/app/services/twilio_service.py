@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 import httpx
 
+from app.config import get_settings
 from app.models.conversation import Conversation, ConversationStatus, MarketingStatus
 from app.models.message import Message, MessageChannel, MessageRole
 from app.utils.datetime_utils import utc_now
@@ -295,6 +296,27 @@ class TwilioWhatsAppService:
 
             wa_sender = WhatsAppSender(None, self.dynamodb, twilio_service=self)
             agent_service = create_agent_service(agent_config, self.dynamodb, wa_sender)
+
+            settings = get_settings()
+            if settings.agent_reply_debounce_seconds > 0:
+                from app.services.agent_reply_coordinator import notify_user_message_saved
+                from app.storage.redis import get_redis_client
+
+                redis_client = get_redis_client()
+                if await redis_client.ping():
+                    mod_early = await agent_service.run_pre_moderation_guard(
+                        agent_user_message, conversation_id
+                    )
+                    if mod_early and mod_early.get("escalate"):
+                        return
+                    notify_result = await notify_user_message_saved(
+                        conversation_id,
+                        agent_user_message=agent_user_message,
+                        last_user_plain_content=body.strip(),
+                    )
+                    if notify_result == "scheduled":
+                        return
+
             await agent_service.process_message(
                 user_message=agent_user_message,
                 conversation_id=conversation_id,

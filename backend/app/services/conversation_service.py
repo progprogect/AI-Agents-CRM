@@ -10,6 +10,36 @@ from app.utils.datetime_utils import utc_now
 from app.utils.enum_helpers import get_enum_value
 
 
+async def build_conversation_history_for_agent(
+    dynamodb: DynamoDBClient,
+    conversation_id: str,
+    last_user_message_for_dedup: str,
+    *,
+    limit: int = 50,
+) -> list[dict]:
+    """Build chronological chat history for the LLM and drop duplicate last user turn."""
+    history_messages = await dynamodb.list_messages(
+        conversation_id=conversation_id,
+        limit=limit,
+        reverse=True,
+    )
+    conversation_history = [
+        {
+            "role": get_enum_value(msg.role),
+            "content": msg.content,
+        }
+        for msg in reversed(history_messages)
+    ]
+    if conversation_history:
+        last_msg = conversation_history[-1]
+        if (
+            last_msg.get("role", "").lower() == "user"
+            and last_msg.get("content", "").strip() == last_user_message_for_dedup.strip()
+        ):
+            conversation_history = conversation_history[:-1]
+    return conversation_history
+
+
 class ConversationService:
     """Service for managing conversations and processing messages."""
 
@@ -29,34 +59,11 @@ class ConversationService:
         if not conversation:
             raise ValueError(f"Conversation {conversation_id} not found")
 
-        # Get conversation history (last 50 messages for context)
-        # Note: list_messages returns messages in reverse order (newest first) by default
-        history_messages = await self.dynamodb.list_messages(
-            conversation_id=conversation_id,
-            limit=50,
-            reverse=True,  # Get newest first (default), will be reversed to chronological order
+        conversation_history = await build_conversation_history_for_agent(
+            self.dynamodb,
+            conversation_id,
+            user_message,
         )
-        # Reverse to get chronological order (oldest first) for LLM context
-        conversation_history = [
-            {
-                "role": get_enum_value(msg.role),
-                "content": msg.content,
-            }
-            for msg in reversed(history_messages)  # Reverse to chronological order
-        ]
-        
-        # CRITICAL FIX: Exclude the current user message from history
-        # The current message is already saved to DB and will be passed as 'input' to LLM
-        # Including it in chat_history causes duplication and context confusion
-        if conversation_history:
-            last_msg = conversation_history[-1]
-            # Check if last message is from user and matches current message
-            if (
-                last_msg.get("role", "").lower() == "user"
-                and last_msg.get("content", "").strip() == user_message.strip()
-            ):
-                # Remove the duplicate current message from history
-                conversation_history = conversation_history[:-1]
 
         # Process through agent service
         result = await agent_service.process_message(

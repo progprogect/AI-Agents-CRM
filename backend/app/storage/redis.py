@@ -101,6 +101,63 @@ class RedisClient:
             return False
         return bool(await self.client.exists(key))
 
+    async def ping(self) -> bool:
+        """Return True if Redis responds to PING."""
+        await self.connect()
+        if not self.client:
+            return False
+        try:
+            return bool(await self.client.ping())
+        except Exception:
+            return False
+
+    async def set_nx_ex(self, key: str, value: str, ttl_seconds: int) -> bool:
+        """SET key NX EX ttl — returns True if lock acquired."""
+        await self.connect()
+        if not self.client:
+            return False
+        return bool(await self.client.set(key, value, nx=True, ex=ttl_seconds))
+
+    async def zadd(self, key: str, mapping: dict[str, float]) -> int:
+        """ZADD; mapping is member -> score."""
+        await self.connect()
+        if not self.client:
+            return 0
+        return int(await self.client.zadd(key, mapping))
+
+    async def zrangebyscore(
+        self,
+        key: str,
+        min_score: str | float,
+        max_score: str | float,
+        start: int = 0,
+        num: int = 100,
+    ) -> list[str]:
+        """ZRANGEBYSCORE with LIMIT."""
+        await self.connect()
+        if not self.client:
+            return []
+        return list(
+            await self.client.zrangebyscore(
+                key, min_score, max_score, start=start, num=num
+            )
+        )
+
+    async def zrem(self, key: str, member: str) -> int:
+        """ZREM one member."""
+        await self.connect()
+        if not self.client:
+            return 0
+        return int(await self.client.zrem(key, member))
+
+    async def zscore(self, key: str, member: str) -> Optional[float]:
+        """ZSCORE."""
+        await self.connect()
+        if not self.client:
+            return None
+        s = await self.client.zscore(key, member)
+        return float(s) if s is not None else None
+
     async def set_conversation_status(
         self, conversation_id: str, status: str, ttl: Optional[int] = None
     ) -> bool:

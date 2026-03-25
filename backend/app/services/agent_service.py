@@ -3,6 +3,7 @@
 import logging
 import re
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Optional
 
 from app.api.exceptions import MessageProcessingError
@@ -49,31 +50,43 @@ class AgentService:
             rag_service=rag_service,
         )
 
+    async def run_pre_moderation_guard(
+        self,
+        user_message: str,
+        conversation_id: str,
+    ) -> Optional[dict]:
+        """Pre-moderation only; used before debounce scheduling so toxic turns do not queue a reply."""
+        if not self.agent_config.moderation.enabled:
+            return None
+        flagged, moderation_result = await self.moderation_service.check_pre_moderation(
+            user_message, self.agent_config.agent_id
+        )
+        if flagged:
+            await self.dynamodb.update_conversation(
+                conversation_id=conversation_id,
+                status=ConversationStatus.NEEDS_HUMAN,
+                handoff_reason="Content moderation violation",
+            )
+            return {
+                "response": None,
+                "escalate": True,
+                "escalation_reason": "Content moderation violation",
+                "moderation_result": moderation_result,
+            }
+        return None
+
     async def process_message(
         self,
         user_message: str,
         conversation_id: str,
         conversation_history: Optional[list[dict]] = None,
+        is_reply_stale: Optional[Callable[[], Awaitable[bool]]] = None,
     ) -> dict:
         """Process user message and generate response."""
         # Pre-moderation check
-        if self.agent_config.moderation.enabled:
-            flagged, moderation_result = await self.moderation_service.check_pre_moderation(
-                user_message, self.agent_config.agent_id
-            )
-            if flagged:
-                # Update conversation status
-                await self.dynamodb.update_conversation(
-                    conversation_id=conversation_id,
-                    status=ConversationStatus.NEEDS_HUMAN,
-                    handoff_reason="Content moderation violation",
-                )
-                return {
-                    "response": None,
-                    "escalate": True,
-                    "escalation_reason": "Content moderation violation",
-                    "moderation_result": moderation_result,
-                }
+        mod_early = await self.run_pre_moderation_guard(user_message, conversation_id)
+        if mod_early:
+            return mod_early
 
         # Escalation detection
         escalation_decision = await self.escalation_service.detect_escalation(
@@ -124,6 +137,14 @@ class AgentService:
                 )
             
             return result
+
+        if is_reply_stale and await is_reply_stale():
+            return {
+                "response": None,
+                "escalate": False,
+                "aborted": True,
+                "agent_message_id": None,
+            }
 
         # Retrieve RAG context (text + any media attachments) in one DB call
         rag_context = None
@@ -275,6 +296,14 @@ class AgentService:
                     "escalation_reason": "Generated content moderation violation",
                     "moderation_result": moderation_result,
                 }
+
+        if is_reply_stale and await is_reply_stale():
+            return {
+                "response": None,
+                "escalate": False,
+                "aborted": True,
+                "agent_message_id": None,
+            }
 
         # Save agent message to database first (conversation loaded after LLM step above)
         agent_message_id = None

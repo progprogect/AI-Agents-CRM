@@ -13,13 +13,16 @@ from app.dependencies import CommonDependencies
 from app.models.agent_config import AgentConfig
 from app.models.conversation import Conversation, ConversationStatus, MarketingStatus
 from app.models.message import Message, MessageChannel, MessageRole
+from app.services.agent_reply_coordinator import notify_user_message_saved
 from app.services.agent_service import create_agent_service
 from app.services.channel_sender import get_channel_sender
+from app.services.conversation_service import build_conversation_history_for_agent
 from app.services.web_chat_user_media import enrich_web_chat_user_message_for_agent
 from app.services.channel_binding_service import ChannelBindingService
 from app.services.instagram_service import InstagramService
 from app.services.telegram_service import TelegramService
 from app.config import get_settings
+from app.storage.redis import get_redis_client
 from app.storage.resolver import get_secrets_manager
 from app.utils.enum_helpers import get_enum_value
 from app.utils.datetime_utils import utc_now, to_utc_iso_string
@@ -296,36 +299,11 @@ async def send_message(
 
     agent_config = AgentConfig.from_dict(agent_data["config"])
 
-    # Get conversation history (last 50 messages for context)
-    # Note: list_messages returns messages in reverse order (newest first) by default
-    # We need chronological order (oldest first) for LLM context
-    history_messages = await deps.dynamodb.list_messages(
-        conversation_id=conversation_id,
-        limit=50,
-        reverse=True,  # Get newest first (default)
+    conversation_history = await build_conversation_history_for_agent(
+        deps.dynamodb,
+        conversation_id,
+        content_stripped,
     )
-    # Reverse to get chronological order (oldest first) for LLM context
-    # After reverse: [oldest_message, ..., newest_message]
-    conversation_history = [
-        {
-            "role": get_enum_value(msg.role),
-            "content": msg.content,
-        }
-        for msg in reversed(history_messages)  # Reverse to chronological order (oldest first)
-    ]
-    
-    # CRITICAL FIX: Exclude the current user message from history
-    # The current message is already saved to DB and will be passed as 'input' to LLM
-    # Including it in chat_history causes duplication and context confusion
-    if conversation_history:
-        last_msg = conversation_history[-1]
-        # Check if last message is from user and matches current message
-        if (
-            last_msg.get("role", "").lower() == "user"
-            and last_msg.get("content", "").strip() == content_stripped
-        ):
-            # Remove the duplicate current message from history
-            conversation_history = conversation_history[:-1]
 
     # Get channel sender for the conversation's channel
     # Handle both enum and string channel (from DynamoDB)
@@ -350,8 +328,38 @@ async def send_message(
         channel_enum, deps.dynamodb, instagram_service, telegram_service
     )
 
-    # Process message through agent service
     agent_service = create_agent_service(agent_config, deps.dynamodb, channel_sender)
+
+    settings = get_settings()
+    if settings.agent_reply_debounce_seconds > 0:
+        redis_client = get_redis_client()
+        if await redis_client.ping():
+            mod_early = await agent_service.run_pre_moderation_guard(
+                agent_user_message, conversation_id
+            )
+            if mod_early and mod_early.get("escalate"):
+                role_value = get_enum_value(user_message.role)
+                return SendMessageResponse(
+                    message_id=message_id,
+                    role=role_value,
+                    content=user_message.content,
+                    timestamp=to_utc_iso_string(user_message.timestamp),
+                )
+            notify_result = await notify_user_message_saved(
+                conversation_id,
+                agent_user_message=agent_user_message,
+                last_user_plain_content=content_stripped,
+            )
+            if notify_result == "scheduled":
+                role_value = get_enum_value(user_message.role)
+                return SendMessageResponse(
+                    message_id=message_id,
+                    role=role_value,
+                    content=user_message.content,
+                    timestamp=to_utc_iso_string(user_message.timestamp),
+                )
+
+    # Process message through agent service
     result = await agent_service.process_message(
         user_message=agent_user_message,
         conversation_id=conversation_id,

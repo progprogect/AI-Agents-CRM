@@ -13,8 +13,11 @@ from app.dependencies import CommonDependencies
 from app.models.agent_config import AgentConfig
 from app.models.conversation import ConversationStatus
 from app.models.message import Message, MessageChannel, MessageRole
+from app.config import get_settings
+from app.services.agent_reply_coordinator import notify_user_message_saved
 from app.services.agent_service import create_agent_service
 from app.services.conversation_service import ConversationService
+from app.storage.redis import get_redis_client
 from app.storage.dynamodb import DynamoDBClient
 from app.utils.datetime_utils import to_utc_iso_string, utc_now
 from app.utils.enum_helpers import get_enum_value
@@ -122,7 +125,6 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
 
     try:
         # Get dependencies (simplified - in production use proper DI)
-        from app.config import get_settings
         from app.dependencies import get_dynamodb
 
         settings = get_settings()
@@ -306,7 +308,36 @@ async def _handle_message(
     
     web_chat_sender = WebChatSender(dynamodb)
     agent_service = create_agent_service(agent_config, dynamodb, web_chat_sender)
-    
+
+    settings = get_settings()
+    if settings.agent_reply_debounce_seconds > 0:
+        redis_client = get_redis_client()
+        if await redis_client.ping():
+            mod_early = await agent_service.run_pre_moderation_guard(
+                content, conversation_id
+            )
+            if mod_early and mod_early.get("escalate"):
+                await connection_manager.send_message(
+                    conversation_id,
+                    {
+                        "type": "handoff",
+                        "conversation_id": conversation_id,
+                        "reason": mod_early.get(
+                            "escalation_reason", "Escalation required"
+                        ),
+                        "status": ConversationStatus.NEEDS_HUMAN.value,
+                        "timestamp": None,
+                    },
+                )
+                return
+            notify_result = await notify_user_message_saved(
+                conversation_id,
+                agent_user_message=content,
+                last_user_plain_content=content,
+            )
+            if notify_result == "scheduled":
+                return
+
     try:
         result = await conversation_service.process_message(
             conversation_id=conversation_id,

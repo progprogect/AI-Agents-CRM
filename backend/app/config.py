@@ -136,6 +136,15 @@ class Settings(BaseSettings):
     redis_password: Optional[str] = Field(default=None, description="Redis password")
     redis_ssl: bool = Field(default=False, description="Use SSL for Redis")
 
+    # Debounced agent replies (requires Redis when > 0; 0 = immediate reply per message)
+    agent_reply_debounce_seconds: int = Field(
+        default=0,
+        ge=0,
+        le=3600,
+        description="Wait N seconds after last user message before running the agent; 0 disables debounce",
+        alias="AGENT_REPLY_DEBOUNCE_SECONDS",
+    )
+
     # Auth / JWT
     jwt_secret_key: Optional[str] = Field(
         default=None, description="Secret key for signing JWT tokens"

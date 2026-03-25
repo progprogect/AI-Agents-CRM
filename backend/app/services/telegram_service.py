@@ -221,6 +221,27 @@ class TelegramService:
 
                 telegram_sender = TelegramSender(self, self.dynamodb)
                 agent_service = create_agent_service(agent_config, self.dynamodb, telegram_sender)
+
+                settings = get_settings()
+                if settings.agent_reply_debounce_seconds > 0:
+                    from app.services.agent_reply_coordinator import notify_user_message_saved
+                    from app.storage.redis import get_redis_client
+
+                    redis_client = get_redis_client()
+                    if await redis_client.ping():
+                        mod_early = await agent_service.run_pre_moderation_guard(
+                            message_text, conversation.conversation_id
+                        )
+                        if mod_early and mod_early.get("escalate"):
+                            return
+                        notify_result = await notify_user_message_saved(
+                            conversation.conversation_id,
+                            agent_user_message=message_text,
+                            last_user_plain_content=message_text.strip(),
+                        )
+                        if notify_result == "scheduled":
+                            return
+
                 result = await agent_service.process_message(
                     user_message=message_text,
                     conversation_id=conversation.conversation_id,
