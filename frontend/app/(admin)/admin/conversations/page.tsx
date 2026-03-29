@@ -22,6 +22,7 @@ import { Tooltip } from "@/components/shared/Tooltip";
 import { UserAvatar } from "@/components/shared/UserAvatar";
 import { api } from "@/lib/api";
 import Link from "next/link";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type { Conversation, CRMStage } from "@/lib/types/conversation";
 import type { Agent } from "@/lib/types/agent";
 import { getChannelDisplay } from "@/lib/utils/channelDisplay";
@@ -165,7 +166,8 @@ export default function ConversationsPage() {
   const [agents, setAgents] = useState<Map<string, Agent>>(new Map());
   const [isLoadingAgents, setIsLoadingAgents] = useState(true);
   const [crmStages, setCrmStages] = useState<CRMStage[]>([]);
-  const [sortPreset, setSortPreset] = useState<SortPreset>("created_desc");
+  const [sortPreset, setSortPreset] = useState<SortPreset>("updated_desc");
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const [attentionFirst, setAttentionFirst] = useState(false);
   const [createdFrom, setCreatedFrom] = useState("");
   const [createdTo, setCreatedTo] = useState("");
@@ -276,41 +278,67 @@ export default function ConversationsPage() {
         className="mb-6 min-w-0 rounded-sm border border-[#251D1C]/15 bg-[#FAF9F8] p-3 shadow-sm sm:p-5"
         aria-label={t("filtersPanelAria")}
       >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[#251D1C]/10 pb-4 mb-5">
+        <div
+          className={`flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${
+            filtersExpanded ? "border-b border-[#251D1C]/10 pb-4 mb-5" : ""
+          }`}
+        >
           <h2 className="text-xs font-semibold uppercase tracking-wider text-[#443C3C]">
             {t("filtersPanelTitle")}
           </h2>
-          <div
-            className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
-              isConnected
-                ? "border-emerald-200/80 bg-white text-emerald-900 shadow-sm"
-                : "border-gray-200 bg-white text-gray-600"
-            }`}
-            title={isConnected ? t("liveConnection") : t("pollingMode")}
-          >
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${
-                isConnected ? "bg-emerald-500" : "bg-gray-400"
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <div
+              className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
+                isConnected
+                  ? "border-emerald-200/80 bg-white text-emerald-900 shadow-sm"
+                  : "border-gray-200 bg-white text-gray-600"
               }`}
-              aria-hidden
-            />
-            <span>{isConnected ? t("live") : t("polling")}</span>
+              title={isConnected ? t("liveConnection") : t("pollingMode")}
+            >
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  isConnected ? "bg-emerald-500" : "bg-gray-400"
+                }`}
+                aria-hidden
+              />
+              <span>{isConnected ? t("live") : t("polling")}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFiltersExpanded((v) => !v)}
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm border border-[#251D1C]/20 bg-white px-3 py-2 text-xs font-medium text-[#443C3C] shadow-sm transition-colors hover:border-[#251D1C]/40 hover:bg-[#EEEAE7]/50"
+              aria-expanded={filtersExpanded}
+              aria-controls="conversations-filters-body"
+            >
+              {filtersExpanded ? (
+                <>
+                  <ChevronUp className="h-4 w-4 shrink-0" aria-hidden />
+                  {t("hideFilters")}
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4 shrink-0" aria-hidden />
+                  {t("showFilters")}
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        <div className="mb-5">
-          <Input
-            label={t("searchLabel")}
-            type="text"
-            placeholder={t("searchPlaceholder")}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full"
-            autoComplete="off"
-          />
-        </div>
+        <div id="conversations-filters-body" hidden={!filtersExpanded}>
+            <div className="mb-5">
+              <Input
+                label={t("searchLabel")}
+                type="text"
+                placeholder={t("searchPlaceholder")}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-base sm:text-sm min-h-[44px]"
+                autoComplete="off"
+              />
+            </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 mb-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 mb-5">
           <Select
             label={t("status")}
             value={filter}
@@ -343,68 +371,69 @@ export default function ConversationsPage() {
                 { value: "updated_asc", label: t("sortUpdatedOldest") },
               ]}
             />
-          </div>
-        </div>
-
-        <div className="border-t border-[#251D1C]/10 pt-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#443C3C] mb-3">
-            {t("dateRangeSection")}
-          </p>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
-            <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
-              <div className="w-full min-w-0 sm:max-w-[200px] sm:flex-1">
-                <Input
-                  type="date"
-                  label={t("createdFromLabel")}
-                  value={createdFrom}
-                  onChange={(e) => setCreatedFrom(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-              <span
-                className="hidden shrink-0 self-center pb-2 text-sm text-gray-400 sm:block"
-                aria-hidden
-              >
-                —
-              </span>
-              <div className="w-full min-w-0 sm:max-w-[200px] sm:flex-1">
-                <Input
-                  type="date"
-                  label={t("createdToLabel")}
-                  value={createdTo}
-                  onChange={(e) => setCreatedTo(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-[42px] w-full shrink-0 sm:w-auto"
-                onClick={() => {
-                  setCreatedFrom("");
-                  setCreatedTo("");
-                }}
-              >
-                {t("resetDateFilter")}
-              </Button>
+            </div>
             </div>
 
-            <div className="lg:border-l lg:border-[#251D1C]/10 lg:pl-6">
-              <span className="mb-1 block text-sm font-medium text-gray-700">
-                {t("fieldOptions")}
-              </span>
-              <label className="flex min-h-[42px] cursor-pointer items-center gap-3 rounded-sm border border-gray-300 bg-white px-3 py-2 shadow-sm transition-colors hover:border-gray-400">
-                <input
-                  type="checkbox"
-                  checked={attentionFirst}
-                  onChange={(e) => setAttentionFirst(e.target.checked)}
-                  className="h-4 w-4 shrink-0 rounded border-gray-300 text-[#251D1C] focus:ring-[#251D1C]"
-                />
-                <span className="text-sm text-gray-800 select-none">{t("attentionFirst")}</span>
-              </label>
+            <div className="border-t border-[#251D1C]/10 pt-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#443C3C] mb-3">
+                {t("dateRangeSection")}
+              </p>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
+                <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+                  <div className="w-full min-w-0 sm:max-w-[200px] sm:flex-1">
+                    <Input
+                      type="date"
+                      label={t("createdFromLabel")}
+                      value={createdFrom}
+                      onChange={(e) => setCreatedFrom(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  <span
+                    className="hidden shrink-0 self-center pb-2 text-sm text-gray-400 sm:block"
+                    aria-hidden
+                  >
+                    —
+                  </span>
+                  <div className="w-full min-w-0 sm:max-w-[200px] sm:flex-1">
+                    <Input
+                      type="date"
+                      label={t("createdToLabel")}
+                      value={createdTo}
+                      onChange={(e) => setCreatedTo(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-[42px] w-full shrink-0 sm:w-auto"
+                    onClick={() => {
+                      setCreatedFrom("");
+                      setCreatedTo("");
+                    }}
+                  >
+                    {t("resetDateFilter")}
+                  </Button>
+                </div>
+
+                <div className="lg:border-l lg:border-[#251D1C]/10 lg:pl-6">
+                  <span className="mb-1 block text-sm font-medium text-gray-700">
+                    {t("fieldOptions")}
+                  </span>
+                  <label className="flex min-h-[42px] cursor-pointer items-center gap-3 rounded-sm border border-gray-300 bg-white px-3 py-2 shadow-sm transition-colors hover:border-gray-400">
+                    <input
+                      type="checkbox"
+                      checked={attentionFirst}
+                      onChange={(e) => setAttentionFirst(e.target.checked)}
+                      className="h-4 w-4 shrink-0 rounded border-gray-300 text-[#251D1C] focus:ring-[#251D1C]"
+                    />
+                    <span className="text-sm text-gray-800 select-none">{t("attentionFirst")}</span>
+                  </label>
+                </div>
+              </div>
             </div>
-          </div>
         </div>
       </section>
 

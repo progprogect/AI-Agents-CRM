@@ -97,6 +97,8 @@
     "createdToLabel": "Created to",
     "resetDateFilter": "Clear dates",
     "filtersPanelTitle": "Search & filters",
+    "showFilters": "Show filters",
+    "hideFilters": "Hide filters",
     "filtersPanelAria": "Search and filter the conversation list",
     "searchLabel": "Search",
     "fieldSort": "Sort order",

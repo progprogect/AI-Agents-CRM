@@ -97,6 +97,8 @@
     "createdToLabel": "Создан по",
     "resetDateFilter": "Сбросить даты",
     "filtersPanelTitle": "Поиск и фильтры",
+    "showFilters": "Показать фильтры",
+    "hideFilters": "Скрыть фильтры",
     "filtersPanelAria": "Поиск и фильтрация списка разговоров",
     "searchLabel": "Поиск",
     "fieldSort": "Сортировка",
