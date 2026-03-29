@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { api, ApiError } from "@/lib/api";
@@ -27,6 +27,11 @@ import { getConversationDisplayId } from "@/lib/utils/conversationDisplay";
 import { getAgentDisplayName, getAgentSpecialty, getClinicDisplayName, getAgentProfileDisplayName } from "@/lib/utils/agentDisplay";
 import { formatDateTime } from "@/lib/utils/timeFormat";
 import { toConversationStatus } from "@/lib/utils/statusHelpers";
+
+/** True if message is strictly after reset (same rule as backend for agent context). */
+function isMessageAfterContextReset(messageTimestamp: string, resetIso: string): boolean {
+  return new Date(messageTimestamp).getTime() > new Date(resetIso).getTime();
+}
 
 export default function ConversationDetailPage() {
   const params = useParams();
@@ -137,6 +142,7 @@ export default function ConversationDetailPage() {
       setActionError(null);
       await api.resetAgentContext(conversationId, "admin_user");
       await refreshConversation();
+      await refreshMessages();
     } catch (err) {
       const errorInfo = handleApiError(err);
       setActionError(getUserFriendlyMessage(errorInfo));
@@ -249,6 +255,12 @@ export default function ConversationDetailPage() {
       setIsUpdatingMarketingStatus(false);
     }
   };
+
+  const contextResetAt = conversation?.agent_context_reset_at;
+  const firstMessageAfterResetIndex = useMemo(() => {
+    if (!contextResetAt || !messages.length) return -1;
+    return messages.findIndex((m) => isMessageAfterContextReset(m.timestamp, contextResetAt));
+  }, [contextResetAt, messages]);
 
   if (isLoading) {
     return (
@@ -546,9 +558,56 @@ export default function ConversationDetailPage() {
               description={t("messagesWillAppear")}
             />
           ) : (
-            messages.map((message) => (
-              <MessageBubble key={message.message_id} message={message} />
-            ))
+            <>
+              {messages.map((message, index) => (
+                <Fragment key={message.message_id}>
+                  {contextResetAt &&
+                    firstMessageAfterResetIndex === index && (
+                      <div
+                        className="relative flex min-w-0 items-center gap-2 py-3 sm:gap-3"
+                        role="separator"
+                        aria-label={t("contextResetDividerAria")}
+                      >
+                        <div className="h-px min-w-[1.25rem] flex-1 bg-amber-300/90" />
+                        <div className="min-w-0 max-w-[min(100%,20rem)] shrink rounded-sm border border-amber-400/80 bg-amber-50 px-2.5 py-2 text-center shadow-sm sm:px-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-950">
+                            {t("contextResetDividerTitle")}
+                          </p>
+                          <p className="text-xs text-amber-900 mt-1 leading-snug break-words">
+                            {t("contextResetDividerCaption", {
+                              time: formatDateTime(contextResetAt),
+                            })}
+                          </p>
+                        </div>
+                        <div className="h-px min-w-[1.25rem] flex-1 bg-amber-300/90" />
+                      </div>
+                    )}
+                  <MessageBubble message={message} />
+                </Fragment>
+              ))}
+              {contextResetAt &&
+                firstMessageAfterResetIndex === -1 &&
+                messages.length > 0 && (
+                  <div
+                    className="relative flex min-w-0 items-center gap-2 pt-2 pb-1 sm:gap-3"
+                    role="separator"
+                    aria-label={t("contextResetDividerAria")}
+                  >
+                    <div className="h-px min-w-[1.25rem] flex-1 bg-amber-300/90" />
+                    <div className="min-w-0 max-w-[min(100%,20rem)] shrink rounded-sm border border-amber-400/80 bg-amber-50 px-2.5 py-2 text-center shadow-sm sm:px-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-950">
+                        {t("contextResetDividerTitle")}
+                      </p>
+                      <p className="text-xs text-amber-900 mt-1 leading-snug break-words">
+                        {t("contextResetDividerNoNewMessages", {
+                          time: formatDateTime(contextResetAt),
+                        })}
+                      </p>
+                    </div>
+                    <div className="h-px min-w-[1.25rem] flex-1 bg-amber-300/90" />
+                  </div>
+                )}
+            </>
           )}
         </div>
 
