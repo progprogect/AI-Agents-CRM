@@ -870,6 +870,7 @@ export const api = {
   ): Promise<{
     resources: CloudinaryRagResource[];
     next_cursor?: string | null;
+    total_count?: number | null;
     default_prefix: string;
   }> {
     const q = new URLSearchParams();
@@ -884,6 +885,7 @@ export const api = {
     ) as Promise<{
       resources: CloudinaryRagResource[];
       next_cursor?: string | null;
+      total_count?: number | null;
       default_prefix: string;
     }>;
   },

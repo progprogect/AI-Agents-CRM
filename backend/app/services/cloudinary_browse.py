@@ -45,8 +45,10 @@ def search_resources_by_prefix(
     if not p:
         raise ValueError("prefix is required")
 
-    # Wildcard prefix on public_id (folder paths use / in public_id)
-    expr = f"public_id:{p}*"
+    # Wildcard prefix on public_id (folder paths use / in public_id).
+    # Exclude video in the query so each page returns up to max_results *importable*
+    # assets; filtering videos only in Python used to shrink pages (many videos → few rows).
+    expr = f"public_id:{p}* AND (resource_type:image OR resource_type:raw)"
 
     q = cloudinary.search.Search().expression(expr).max_results(min(max_results, 100))
     if next_cursor:

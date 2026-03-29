@@ -276,7 +276,7 @@ async def list_cloudinary_rag_resources(
         None,
         description="public_id prefix (folder path). Defaults to CLOUDINARY_FOLDER/agent_id",
     ),
-    max_results: int = Query(30, ge=1, le=100),
+    max_results: int = Query(100, ge=1, le=100),
     next_cursor: Optional[str] = Query(None),
     deps: CommonDependencies = Depends(),
     _admin: str = require_admin(),
@@ -311,6 +311,7 @@ async def list_cloudinary_rag_resources(
     return {
         "resources": resources,
         "next_cursor": raw.get("next_cursor"),
+        "total_count": raw.get("total_count"),
         "default_prefix": default_prefix,
     }
 

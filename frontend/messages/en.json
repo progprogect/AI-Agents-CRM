@@ -380,6 +380,7 @@
     "prefixHint": "Only assets whose public_id starts with this path are listed and can be imported.",
     "loadList": "Load list",
     "loadMore": "Load more",
+    "cloudinaryListStats": "{loaded} of {total} matching files (images and documents). Use “Load more” if the list is longer.",
     "selectAllPage": "Select all on page",
     "clearSelection": "Clear selection",
     "selectedCount": "{count} selected",

@@ -55,6 +55,7 @@ export function CloudinaryImportModal({
   const [prefixInput, setPrefixInput] = useState("");
   const [listPrefix, setListPrefix] = useState("");
   const [resources, setResources] = useState<CloudinaryRagResource[]>([]);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -92,7 +93,7 @@ export function CloudinaryImportModal({
       setLoadingList(true);
       try {
         const params: { prefix?: string; max_results?: number; next_cursor?: string } = {
-          max_results: 30,
+          max_results: 100,
         };
         const p = opts.prefix !== undefined ? normalizePrefix(opts.prefix) : undefined;
         if (p) params.prefix = p;
@@ -105,6 +106,11 @@ export function CloudinaryImportModal({
 
         setResources((prev) => (opts.append ? [...prev, ...data.resources] : data.resources));
         setNextCursor(data.next_cursor ?? null);
+        if (typeof data.total_count === "number") {
+          setTotalCount(data.total_count);
+        } else if (!opts.append) {
+          setTotalCount(null);
+        }
 
         if (!opts.append) {
           setSelectedById(new Map());
@@ -329,6 +335,12 @@ export function CloudinaryImportModal({
                 <span className="text-sm text-gray-600">{t("selectedCount", { count: selectedCount })}</span>
               </div>
 
+              {totalCount != null && resources.length > 0 && (
+                <p className="text-xs text-gray-500">
+                  {t("cloudinaryListStats", { loaded: resources.length, total: totalCount })}
+                </p>
+              )}
+
               {loadingList && resources.length === 0 ? (
                 <div className="flex justify-center py-8">
                   <LoadingSpinner size="md" />
@@ -428,7 +440,7 @@ export function CloudinaryImportModal({
             </div>
           )}
 
-          <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-2 sm:justify-end">
             <Button
               type="button"
               variant="secondary"
