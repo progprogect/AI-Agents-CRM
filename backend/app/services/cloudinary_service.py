@@ -54,7 +54,8 @@ class CloudinaryService(StorageService):
 
         import cloudinary.uploader
 
-        base_folder = self.settings.cloudinary_folder.strip("/")
+        # Align with cloudinary_browse.normalize_public_id_prefix: default "rag" if unset/empty
+        base_folder = (self.settings.cloudinary_folder or "rag").strip("/")
         path_parts = [base_folder, agent_id]
         if folder_path:
             path_parts.append(folder_path.strip("/"))
@@ -95,7 +96,7 @@ class CloudinaryService(StorageService):
 
         import cloudinary.uploader
 
-        base_folder = self.settings.cloudinary_folder.strip("/")
+        base_folder = (self.settings.cloudinary_folder or "rag").strip("/")
         folder = f"{base_folder}/chat-media"
 
         ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
