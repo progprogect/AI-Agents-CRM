@@ -40,6 +40,8 @@ export interface Conversation {
   marketing_status?: MarketingStatus | null;
   rejection_reason?: string | null;
   crm_stage_id?: string | null;
+  /** ISO timestamp: messages at or before this time are excluded from agent LLM context */
+  agent_context_reset_at?: string | null;
 }
 
 export interface CreateConversationRequest {

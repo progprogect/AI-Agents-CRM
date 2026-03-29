@@ -77,6 +77,10 @@ class Conversation(BaseModel):
     crm_stage_id: Optional[str] = Field(
         None, description="CRM pipeline stage UUID"
     )
+    agent_context_reset_at: Optional[datetime] = Field(
+        None,
+        description="Messages at or before this time are excluded from agent/escalation context",
+    )
 
     class Config:
         """Pydantic config."""

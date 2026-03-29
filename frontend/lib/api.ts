@@ -387,6 +387,20 @@ export const api = {
     ) as Promise<{ conversation_id: string; status: string; message: string }>;
   },
 
+  async resetAgentContext(
+    conversationId: string,
+    adminId: string
+  ): Promise<{ conversation_id: string; agent_context_reset_at: string; message: string }> {
+    return request(
+      `/api/v1/admin/conversations/${conversationId}/reset-agent-context`,
+      {
+        method: "POST",
+        body: JSON.stringify({ admin_id: adminId }),
+      },
+      true
+    ) as Promise<{ conversation_id: string; agent_context_reset_at: string; message: string }>;
+  },
+
   async sendAdminMessage(
     conversationId: string,
     adminId: string,

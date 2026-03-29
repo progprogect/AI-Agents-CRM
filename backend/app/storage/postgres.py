@@ -58,7 +58,7 @@ def _parse_json(val: Any) -> Any:
 def _row_to_conv(row: asyncpg.Record) -> dict:
     """Convert DB row to conversation dict."""
     d = dict(row)
-    for k in ("created_at", "updated_at", "closed_at"):
+    for k in ("created_at", "updated_at", "closed_at", "agent_context_reset_at"):
         if d.get(k) and isinstance(d[k], datetime):
             d[k] = to_utc_iso_string(d[k])
     if "marketing_status" not in d or d["marketing_status"] is None:
@@ -129,10 +129,11 @@ class PostgreSQLClient:
                         conversation_id, agent_id, channel, external_conversation_id, external_user_id,
                         status, created_at, updated_at, closed_at, handoff_reason, request_type, ttl,
                         external_user_name, external_user_username, external_user_profile_pic,
-                        marketing_status, rejection_reason, crm_stage_id
+                        marketing_status, rejection_reason, crm_stage_id, agent_context_reset_at
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                        COALESCE($18::uuid, (SELECT id FROM crm_stages WHERE is_default = TRUE ORDER BY position ASC LIMIT 1))
+                        COALESCE($18::uuid, (SELECT id FROM crm_stages WHERE is_default = TRUE ORDER BY position ASC LIMIT 1)),
+                        $19
                     )
                     ON CONFLICT (conversation_id) DO UPDATE SET
                         updated_at = EXCLUDED.updated_at
@@ -155,6 +156,7 @@ class PostgreSQLClient:
                     ms,
                     conversation.rejection_reason,
                     conversation.crm_stage_id,
+                    conversation.agent_context_reset_at,
                 )
         return conversation
 

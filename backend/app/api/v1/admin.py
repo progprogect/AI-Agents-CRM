@@ -259,6 +259,54 @@ async def return_to_ai(
         )
 
 
+class ResetAgentContextRequest(BaseModel):
+    """Request to set agent context watermark (exclude older messages from LLM context)."""
+
+    admin_id: str = Field(..., description="Admin user ID", min_length=1)
+
+
+@router.post("/conversations/{conversation_id}/reset-agent-context")
+async def reset_agent_context(
+    conversation_id: str,
+    request: ResetAgentContextRequest,
+    deps: CommonDependencies = Depends(),
+    _admin: str = require_admin(),
+):
+    """Mark now as agent context reset: messages at or before this time are not sent to the agent."""
+    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    if not conversation:
+        raise ConversationNotFoundError(conversation_id)
+
+    now = utc_now()
+    try:
+        updated = await deps.dynamodb.update_conversation(
+            conversation_id=conversation_id,
+            agent_context_reset_at=now,
+        )
+        await deps.dynamodb.create_audit_log(
+            admin_id=request.admin_id,
+            action="reset_agent_context",
+            resource_type="conversation",
+            resource_id=conversation_id,
+        )
+        reset_iso = (
+            to_utc_iso_string(updated.agent_context_reset_at)
+            if updated and updated.agent_context_reset_at
+            else to_utc_iso_string(now)
+        )
+        return {
+            "conversation_id": conversation_id,
+            "agent_context_reset_at": reset_iso,
+            "message": "Agent context reset",
+        }
+    except Exception as e:
+        logger.error(f"Error resetting agent context: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset agent context: {str(e)}",
+        )
+
+
 @router.get("/audit")
 async def get_audit_logs(
     admin_id: Optional[str] = Query(None, description="Filter by admin ID"),

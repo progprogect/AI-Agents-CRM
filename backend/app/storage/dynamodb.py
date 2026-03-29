@@ -134,6 +134,8 @@ class DynamoDBClient:
             item["created_at"] = to_utc_iso_string(item["created_at"])
         if "updated_at" in item and isinstance(item["updated_at"], datetime):
             item["updated_at"] = to_utc_iso_string(item["updated_at"])
+        if "agent_context_reset_at" in item and isinstance(item["agent_context_reset_at"], datetime):
+            item["agent_context_reset_at"] = to_utc_iso_string(item["agent_context_reset_at"])
         item["ttl"] = self._calculate_ttl(conversation.created_at)
         
         # Ensure marketing_status defaults to NEW if not set
@@ -189,6 +191,8 @@ class DynamoDBClient:
             expression_attribute_values[":request_type"] = request_type
 
         for key, value in kwargs.items():
+            if isinstance(value, datetime):
+                value = to_utc_iso_string(value)
             update_expression_parts.append(f"{key} = :{key}")
             expression_attribute_values[f":{key}"] = value
 

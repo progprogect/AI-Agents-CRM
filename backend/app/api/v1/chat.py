@@ -303,6 +303,7 @@ async def send_message(
         deps.dynamodb,
         conversation_id,
         content_stripped,
+        agent_context_reset_at=conversation.agent_context_reset_at,
     )
 
     # Get channel sender for the conversation's channel

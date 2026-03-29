@@ -85,6 +85,11 @@ class AdminBroadcastManager:
                 ),
                 "handoff_reason": conversation.handoff_reason,
                 "request_type": conversation.request_type,
+                "agent_context_reset_at": (
+                    to_utc_iso_string(conversation.agent_context_reset_at)
+                    if conversation.agent_context_reset_at
+                    else None
+                ),
             },
             "timestamp": to_utc_iso_string(utc_now()),
         }
@@ -112,6 +117,11 @@ class AdminBroadcastManager:
                 ),
                 "handoff_reason": conversation.handoff_reason,
                 "request_type": conversation.request_type,
+                "agent_context_reset_at": (
+                    to_utc_iso_string(conversation.agent_context_reset_at)
+                    if conversation.agent_context_reset_at
+                    else None
+                ),
             },
             "escalation_reason": escalation_reason or conversation.handoff_reason,
             "timestamp": to_utc_iso_string(utc_now()),

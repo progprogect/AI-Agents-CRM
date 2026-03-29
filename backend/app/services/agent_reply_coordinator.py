@@ -145,6 +145,7 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
         dynamodb,
         conversation_id,
         last_plain_for_history,
+        agent_context_reset_at=conversation.agent_context_reset_at,
     )
 
     agent_data = await dynamodb.get_agent(conversation.agent_id)

@@ -295,28 +295,14 @@ class InstagramService:
 
             agent_config = AgentConfig.from_dict(agent_data["config"])
 
-            # Get conversation history
-            history_messages = await self.dynamodb.list_messages(
-                conversation_id=conversation.conversation_id,
-                limit=50,
-                reverse=True,
-            )
-            conversation_history = [
-                {
-                    "role": get_enum_value(msg.role),
-                    "content": msg.content,
-                }
-                for msg in reversed(history_messages)
-            ]
+            from app.services.conversation_service import build_conversation_history_for_agent
 
-            # Exclude current user message from history
-            if conversation_history:
-                last_msg = conversation_history[-1]
-                if (
-                    last_msg.get("role", "").lower() == "user"
-                    and last_msg.get("content", "").strip() == message_text.strip()
-                ):
-                    conversation_history = conversation_history[:-1]
+            conversation_history = await build_conversation_history_for_agent(
+                self.dynamodb,
+                conversation.conversation_id,
+                message_text,
+                agent_context_reset_at=conversation.agent_context_reset_at,
+            )
 
             # Create channel sender for Instagram
             from app.services.channel_sender import InstagramSender

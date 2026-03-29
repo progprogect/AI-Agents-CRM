@@ -273,6 +273,7 @@ class TwilioWhatsAppService:
             from app.models.agent_config import AgentConfig
             from app.services.agent_service import create_agent_service
             from app.services.channel_sender import WhatsAppSender
+            from app.services.conversation_service import build_conversation_history_for_agent
 
             agent_data = agent_row or await self.dynamodb.get_agent(binding.agent_id)
             if not agent_data or "config" not in agent_data:
@@ -281,18 +282,12 @@ class TwilioWhatsAppService:
 
             agent_config = AgentConfig.from_dict(agent_data["config"])
 
-            history_messages = await self.dynamodb.list_messages(
-                conversation_id=conversation_id, limit=50, reverse=True
+            conversation_history = await build_conversation_history_for_agent(
+                self.dynamodb,
+                conversation_id,
+                body,
+                agent_context_reset_at=conversation.agent_context_reset_at,
             )
-            conversation_history = [
-                {"role": get_enum_value(m.role), "content": m.content}
-                for m in reversed(history_messages)
-            ]
-            if conversation_history and (
-                conversation_history[-1].get("role", "").lower() == "user"
-                and conversation_history[-1].get("content", "").strip() == body.strip()
-            ):
-                conversation_history = conversation_history[:-1]
 
             wa_sender = WhatsAppSender(None, self.dynamodb, twilio_service=self)
             agent_service = create_agent_service(agent_config, self.dynamodb, wa_sender)

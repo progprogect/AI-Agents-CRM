@@ -1,5 +1,6 @@
 """Service for conversation management."""
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.models.conversation import Conversation, ConversationStatus
@@ -10,19 +11,34 @@ from app.utils.datetime_utils import utc_now
 from app.utils.enum_helpers import get_enum_value
 
 
+def _to_utc_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 async def build_conversation_history_for_agent(
     dynamodb: DynamoDBClient,
     conversation_id: str,
     last_user_message_for_dedup: str,
     *,
     limit: int = 50,
+    agent_context_reset_at: Optional[datetime] = None,
 ) -> list[dict]:
-    """Build chronological chat history for the LLM and drop duplicate last user turn."""
+    """Build chronological chat history for the LLM and drop duplicate last user turn.
+
+    If agent_context_reset_at is set, only messages strictly after that instant are included.
+    """
     history_messages = await dynamodb.list_messages(
         conversation_id=conversation_id,
         limit=limit,
         reverse=True,
     )
+    if agent_context_reset_at is not None:
+        reset_utc = _to_utc_aware(agent_context_reset_at)
+        history_messages = [
+            m for m in history_messages if _to_utc_aware(m.timestamp) > reset_utc
+        ]
     conversation_history = [
         {
             "role": get_enum_value(msg.role),
@@ -63,6 +79,7 @@ class ConversationService:
             self.dynamodb,
             conversation_id,
             user_message,
+            agent_context_reset_at=conversation.agent_context_reset_at,
         )
 
         # Process through agent service

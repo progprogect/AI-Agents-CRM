@@ -61,6 +61,8 @@ export default function ConversationDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Mobile: toggle info cards visibility (hidden by default to maximize chat area)
   const [showInfoCards, setShowInfoCards] = useState(false);
+  const [modeActionPending, setModeActionPending] = useState(false);
+  const [resetActionPending, setResetActionPending] = useState(false);
 
   const isLoading = conversationLoading || messagesLoading;
   const isRefreshing = conversationRefreshing || messagesRefreshing;
@@ -98,6 +100,7 @@ export default function ConversationDetailPage() {
 
   const handleHandoff = async () => {
     try {
+      setModeActionPending(true);
       setActionError(null);
       await api.handoffConversation(conversationId, "admin_user", "Manual handoff");
       await refreshConversation();
@@ -105,11 +108,14 @@ export default function ConversationDetailPage() {
     } catch (err) {
       const errorInfo = handleApiError(err);
       setActionError(getUserFriendlyMessage(errorInfo));
+    } finally {
+      setModeActionPending(false);
     }
   };
 
   const handleReturnToAI = async () => {
     try {
+      setModeActionPending(true);
       setActionError(null);
       await api.returnToAI(conversationId, "admin_user");
       await refreshConversation();
@@ -117,6 +123,25 @@ export default function ConversationDetailPage() {
     } catch (err) {
       const errorInfo = handleApiError(err);
       setActionError(getUserFriendlyMessage(errorInfo));
+    } finally {
+      setModeActionPending(false);
+    }
+  };
+
+  const handleResetAgentContext = async () => {
+    if (!window.confirm(t("resetAgentContextConfirm"))) {
+      return;
+    }
+    try {
+      setResetActionPending(true);
+      setActionError(null);
+      await api.resetAgentContext(conversationId, "admin_user");
+      await refreshConversation();
+    } catch (err) {
+      const errorInfo = handleApiError(err);
+      setActionError(getUserFriendlyMessage(errorInfo));
+    } finally {
+      setResetActionPending(false);
     }
   };
 
@@ -246,6 +271,11 @@ export default function ConversationDetailPage() {
   const agentProfileName = agent ? getAgentProfileDisplayName(agent) : null;
   const specialty = agent ? getAgentSpecialty(agent) : null;
 
+  const isAgentMode = conversation.status === "AI_ACTIVE";
+  const isHumanMode =
+    conversation.status === "NEEDS_HUMAN" || conversation.status === "HUMAN_ACTIVE";
+  const modeClosed = conversation.status === "CLOSED";
+
   return (
     <div>
       {/* Page header — stacks on mobile, side-by-side on desktop */}
@@ -259,23 +289,67 @@ export default function ConversationDetailPage() {
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto shrink-0">
           {/* Mobile toggle for info cards */}
           <button
+            type="button"
             onClick={() => setShowInfoCards((v) => !v)}
-            className="md:hidden text-sm border border-[#BEBAB7] px-3 py-1.5 rounded-sm text-gray-600 hover:bg-[#EEEAE7] transition-colors flex-shrink-0"
+            className="md:hidden min-h-[44px] inline-flex items-center px-3 text-sm border border-[#BEBAB7] rounded-sm text-gray-600 hover:bg-[#EEEAE7] active:bg-[#E5E0DC] transition-colors flex-shrink-0 touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#251D1C] focus-visible:ring-offset-2"
           >
             {showInfoCards ? t("hideInfo") : t("showInfo")}
           </button>
-          {conversation.status === "AI_ACTIVE" && (
-            <Button variant="primary" onClick={handleHandoff} className="flex-1 sm:flex-initial min-w-0">
-              {t("handoffToHuman")}
-            </Button>
-          )}
-          {conversation.status === "HUMAN_ACTIVE" && (
-            <Button variant="secondary" onClick={handleReturnToAI} className="flex-1 sm:flex-initial min-w-0">
-              {t("returnToAI")}
-            </Button>
+          {!modeClosed && (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap w-full sm:w-auto min-w-0">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 min-w-0 w-full sm:w-auto">
+                <span className="text-xs text-gray-600 sm:whitespace-nowrap shrink-0">
+                  {t("responseModeLabel")}
+                </span>
+                <div
+                  className="flex w-full sm:w-auto rounded-sm border border-[#BEBAB7] overflow-hidden min-h-[44px] touch-manipulation"
+                  role="group"
+                  aria-label={t("responseModeLabel")}
+                >
+                  <button
+                    type="button"
+                    disabled={modeActionPending || isAgentMode}
+                    onClick={handleReturnToAI}
+                    className={`min-h-[44px] flex-1 sm:flex-none sm:min-w-[5.5rem] px-3 text-sm font-medium transition-colors inline-flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#251D1C] ${
+                      isAgentMode
+                        ? "bg-[#251D1C] text-white"
+                        : "bg-white text-gray-700 hover:bg-[#EEEAE7] active:bg-[#E5E0DC]"
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {t("modeAgent")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={modeActionPending || isHumanMode}
+                    onClick={handleHandoff}
+                    className={`min-h-[44px] flex-1 sm:flex-none sm:min-w-[5.5rem] px-3 text-sm font-medium transition-colors border-l border-[#BEBAB7] inline-flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#251D1C] ${
+                      isHumanMode
+                        ? "bg-[#251D1C] text-white"
+                        : "bg-white text-gray-700 hover:bg-[#EEEAE7] active:bg-[#E5E0DC]"
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {t("modeHuman")}
+                  </button>
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                type="button"
+                disabled={resetActionPending || modeActionPending}
+                onClick={handleResetAgentContext}
+                className="w-full sm:w-auto shrink-0 min-h-[44px] touch-manipulation"
+              >
+                {resetActionPending ? t("updating") : t("resetAgentContext")}
+              </Button>
+            </div>
           )}
         </div>
       </div>
+      {conversation.agent_context_reset_at && (
+        <p className="text-xs text-gray-500 mb-3">
+          {t("contextResetHint")}: {formatDateTime(conversation.agent_context_reset_at)}
+        </p>
+      )}
 
       {actionError && (
         <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded-sm" role="alert">

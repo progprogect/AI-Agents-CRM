@@ -204,20 +204,15 @@ class TelegramService:
                 from app.models.agent_config import AgentConfig
                 from app.services.agent_service import create_agent_service
                 from app.services.channel_sender import TelegramSender
+                from app.services.conversation_service import build_conversation_history_for_agent
 
                 agent_config = AgentConfig.from_dict(agent_data["config"])
-                history_messages = await self.dynamodb.list_messages(
-                    conversation_id=conversation.conversation_id, limit=50, reverse=True
+                conversation_history = await build_conversation_history_for_agent(
+                    self.dynamodb,
+                    conversation.conversation_id,
+                    message_text,
+                    agent_context_reset_at=conversation.agent_context_reset_at,
                 )
-                conversation_history = [
-                    {"role": get_enum_value(m.role), "content": m.content}
-                    for m in reversed(history_messages)
-                ]
-                if conversation_history and (
-                    conversation_history[-1].get("role", "").lower() == "user"
-                    and conversation_history[-1].get("content", "").strip() == message_text.strip()
-                ):
-                    conversation_history = conversation_history[:-1]
 
                 telegram_sender = TelegramSender(self, self.dynamodb)
                 agent_service = create_agent_service(agent_config, self.dynamodb, telegram_sender)
