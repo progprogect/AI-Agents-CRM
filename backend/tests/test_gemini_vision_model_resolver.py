@@ -3,7 +3,7 @@
 import unittest
 
 from app.utils.gemini_model_ids import (
-    GEMINI_VISION_DEFAULT_LEGACY,
+    GEMINI_VISION_DEFAULT,
     OPENAI_VISION_MODEL_ID,
     resolve_vision_model_id,
 )
@@ -20,12 +20,12 @@ class TestResolveVisionModelId(unittest.TestCase):
         }
         self.assertEqual(resolve_vision_model_id(cfg), OPENAI_VISION_MODEL_ID)
 
-    def test_google_without_vision_model_legacy_flash(self) -> None:
+    def test_google_without_vision_model_default_gemini_31(self) -> None:
         cfg = {
             "rag": {"vision_provider": "google_ai_studio"},
             "llm": {"provider": "google_ai_studio"},
         }
-        self.assertEqual(resolve_vision_model_id(cfg), GEMINI_VISION_DEFAULT_LEGACY)
+        self.assertEqual(resolve_vision_model_id(cfg), GEMINI_VISION_DEFAULT)
 
     def test_google_with_explicit_vision_model(self) -> None:
         cfg = {

@@ -306,7 +306,7 @@ class RAGConfig(BaseModel):
         default=None,
         description=(
             "Vision model id when using multimodal image understanding "
-            "(RAG documents and inbound chat images). None = legacy default."
+            "(RAG documents and inbound chat images). None = gemini-3.1-pro-preview."
         ),
     )
 

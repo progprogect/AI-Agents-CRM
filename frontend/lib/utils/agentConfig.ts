@@ -57,7 +57,7 @@ export interface AgentConfigFormData {
   rag_enabled: boolean;
   rag_embeddings_provider?: string;
   rag_vision_provider?: string;
-  /** Google AI vision model id; empty = legacy default (backend: gemini-2.5-flash) */
+  /** Google AI vision model id; empty = backend default (gemini-3.1-pro-preview) */
   rag_vision_model?: string;
   rag_documents: Array<{
     id: string;

@@ -17,6 +17,9 @@ from app.utils.llm_provider import _get_vision_provider
 
 logger = logging.getLogger(__name__)
 
+# Max completion tokens for vision calls (OpenAI + Gemini image understanding).
+VISION_MAX_OUTPUT_TOKENS = 1000
+
 
 class ImageProcessorService:
     """Service for describing images for RAG indexing (OpenAI or Gemini)."""
@@ -29,7 +32,7 @@ class ImageProcessorService:
         content: list[dict] | str,
         agent_id: Optional[str] = None,
         agent_config: Optional[dict[str, Any]] = None,
-        max_tokens: int = 300,
+        max_tokens: int = VISION_MAX_OUTPUT_TOKENS,
     ) -> str:
         """Call vision model (OpenAI or Gemini) and return text response."""
         vision_provider = _get_vision_provider(agent_config) if agent_config else "openai"
@@ -79,7 +82,7 @@ class ImageProcessorService:
             {"type": "image_url", "image_url": {"url": image_url}},
         ]
         try:
-            return await self._call_vision(content, agent_id, agent_config, max_tokens=300)
+            return await self._call_vision(content, agent_id, agent_config, max_tokens=VISION_MAX_OUTPUT_TOKENS)
         except Exception as e:
             logger.error(f"Vision describe_image failed: {e}", exc_info=True)
             raise
@@ -96,7 +99,7 @@ class ImageProcessorService:
             {"type": "image_url", "image_url": {"url": image_url}},
         ]
         try:
-            return await self._call_vision(content, agent_id, agent_config, max_tokens=250)
+            return await self._call_vision(content, agent_id, agent_config, max_tokens=VISION_MAX_OUTPUT_TOKENS)
         except Exception as e:
             logger.error(f"Vision describe_image_for_chat_context failed: {e}", exc_info=True)
             raise
@@ -121,7 +124,7 @@ class ImageProcessorService:
         id_by_label = {labels[i]: image_descriptions[i]["id"] for i in range(len(image_descriptions))}
 
         try:
-            text = await self._call_vision(prompt, agent_id, agent_config, max_tokens=500)
+            text = await self._call_vision(prompt, agent_id, agent_config, max_tokens=VISION_MAX_OUTPUT_TOKENS)
             if not text:
                 return {}
             text = text.strip()

@@ -121,7 +121,7 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
             onUpdate={updateConfig}
           />
         );
-        case 4:
+      case 4:
         return (
           <RAGStep
             config={state.config}

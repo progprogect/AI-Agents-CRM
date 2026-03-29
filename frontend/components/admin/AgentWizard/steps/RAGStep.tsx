@@ -19,8 +19,8 @@ const VISION_PROVIDER_OPTIONS = [
   { value: "google_ai_studio", label: "Google AI Studio (Gemini)" },
 ];
 
-/** Touch-friendly controls on small screens (admin wizard is often mobile-reviewed). */
-const selectTouchClass = "min-h-[44px] text-base sm:text-sm";
+/** Touch targets ≥48px (web.dev / Material); slightly larger base font on small viewports. */
+const selectTouchClass = "min-h-12 text-base sm:text-sm";
 
 interface RAGStepProps {
   config: Partial<AgentConfigFormData>;
