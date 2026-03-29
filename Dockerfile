@@ -2,13 +2,14 @@
 # Single Railway service serving both via nginx
 
 # === Frontend stage ===
-FROM node:20-alpine AS frontend-deps
-RUN apk add --no-cache libc6-compat
+# Debian-based image: Next.js 16 + Turbopack need glibc for native @next/swc;
+# Alpine (musl) falls back to WASM, which fails with turbo.createProject.
+FROM node:20-bookworm-slim AS frontend-deps
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 
-FROM node:20-alpine AS frontend-builder
+FROM node:20-bookworm-slim AS frontend-builder
 WORKDIR /app
 COPY --from=frontend-deps /app/node_modules ./node_modules
 COPY frontend/ .
