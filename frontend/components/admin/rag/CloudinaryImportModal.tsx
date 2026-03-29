@@ -239,7 +239,8 @@ export function CloudinaryImportModal({
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-sm text-gray-500 hover:text-gray-800 hover:bg-[#EEEAE7]/80"
+            disabled={importing}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-sm text-gray-500 hover:text-gray-800 hover:bg-[#EEEAE7]/80 disabled:opacity-50 disabled:pointer-events-none"
             aria-label={tCommon("close")}
           >
             <X size={20} />
