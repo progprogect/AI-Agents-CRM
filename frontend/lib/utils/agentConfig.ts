@@ -57,6 +57,8 @@ export interface AgentConfigFormData {
   rag_enabled: boolean;
   rag_embeddings_provider?: string;
   rag_vision_provider?: string;
+  /** Google AI vision model id; empty = legacy default (backend: gemini-2.5-flash) */
+  rag_vision_model?: string;
   rag_documents: Array<{
     id: string;
     title: string;
@@ -190,6 +192,7 @@ export function agentConfigToFormData(
     // RAG providers
     rag_embeddings_provider: agentConfig.rag?.embeddings_provider || agentConfig.embeddings?.provider || "openai",
     rag_vision_provider: agentConfig.rag?.vision_provider || agentConfig.llm?.provider || "openai",
+    rag_vision_model: agentConfig.rag?.vision_model,
     moderation_provider: agentConfig.moderation?.provider || "openai",
     moderation_model: agentConfig.moderation?.model,
     moderation_enabled: agentConfig.moderation?.enabled !== false,
@@ -265,6 +268,10 @@ export function formDataToAgentConfig(
       enabled: formData.rag_enabled,
       embeddings_provider: formData.rag_embeddings_provider || formData.llm_provider || "openai",
       vision_provider: formData.rag_vision_provider || formData.llm_provider || "openai",
+      vision_model:
+        formData.rag_vision_provider === "google_ai_studio"
+          ? formData.rag_vision_model?.trim() || null
+          : null,
       vector_store: {
         provider: "opensearch",
         index_name: `agent_${formData.agent_id}_documents`,

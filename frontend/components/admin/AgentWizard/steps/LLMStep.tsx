@@ -34,6 +34,21 @@ const OPENAI_MODELS = [
 ];
 
 const GEMINI_MODELS = [
+  {
+    value: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro",
+    description: "Advanced intelligence, agentic workflows — Preview (see Google AI docs)",
+  },
+  {
+    value: "gemini-3-flash-preview",
+    label: "Gemini 3 Flash",
+    description: "Frontier multimodal performance — Preview",
+  },
+  {
+    value: "gemini-3.1-flash-lite-preview",
+    label: "Gemini 3.1 Flash-Lite",
+    description: "Most cost-efficient Gemini 3 — Preview",
+  },
   { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro", description: "Most advanced Gemini — deep reasoning, coding, 1M context" },
   { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash", description: "Best price-performance — low latency, high volume" },
   { value: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite", description: "Fastest and most budget-friendly multimodal model" },

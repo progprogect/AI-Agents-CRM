@@ -12,12 +12,10 @@ from app.prompts.image_description import (
 )
 from app.prompts.user_attachment_vision import CHAT_USER_IMAGE_PROMPT
 from app.services.llm_factory import LLMFactory, get_llm_factory
+from app.utils.gemini_model_ids import resolve_vision_model_id
 from app.utils.llm_provider import _get_vision_provider
 
 logger = logging.getLogger(__name__)
-
-OPENAI_VISION_MODEL = "gpt-4o"
-GEMINI_VISION_MODEL = "gemini-2.5-flash"  # 2.0-flash no longer available to new Google AI users
 
 
 class ImageProcessorService:
@@ -35,6 +33,7 @@ class ImageProcessorService:
     ) -> str:
         """Call vision model (OpenAI or Gemini) and return text response."""
         vision_provider = _get_vision_provider(agent_config) if agent_config else "openai"
+        model_id = resolve_vision_model_id(agent_config)
 
         if vision_provider == "google_ai_studio":
             from langchain_google_genai import ChatGoogleGenerativeAI
@@ -46,7 +45,7 @@ class ImageProcessorService:
             if not google_key:
                 raise RuntimeError("Google AI Studio API key not found for vision")
             llm = ChatGoogleGenerativeAI(
-                model=GEMINI_VISION_MODEL,
+                model=model_id,
                 google_api_key=google_key,
                 max_output_tokens=max_tokens,
             )
@@ -58,7 +57,7 @@ class ImageProcessorService:
         client = await self.llm_factory.get_client(agent_id)
         messages = [{"role": "user", "content": content}]
         response = await client.async_client.chat.completions.create(
-            model=OPENAI_VISION_MODEL,
+            model=model_id,
             messages=messages,
             max_tokens=max_tokens,
         )

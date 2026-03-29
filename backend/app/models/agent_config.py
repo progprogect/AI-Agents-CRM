@@ -302,6 +302,13 @@ class RAGConfig(BaseModel):
         default="openai",
         description="Provider for image descriptions (openai, google_ai_studio)",
     )
+    vision_model: Optional[str] = Field(
+        default=None,
+        description=(
+            "Vision model id when using multimodal image understanding "
+            "(RAG documents and inbound chat images). None = legacy default."
+        ),
+    )
 
 
 class MonitoringConfig(BaseModel):

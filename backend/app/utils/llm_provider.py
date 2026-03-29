@@ -118,9 +118,21 @@ def create_embeddings(
 def _get_vision_provider(agent_config: AgentConfig | dict) -> str:
     """Get vision provider from agent config (rag.vision_provider or llm.provider)."""
     if isinstance(agent_config, dict):
-        rag = agent_config.get("rag") or {}
-        llm = agent_config.get("llm") or {}
-        return rag.get("vision_provider") or llm.get("provider") or "openai"
+        rag = agent_config.get("rag")
+        llm = agent_config.get("llm")
+        if isinstance(rag, dict):
+            vp = rag.get("vision_provider")
+        elif rag is not None:
+            vp = getattr(rag, "vision_provider", None)
+        else:
+            vp = None
+        if isinstance(llm, dict):
+            lp = llm.get("provider")
+        elif llm is not None:
+            lp = getattr(llm, "provider", None)
+        else:
+            lp = None
+        return vp or lp or "openai"
     return (
         getattr(agent_config.rag, "vision_provider", None)
         or getattr(agent_config.llm, "provider", None)
