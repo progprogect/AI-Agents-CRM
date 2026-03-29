@@ -353,6 +353,38 @@ class PostgreSQLClient:
             )
         return message
 
+    async def try_create_message(self, message: Message) -> bool:
+        """Insert message; return False if (conversation_id, message_id) already exists (idempotent)."""
+        ttl = self._calculate_ttl(message.timestamp)
+        ch = get_enum_value(message.channel) or "web_chat"
+        role = get_enum_value(message.role)
+        meta = json.dumps(message.metadata) if message.metadata else "{}"
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO messages (
+                    conversation_id, message_id, agent_id, role, content, channel,
+                    external_message_id, external_user_id, timestamp, metadata, ttl
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ON CONFLICT (conversation_id, message_id) DO NOTHING
+                RETURNING message_id
+                """,
+                message.conversation_id,
+                message.message_id,
+                message.agent_id,
+                role,
+                message.content,
+                ch,
+                message.external_message_id,
+                message.external_user_id,
+                message.timestamp,
+                meta,
+                ttl,
+            )
+        return row is not None
+
     async def get_message(self, conversation_id: str, message_id: str) -> Optional[Message]:
         pool = await get_pool()
         async with pool.acquire() as conn:

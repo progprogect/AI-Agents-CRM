@@ -21,6 +21,30 @@ logger = logging.getLogger(__name__)
 VISION_MAX_OUTPUT_TOKENS = 1000
 
 
+def _stringify_ai_message_content(content: Any) -> str:
+    """Normalize LangChain / Gemini AIMessage.content (str or list of text/thinking blocks)."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                btype = block.get("type")
+                if btype == "text" or "text" in block:
+                    t = block.get("text")
+                    if t is not None:
+                        parts.append(str(t))
+                # Skip thinking / non-text blocks (Gemini 3 etc.)
+            else:
+                parts.append(str(block))
+        return "".join(parts).strip()
+    return str(content).strip()
+
+
 class ImageProcessorService:
     """Service for describing images for RAG indexing (OpenAI or Gemini)."""
 
@@ -54,7 +78,8 @@ class ImageProcessorService:
             )
             msg = HumanMessage(content=content)
             response = await llm.ainvoke([msg])
-            return (response.content or "").strip() if hasattr(response, "content") else str(response).strip()
+            raw = response.content if hasattr(response, "content") else response
+            return _stringify_ai_message_content(raw)
 
         # OpenAI
         client = await self.llm_factory.get_client(agent_id)

@@ -255,7 +255,18 @@ class TwilioWhatsAppService:
             media_url=final_media_url,
             media_type=media_type,
         )
-        await self.dynamodb.create_message(message)
+        try_create = getattr(self.dynamodb, "try_create_message", None)
+        if callable(try_create):
+            inserted = await try_create(message)
+            if not inserted:
+                logger.info(
+                    "Twilio webhook duplicate MessageSid=%s for %s — skipping (already processed)",
+                    message_sid,
+                    conversation_id,
+                )
+                return
+        else:
+            await self.dynamodb.create_message(message)
 
         # Skip AI if human is handling
         from app.utils.enum_helpers import get_enum_value

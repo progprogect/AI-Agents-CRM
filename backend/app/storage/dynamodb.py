@@ -433,6 +433,26 @@ class DynamoDBClient:
         self.tables["messages"].put_item(Item=item)
         return message
 
+    async def try_create_message(self, message: Message) -> bool:
+        """Insert message; return False if the same key already exists (idempotent Twilio webhooks)."""
+        item = message.model_dump(exclude_none=True)
+        if "timestamp" in item and isinstance(item["timestamp"], datetime):
+            item["timestamp"] = to_utc_iso_string(item["timestamp"])
+        item["ttl"] = self._calculate_ttl(message.timestamp)
+
+        try:
+            self.tables["messages"].put_item(
+                Item=item,
+                ConditionExpression=(
+                    "attribute_not_exists(conversation_id) AND attribute_not_exists(message_id)"
+                ),
+            )
+            return True
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
+
     async def get_message(self, conversation_id: str, message_id: str) -> Optional[Message]:
         """Get message by conversation ID and message ID."""
         response = self.tables["messages"].get_item(
