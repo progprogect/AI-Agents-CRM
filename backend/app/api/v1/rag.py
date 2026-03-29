@@ -1,17 +1,29 @@
 """RAG API endpoints - folders and documents management."""
 
 import logging
-import uuid
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel, Field
 
 from app.api.auth import require_admin
 from app.config import get_settings
 from app.dependencies import CommonDependencies
+from app.services.cloudinary_browse import (
+    MAX_IMPORT_BATCH,
+    build_secure_url,
+    download_url_bytes,
+    normalize_public_id_prefix,
+    public_id_allowed,
+    search_resources_by_prefix,
+    serialize_search_hit,
+)
+from app.services.rag_indexing import (
+    index_rag_document_core,
+    new_rag_document_id,
+)
 from app.services.storage_service import StorageServiceError, get_storage_service
-from app.services.image_processor_service import get_image_processor_service
 from app.storage.postgres_rag import PostgresRAGClient, get_postgres_rag_client
 from app.storage.postgres_rag_folders import PostgresRAGFolders, get_postgres_rag_folders
 
@@ -21,9 +33,6 @@ router = APIRouter()
 
 # Max upload size per RAG file (PDF, images, text)
 MAX_FILE_SIZE = 50 * 1024 * 1024
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
-TEXT_EXTENSIONS = {".txt", ".md", ".json"}
-PDF_EXTENSIONS = {".pdf"}
 
 
 def _ensure_postgres() -> None:
@@ -44,6 +53,15 @@ async def _ensure_agent_exists(deps: CommonDependencies, agent_id: str) -> dict 
             detail=f"Agent '{agent_id}' not found",
         )
     return agent
+
+
+def _ensure_cloudinary_storage() -> None:
+    backend = (get_settings().storage_backend or "cloudinary").lower()
+    if backend != "cloudinary":
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Cloudinary import is only available when STORAGE_BACKEND=cloudinary",
+        )
 
 
 # --- Folders ---
@@ -190,24 +208,11 @@ async def upload_rag_document(
         )
 
     filename = file.filename or "unnamed"
-    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-
-    # Determine file type
-    if ext in IMAGE_EXTENSIONS:
-        file_type = "image"
-    elif ext in PDF_EXTENSIONS:
-        file_type = "pdf"
-    elif ext in TEXT_EXTENSIONS:
-        file_type = "text"
-    else:
-        file_type = "raw"
-
-    doc_id = str(uuid.uuid4())
+    doc_id = new_rag_document_id()
     fid = UUID(folder_id) if folder_id else None
 
     folder_path = ""
     storage_svc = get_storage_service()
-    image_processor = get_image_processor_service()
     rag_client = get_postgres_rag_client()
 
     try:
@@ -221,139 +226,226 @@ async def upload_rag_document(
             detail="File upload service is not configured",
         ) from e
 
-    # Extract content by type
-    text_content = ""
-    if file_type == "image":
-        try:
-            text_content = await image_processor.describe_image(file_url, agent_id, agent_config_dict)
-        except Exception as e:
-            logger.error(f"Image description failed: {e}", exc_info=True)
-            text_content = f"Image: {filename}"
-    elif file_type == "pdf":
-        try:
-            import PyPDF2
-            from io import BytesIO
-            reader = PyPDF2.PdfReader(BytesIO(content))
-            parts = []
-            for p in reader.pages:
-                parts.append(p.extract_text() or "")
-            text_content = "\n\n".join(parts).strip() or filename
-        except ImportError:
-            text_content = filename
-        except Exception as e:
-            logger.warning(f"PDF extraction failed: {e}")
-            text_content = filename
-    elif file_type == "text":
-        try:
-            text_content = content.decode("utf-8", errors="replace")
-        except Exception:
-            text_content = filename
-    else:
-        text_content = filename
-
-    doc_title = title or filename
-
-    # Get embeddings and index
-    from app.chains.rag_chain import RAGChain
-    from app.services.llm_factory import get_llm_factory
-    from app.utils.llm_provider import get_rag_embeddings_config
-
-    llm_factory = get_llm_factory()
-    chain = RAGChain(llm_factory, rag_client)
-    embeddings_config = get_rag_embeddings_config(agent_config_dict) if agent_config_dict else None
-    if embeddings_config is None:
-        from app.models.agent_config import EmbeddingsConfig
-        embeddings_config = EmbeddingsConfig(provider="openai", model="text-embedding-3-small", dimensions=1536)
-
-    embedding: list[float] = []
-    embedding_failed = False
-    try:
-        embeddings = await chain._get_embeddings(embeddings_config)
-        embedding = await embeddings.aembed_query(text_content)
-    except Exception as e:
-        # Graceful degradation: save document without vector embeddings.
-        # It will appear in the UI but won't be found via semantic search.
-        embedding_failed = True
-        logger.error(
-            f"Embedding generation failed for document {doc_id} — saving without embeddings: {e}",
-            exc_info=True,
-        )
-
-    index_name = f"agent_{agent_id}_documents"
-    await rag_client.index_document(
-        index_name,
-        agent_id,
-        doc_id,
-        doc_title,
-        text_content,
-        embedding,
+    core = await index_rag_document_core(
+        agent_id=agent_id,
+        agent_config_dict=agent_config_dict,
         folder_id=fid,
-        file_type=file_type,
+        doc_id=doc_id,
+        filename=filename,
+        content=content,
         file_url=file_url,
-        original_filename=filename,
-        file_size=len(content),
+        title=title,
+        rag_client=rag_client,
     )
 
-    # Similarity detection for images: find similar, run comparative, update
-    if file_type == "image":
-        from app.storage.postgres_rag import cosine_similarity
-
-        image_docs = await rag_client.list_image_documents_with_embeddings(agent_id)
-        # Build similarity groups (threshold 0.85)
-        SIM_THRESHOLD = 0.85
-        groups: list[list[dict]] = []
-        used = set()
-
-        for doc in image_docs:
-            if doc["document_id"] in used:
-                continue
-            group = [doc]
-            used.add(doc["document_id"])
-            for other in image_docs:
-                if other["document_id"] in used:
-                    continue
-                if not other.get("embedding"):
-                    continue
-                sim = cosine_similarity(doc["embedding"], other["embedding"])
-                if sim >= SIM_THRESHOLD:
-                    group.append(other)
-                    used.add(other["document_id"])
-            if len(group) >= 2:
-                groups.append(group)
-
-        for group in groups:
-            try:
-                descriptions = [{"id": d["document_id"], "description": d["content"]} for d in group]
-                additions = await image_processor.describe_images_comparatively(
-                    descriptions, agent_id, agent_config_dict
-                )
-                for d in group:
-                    add = additions.get(d["document_id"], "")
-                    if add:
-                        new_content = f"{d['content']} {add}".strip()
-                        new_emb = await embeddings.aembed_query(new_content)
-                        await rag_client.update_document_content(
-                            agent_id, d["document_id"], new_content, new_emb
-                        )
-            except Exception as e:
-                logger.warning(f"Comparative description failed for group: {e}")
-
     response = {
-        "document_id": doc_id,
-        "title": doc_title,
-        "file_type": file_type,
-        "file_url": file_url,
-        "original_filename": filename,
-        "file_size": len(content),
+        "document_id": core["document_id"],
+        "title": core["title"],
+        "file_type": core["file_type"],
+        "file_url": core["file_url"],
+        "original_filename": core["original_filename"],
+        "file_size": core["file_size"],
         "folder_id": folder_id,
     }
-    if embedding_failed:
-        response["warning"] = (
-            "Document saved, but embedding generation failed. "
-            "This file will not appear in semantic search results. "
-            "Check your AI provider quota and re-upload to fix."
-        )
+    if core.get("warning"):
+        response["warning"] = core["warning"]
     return response
+
+
+class CloudinaryImportItem(BaseModel):
+    """Single asset to import from Cloudinary into RAG."""
+
+    public_id: str = Field(..., min_length=1)
+    resource_type: str = Field(..., description="Cloudinary resource_type: image or raw")
+    format: Optional[str] = None
+
+
+class CloudinaryImportRequest(BaseModel):
+    items: list[CloudinaryImportItem] = Field(..., min_length=1, max_length=MAX_IMPORT_BATCH)
+    folder_id: Optional[str] = None
+    allowed_prefix: Optional[str] = Field(
+        None,
+        description="Only public_ids under this prefix are accepted (default: rag/{agent_id})",
+    )
+
+
+@router.get("/{agent_id}/rag/cloudinary/resources")
+async def list_cloudinary_rag_resources(
+    agent_id: str,
+    prefix: Optional[str] = Query(
+        None,
+        description="public_id prefix (folder path). Defaults to CLOUDINARY_FOLDER/agent_id",
+    ),
+    max_results: int = Query(30, ge=1, le=100),
+    next_cursor: Optional[str] = Query(None),
+    deps: CommonDependencies = Depends(),
+    _admin: str = require_admin(),
+):
+    """Search Cloudinary assets by public_id prefix (Admin Search API)."""
+    _ensure_postgres()
+    await _ensure_agent_exists(deps, agent_id)
+    _ensure_cloudinary_storage()
+
+    settings = get_settings()
+    default_prefix = normalize_public_id_prefix(settings, agent_id)
+    p = (prefix or default_prefix).strip().strip("/")
+
+    try:
+        raw = search_resources_by_prefix(p, max_results, next_cursor)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("Cloudinary search failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Cloudinary search failed",
+        ) from e
+
+    resources = []
+    for hit in raw.get("resources") or []:
+        ser = serialize_search_hit(hit)
+        if ser.get("resource_type") == "video":
+            continue
+        resources.append(ser)
+
+    return {
+        "resources": resources,
+        "next_cursor": raw.get("next_cursor"),
+        "default_prefix": default_prefix,
+    }
+
+
+@router.post("/{agent_id}/rag/documents/import-from-cloudinary")
+async def import_rag_documents_from_cloudinary(
+    agent_id: str,
+    body: CloudinaryImportRequest,
+    deps: CommonDependencies = Depends(),
+    _admin: str = require_admin(),
+):
+    """Download existing Cloudinary files and index them into RAG (no re-upload)."""
+    _ensure_postgres()
+    agent = await _ensure_agent_exists(deps, agent_id)
+    agent_config_dict = agent.get("config", {}) if agent else {}
+    _ensure_cloudinary_storage()
+
+    settings = get_settings()
+    allowed_prefix = (body.allowed_prefix or normalize_public_id_prefix(settings, agent_id)).strip().strip(
+        "/"
+    )
+    fid = UUID(body.folder_id) if body.folder_id else None
+    rag_client = get_postgres_rag_client()
+
+    results: list[dict] = []
+
+    for item in body.items:
+        pid = item.public_id.strip()
+        rt = item.resource_type.strip().lower()
+        if rt == "video":
+            results.append(
+                {
+                    "public_id": pid,
+                    "status": "error",
+                    "message": "Video import is not supported in v1",
+                }
+            )
+            continue
+        if rt not in ("image", "raw"):
+            results.append(
+                {
+                    "public_id": pid,
+                    "status": "error",
+                    "message": "resource_type must be image or raw",
+                }
+            )
+            continue
+        if not public_id_allowed(pid, allowed_prefix):
+            results.append(
+                {
+                    "public_id": pid,
+                    "status": "error",
+                    "message": f"public_id must start with prefix {allowed_prefix}",
+                }
+            )
+            continue
+
+        try:
+            file_url = build_secure_url(pid, rt, format=item.format)
+        except Exception as e:
+            logger.warning("build_secure_url failed for %s: %s", pid, e)
+            results.append(
+                {
+                    "public_id": pid,
+                    "status": "error",
+                    "message": "Could not build URL for asset",
+                }
+            )
+            continue
+
+        existing = await rag_client.get_document_id_by_file_url(agent_id, file_url)
+        if existing:
+            results.append(
+                {
+                    "public_id": pid,
+                    "status": "duplicate",
+                    "document_id": existing,
+                    "message": "Already indexed for this agent",
+                }
+            )
+            continue
+
+        try:
+            content = await download_url_bytes(file_url, MAX_FILE_SIZE)
+        except Exception as e:
+            logger.warning("Download failed for %s: %s", pid, e)
+            results.append(
+                {
+                    "public_id": pid,
+                    "status": "error",
+                    "message": str(e) or "Download failed",
+                }
+            )
+            continue
+
+        filename = pid.rsplit("/", 1)[-1] if "/" in pid else pid
+        if not filename:
+            filename = "file"
+
+        doc_id = new_rag_document_id()
+        try:
+            core = await index_rag_document_core(
+                agent_id=agent_id,
+                agent_config_dict=agent_config_dict,
+                folder_id=fid,
+                doc_id=doc_id,
+                filename=filename,
+                content=content,
+                file_url=file_url,
+                title=None,
+                rag_client=rag_client,
+            )
+            results.append(
+                {
+                    "public_id": pid,
+                    "status": "ok",
+                    "document_id": core["document_id"],
+                    "title": core["title"],
+                    "file_type": core["file_type"],
+                    "file_url": core["file_url"],
+                }
+            )
+            if core.get("warning"):
+                results[-1]["warning"] = core["warning"]
+        except Exception as e:
+            logger.exception("Index failed for %s: %s", pid, e)
+            results.append(
+                {
+                    "public_id": pid,
+                    "status": "error",
+                    "message": str(e) or "Indexing failed",
+                }
+            )
+
+    return {"results": results, "allowed_prefix": allowed_prefix}
 
 
 @router.patch("/{agent_id}/rag/documents/{document_id}")

@@ -6,8 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useDropzone } from "react-dropzone";
 import Link from "next/link";
-import { FileText, Image as ImageIcon, X, Upload, FolderOpen, ChevronDown, ChevronUp } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { FileText, Image as ImageIcon, X, Upload, FolderOpen, ChevronDown, ChevronUp, Cloud } from "lucide-react";
 import { api, ApiError, type RagDocument, type RagFolder } from "@/lib/api";
+import { CloudinaryImportModal } from "@/components/admin/rag/CloudinaryImportModal";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/shared/Button";
 import { Input } from "@/components/shared/Input";
@@ -31,6 +33,7 @@ function humanSize(bytes: number) {
 export default function AgentRAGPage() {
   const params = useParams();
   const agentId = params.agentId as string;
+  const tRag = useTranslations("RagPage");
 
   const [folders, setFolders] = useState<RagFolder[]>([]);
   const [documents, setDocuments] = useState<RagDocument[]>([]);
@@ -54,6 +57,7 @@ export default function AgentRAGPage() {
   } | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [isFolderPanelOpen, setIsFolderPanelOpen] = useState(false);
+  const [cloudinaryImportOpen, setCloudinaryImportOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadFolders = useCallback(async () => {
@@ -366,9 +370,20 @@ export default function AgentRAGPage() {
               )}
             </p>
           </div>
-          <Link href="/admin/agents">
-            <Button variant="secondary">Back to Agents</Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="min-h-[44px]"
+              icon={<Cloud size={18} />}
+              onClick={() => setCloudinaryImportOpen(true)}
+            >
+              {tRag("importFromCloudinary")}
+            </Button>
+            <Link href="/admin/agents">
+              <Button variant="secondary">Back to Agents</Button>
+            </Link>
+          </div>
         </div>
 
         {error && (
@@ -566,6 +581,16 @@ export default function AgentRAGPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {cloudinaryImportOpen && (
+        <CloudinaryImportModal
+          agentId={agentId}
+          folders={folders}
+          initialFolderId={selectedFolderId}
+          onClose={() => setCloudinaryImportOpen(false)}
+          onImported={loadDocuments}
+        />
       )}
 
       {/* Rename modal */}

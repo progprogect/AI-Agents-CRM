@@ -54,6 +54,28 @@ export interface RagDocumentUploadResponse {
   warning?: string; // Present when document was saved but AI processing (embeddings/description) failed
 }
 
+export interface CloudinaryRagResource {
+  public_id: string;
+  resource_type: string;
+  format?: string | null;
+  bytes?: number | null;
+  created_at?: string;
+  secure_url?: string;
+  width?: number | null;
+  height?: number | null;
+}
+
+export interface CloudinaryImportResultItem {
+  public_id: string;
+  status: "ok" | "duplicate" | "error";
+  document_id?: string;
+  title?: string;
+  file_type?: string;
+  file_url?: string;
+  message?: string;
+  warning?: string;
+}
+
 // Use relative URLs when running on same domain (via ALB)
 // This automatically uses the same protocol (HTTP/HTTPS) as the page
 // Fallback to absolute URL only for development (localhost)
@@ -838,6 +860,48 @@ export const api = {
     return request<{ message: string }>(
       `/api/v1/agents/${agentId}/rag/documents/${documentId}`,
       { method: "DELETE" },
+      true
+    );
+  },
+
+  async listCloudinaryRagResources(
+    agentId: string,
+    params?: { prefix?: string; max_results?: number; next_cursor?: string }
+  ): Promise<{
+    resources: CloudinaryRagResource[];
+    next_cursor?: string | null;
+    default_prefix: string;
+  }> {
+    const q = new URLSearchParams();
+    if (params?.prefix) q.append("prefix", params.prefix);
+    if (params?.max_results) q.append("max_results", params.max_results.toString());
+    if (params?.next_cursor) q.append("next_cursor", params.next_cursor);
+    const qs = q.toString();
+    return request(
+      `/api/v1/agents/${agentId}/rag/cloudinary/resources${qs ? `?${qs}` : ""}`,
+      {},
+      true
+    ) as Promise<{
+      resources: CloudinaryRagResource[];
+      next_cursor?: string | null;
+      default_prefix: string;
+    }>;
+  },
+
+  async importRagFromCloudinary(
+    agentId: string,
+    body: {
+      items: { public_id: string; resource_type: string; format?: string | null }[];
+      folder_id?: string | null;
+      allowed_prefix?: string | null;
+    }
+  ): Promise<{ results: CloudinaryImportResultItem[]; allowed_prefix: string }> {
+    return request<{ results: CloudinaryImportResultItem[]; allowed_prefix: string }>(
+      `/api/v1/agents/${agentId}/rag/documents/import-from-cloudinary`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
       true
     );
   },

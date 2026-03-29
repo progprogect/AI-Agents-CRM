@@ -343,6 +343,24 @@ class PostgresRAGClient:
             logger.error(f"Failed to list image documents: {e}", exc_info=True)
             return []
 
+    async def get_document_id_by_file_url(
+        self, agent_id: str, file_url: str
+    ) -> Optional[str]:
+        """Return document_id if this agent already has a RAG row for the same file URL."""
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """SELECT document_id FROM rag_documents
+                       WHERE agent_id = $1 AND file_url = $2 LIMIT 1""",
+                    agent_id,
+                    file_url,
+                )
+            return row["document_id"] if row else None
+        except Exception as e:
+            logger.error(f"Failed to lookup document by file_url: {e}", exc_info=True)
+            return None
+
     async def delete_document(self, agent_id: str, document_id: str) -> bool:
         """Delete a single document."""
         try:
