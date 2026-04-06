@@ -108,9 +108,8 @@ export function useChat(conversationId: string | null) {
         setIsTyping(true);
         setTimeout(() => setIsTyping(false), 3000);
       } else if (message.type === "handoff") {
-        setHandoffNotice(
-          "This conversation has been transferred to a human agent. Someone will continue with you shortly."
-        );
+        setError(null);
+        setHandoffNotice("Someone from the team will continue with you shortly.");
       }
     });
 
