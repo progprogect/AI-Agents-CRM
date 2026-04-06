@@ -185,7 +185,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <Image src="/logo.svg" alt="CAworks" width={140} height={38} priority />
+          <Image src="/logo.png" alt="Лапа Моя" width={140} height={140} priority />
         </div>
 
         <div className="bg-white rounded-sm shadow-sm border border-[#BEBAB7] p-8">

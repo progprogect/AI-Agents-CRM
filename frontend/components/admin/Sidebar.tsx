@@ -114,11 +114,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       {/* Logo row — contains close button on mobile */}
       <div className="relative flex items-center h-[72px] px-6 border-b border-[#BEBAB7] flex-shrink-0">
         <Image
-          src="/logo.svg"
-          alt="CAworks"
-          width={120}
+          src="/logo.png"
+          alt="Лапа Моя"
+          width={32}
           height={32}
-          className="h-8 w-auto"
+          className="h-8 w-8 object-contain"
           priority
         />
         {/* Close button — mobile only */}

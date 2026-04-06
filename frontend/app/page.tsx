@@ -70,7 +70,7 @@ export default function Home() {
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">
           <div className="flex justify-center mb-4">
-            <Image src="/logo.svg" alt="CAworks" width={160} height={44} priority />
+            <Image src="/logo.png" alt="Лапа Моя" width={160} height={160} priority />
           </div>
           <p className="text-xl text-gray-600">
             Select an agent to start a consultation
