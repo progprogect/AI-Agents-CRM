@@ -115,8 +115,11 @@ class EscalationConfig(BaseModel):
         default_factory=list,
         description="Free-form escalation rules defined by the user",
     )
-    # Legacy policy fields — kept for backward compatibility, not used in new flow
-    medical_question_policy: str = Field(default="handoff_or_book")
+    # Legacy policy fields — fed into escalation classifier (see escalation_chain.expand_medical_question_policy_for_prompt).
+    medical_question_policy: str = Field(
+        default="handoff_or_book",
+        description='Free text or reserved token "vet_informational" (pet-care + RAG, fixed expanded prompt).',
+    )
     urgent_case_policy: str = Field(default="advise_emergency_and_handoff")
     repeat_patient_policy: str = Field(default="handoff_only")
     pre_procedure_policy: str = Field(default="handoff_only")

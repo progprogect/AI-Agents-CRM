@@ -23,7 +23,43 @@ logger = logging.getLogger(__name__)
 
 # Bump when escalation system/human prompt text or how it is assembled changes so
 # cached LLMChain instances in EscalationChain._chains are invalidated (long-lived workers).
-ESCALATION_PROMPT_VERSION = 5
+ESCALATION_PROMPT_VERSION = 6
+
+# Reserved value for EscalationConfig.medical_question_policy — expanded to a fixed classifier paragraph.
+MEDICAL_QUESTION_POLICY_VET_INFORMATIONAL = "vet_informational"
+
+_VET_INFORMATIONAL_EXPANDED = (
+    "Do NOT escalate for general educational pet-care questions: vaccination schedules, "
+    "nutrition basics, behavior and training, grooming, preventive care, when the user asks "
+    "for information. The AI may answer from the knowledge base (RAG) with clear disclaimers; "
+    "this is not a veterinary diagnosis. "
+    "DO escalate for: (1) life-threatening emergency or severe acute distress; "
+    "(2) user explicitly requests a human, wants to book an appointment, or shares phone/email; "
+    "(3) repeat-patient flows per repeat_patient policy; "
+    "(4) user asks for a diagnosis, prescription, individualized treatment plan, or lab "
+    "interpretation for their specific animal. "
+    "(RU: не эскалировать за общие вопросы о прививках, уходе, поведении; эскалировать при "
+    "срочности, явной записи, контакте, повторном пациенте, запросе диагноза/назначения лечения "
+    "под конкретное животное.)"
+)
+
+
+def expand_medical_question_policy_for_prompt(raw: str) -> str:
+    """Map reserved policy tokens to full classifier text; pass through otherwise."""
+    if raw == MEDICAL_QUESTION_POLICY_VET_INFORMATIONAL:
+        return _VET_INFORMATIONAL_EXPANDED
+    return raw
+
+
+def _expand_policies_dict(policies: dict[str, str]) -> dict[str, str]:
+    """Apply reserved tokens per policy key (currently medical_question only)."""
+    out: dict[str, str] = {}
+    for k, v in policies.items():
+        if k == "medical_question" and isinstance(v, str):
+            out[k] = expand_medical_question_policy_for_prompt(v)
+        else:
+            out[k] = v
+    return out
 
 # Classifier output cap (long system prompt + format_instructions needs headroom)
 _ESCALATION_MAX_OUTPUT_TOKENS = 768
@@ -164,10 +200,14 @@ def _build_rules_and_output_section(
         escalation_config = config.escalation
         policies_dict: dict = {}
         if escalation_config.policies:
-            policies_dict = dict(escalation_config.policies)
+            policies_dict = _expand_policies_dict(
+                {str(k): str(v) for k, v in dict(escalation_config.policies).items()}
+            )
         else:
             if escalation_config.medical_question_policy:
-                policies_dict["medical_question"] = escalation_config.medical_question_policy
+                policies_dict["medical_question"] = expand_medical_question_policy_for_prompt(
+                    escalation_config.medical_question_policy
+                )
             if escalation_config.urgent_case_policy:
                 policies_dict["urgent_case"] = escalation_config.urgent_case_policy
             if escalation_config.repeat_patient_policy:

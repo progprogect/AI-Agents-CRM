@@ -23,6 +23,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     messages,
     isLoading,
     error,
+    handoffNotice,
     isTyping,
     isConnected,
     sendMessage,
@@ -59,7 +60,25 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         </div>
       </div>
 
-      {/* Error message */}
+      {/* Handoff / human takeover — not a transport failure */}
+      {handoffNotice && (
+        <div
+          className="bg-amber-50 border-l-4 border-amber-500 p-4 m-4 rounded-sm"
+          role="status"
+        >
+          <div className="flex items-start gap-2">
+            <span className="text-amber-600" aria-hidden="true">
+              👤
+            </span>
+            <div>
+              <p className="text-sm font-medium text-amber-900">Transferred to a human</p>
+              <p className="text-sm text-amber-800 mt-1">{handoffNotice}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Connection / send errors */}
       {error && (
         <div
           className="bg-red-50 border-l-4 border-red-500 p-4 m-4 rounded-sm"

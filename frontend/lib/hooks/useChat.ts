@@ -13,6 +13,8 @@ export function useChat(conversationId: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Shown when server escalates to human — not a WebSocket connection failure */
+  const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -20,6 +22,7 @@ export function useChat(conversationId: string | null) {
 
   useEffect(() => {
     setError(null);
+    setHandoffNotice(null);
   }, [conversationId]);
 
   // Load initial messages
@@ -105,7 +108,9 @@ export function useChat(conversationId: string | null) {
         setIsTyping(true);
         setTimeout(() => setIsTyping(false), 3000);
       } else if (message.type === "handoff") {
-        setError("This conversation has been escalated to a human agent");
+        setHandoffNotice(
+          "This conversation has been transferred to a human agent. Someone will continue with you shortly."
+        );
       }
     });
 
@@ -213,6 +218,7 @@ export function useChat(conversationId: string | null) {
     messages,
     isLoading,
     error,
+    handoffNotice,
     isTyping,
     isConnected,
     sendMessage,

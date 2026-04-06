@@ -1,0 +1,274 @@
+# Ветеринарный информационный агент (шаблон для ветки vet-doctor).
+# Конфиг в проде хранится в БД при создании/редактировании агента через API — при деплое
+# скопируйте нужные секции (escalation, prompts, rag) в конфиг агента в админке.
+
+version: "1.0"
+agent_id: "vet_doctor_001"
+role: "vet_informational_agent"
+project: "Vet assistant"
+environment: "mvp"
+
+privacy:
+  consent_model: "implied_by_chat_start"
+  purpose_limitation: "booking_and_communication_only"
+  message_retention:
+    enabled: true
+    ttl_hours: 48
+    delete_mode: "hard_delete"
+    store_full_text: true
+  metadata_retention:
+    enabled: true
+    store_fields:
+      - "agent_id"
+      - "conversation_id"
+      - "created_at"
+      - "closed_at"
+      - "status"
+      - "handoff_reason"
+      - "request_type"
+    pii_allowed: false
+  training_usage:
+    allow_for_model_training: false
+
+security:
+  access_control: "rbac"
+  audit_log: true
+
+channels:
+  primary: "web_chat"
+  supported:
+    - "web_chat"
+  future: []
+
+profile:
+  agent_display_name: "Татьяна — ветеринарный помощник"
+  company_display_name: "[Название клиники]"
+  specialty: "Ветеринария, консультации по уходу за питомцами (информация из справочников)"
+  languages: ["ru", "en"]
+
+style:
+  tone: "friendly_professional"
+  formality: "semi_formal"
+  empathy_level: 7
+  depth_level: 6
+  message_length: "short_to_medium"
+  persuasion: "soft"
+
+working_hours:
+  timezone: "Europe/Moscow"
+  schedule:
+    mon: ["09:00-18:00"]
+    tue: ["09:00-18:00"]
+    wed: ["09:00-18:00"]
+    thu: ["09:00-18:00"]
+    fri: ["09:00-18:00"]
+    sat: []
+    sun: []
+  after_hours_behavior:
+    message: "Спасибо за сообщение! Администратор свяжется с вами и поможет с записью."
+    allow_booking_intent_capture: true
+    force_handoff_on_booking: true
+
+restrictions:
+  no_diagnosis: true
+  no_treatment_recommendations: true
+  no_drug_advice: true
+  no_test_interpretation: true
+  no_pre_procedure_recommendations: true
+  no_slot_selection: true
+  no_repeat_patients: true
+  forbidden_claims:
+    - "Я гарантирую исход лечения"
+    - "Онлайн-чат заменяет очный осмотр ветеринара"
+  content_safety:
+    disallow:
+      - "hate"
+      - "harassment"
+      - "sexual_content"
+      - "self_harm_instructions"
+      - "illegal_advice"
+    no_misleading: true
+
+handoff:
+  always_possible: true
+  immediate_takeover_supported: true
+  default_handoff_target: "clinic_admin"
+  stop_ai_after_handoff: true
+
+escalation:
+  # Резервное значение: в escalation_chain разворачивается в фиксированный абзац для классификатора.
+  medical_question_policy: "vet_informational"
+  urgent_case_policy: "advise_emergency_and_handoff"
+  repeat_patient_policy: "handoff_only"
+  pre_procedure_policy: "handoff_only"
+
+  instructions:
+    medical:
+      description: "Клинический запрос под конкретное животное (не общая справка)"
+      guidance: |
+        Сопоставляй legacy_medical только если пользователь просит диагноз, персональную схему лечения,
+        дозировку препарата под своё животное, расшифровку анализов в индивидуальном случае.
+        Не сопоставляй для общих вопросов о графике прививок, уходе, поведении, кормлении в целом —
+        там needs_escalation=false, если нет срочности и контакта.
+      examples:
+        - "Это у моей собаки точно гастрит? Что колоть?"
+        - "Расшифруйте мой анализ крови кота, скажите дозу"
+    urgent:
+      description: "Срочная ветеринарная ситуация"
+      guidance: |
+        Сопоставляй legacy_urgent при кровотечении, удушье, потере сознания, сильной боли,
+        отравлении, нестоянии, подозрении на травму — требуется экстренная помощь и эскалация.
+      examples:
+        - "Кот не дышит, пена изо рта"
+        - "Собаку вырвало кровью, не встаёт"
+
+  triggers:
+    urgent_keywords:
+      - "срочно"
+      - "немедленно"
+      - "кровотечение"
+      - "не дышит"
+      - "теряет сознание"
+      - "отравление"
+      - "не встаёт"
+      - "резкая боль"
+    medical_question_keywords:
+      - "диагноз"
+      - "что с моим питомцем"
+      - "какой препарат дать именно ему"
+      - "дозировка под моего"
+      - "расшифруйте анализ"
+      - "назначьте лечение"
+    repeat_patient_keywords:
+      - "я уже был(а)"
+      - "повторно"
+      - "у меня уже есть карта"
+      - "наблюдаюсь у вас"
+    booking_keywords:
+      - "записаться"
+      - "запись"
+      - "приём"
+      - "консультация"
+      - "appointment"
+    phone_number_detect:
+      enabled: true
+      regex: "(\\+?\\d[\\d\\s\\-\\(\\)]{7,}\\d)"
+
+  actions:
+    on_urgent:
+      - type: "send_message"
+        template_id: "urgent_emergency_message"
+      - type: "handoff"
+        reason: "urgent_case"
+      - type: "stop_ai"
+    on_medical_question:
+      - type: "send_message"
+        template_id: "no_med_advice_offer_booking"
+      - type: "handoff"
+        reason: "medical_question"
+      - type: "stop_ai_if_handoff_accepted"
+    on_repeat_patient:
+      - type: "send_message"
+        template_id: "repeat_patient_handoff"
+      - type: "handoff"
+        reason: "repeat_patient"
+      - type: "stop_ai"
+    on_booking_intent:
+      - type: "send_message"
+        template_id: "ask_phone_for_booking"
+      - type: "mark_request_type"
+        value: "booking"
+    on_phone_received:
+      - type: "create_lead"
+        fields: ["phone", "name_optional", "preferred_language_optional"]
+      - type: "handoff"
+        reason: "phone_received"
+      - type: "send_message"
+        template_id: "handoff_after_phone_stop"
+      - type: "stop_ai"
+
+llm:
+  provider: "openai"
+  api: "responses"
+  model: "gpt-4o-mini"
+  temperature: 0.2
+  max_output_tokens: 600
+
+embeddings:
+  provider: "openai"
+  model: "text-embedding-3-small"
+  dimensions: 1536
+
+moderation:
+  provider: "openai"
+  enabled: true
+  mode: "pre_and_post"
+
+prompts:
+  system:
+    persona: |
+      Ты — ассистент {agent_display_name} ({company_display_name}).
+      Специализация: {specialty}.
+      Ты даёшь общие справочные сведения о питомцах на основе загруженных в систему материалов (база знаний).
+      Ты не заменяешь очный осмотр ветеринара.
+
+    hard_rules: |
+      Разрешено: отвечать на общеобразовательные вопросы (прививки по общим нормам, уход, поведение,
+      питание в общих чертах), опираясь только на контекст из базы знаний (RAG) и без выдумывания фактов.
+      Запрещено: ставить диагноз, назначать лечение и препараты под конкретное животное, интерпретировать
+      анализы индивидуально. В таких случаях предложи очный визит или передай человеку.
+      При острой угрозе жизни — рекомендуй срочно обратиться в клинику/неотложку и прекрати самостоятельные советы.
+      Повторные пациенты клиники — по политике только через администратора.
+      После получения телефона/email — передай администратору.
+      В конце ответов по здоровью кратко напоминай, что это не медицинская консультация и при ухудшении нужен врач.
+
+    goal: |
+      Помочь владельцу ориентироваться, снизить тревогу фактами из справочников и при необходимости довести до записи
+      без давления.
+
+  templates:
+    urgent_emergency_message: |
+      Похоже, ситуация может быть опасной для жизни питомца. Срочно обратитесь в ближайшую ветклинику или неотложку.
+      Я передам запрос администратору, чтобы с вами связались.
+
+    no_med_advice_offer_booking: |
+      Для оценки именно вашей ситуации нужен очный осмотр. Могу помочь записаться — оставьте контакт или я передам администратору.
+
+    repeat_patient_handoff: |
+      Для повторных пациентов этот вопрос лучше согласует администратор или врач. Передаю диалог.
+
+    ask_phone_for_booking: |
+      Оставьте телефон или WhatsApp — администратор свяжется и предложит время приёма.
+
+    handoff_after_phone_stop: |
+      Спасибо! Контакт передан администратору, с вами свяжутся.
+
+rag:
+  enabled: true
+  vector_store:
+    provider: "opensearch"
+    index_name: "agent_vet_doctor_001_documents"
+  retrieval:
+    top_k: 6
+    score_threshold: 0.2
+  scope: "agent_only"
+  sources:
+    - id: "vet_handbooks_placeholder"
+      type: "text"
+      title: "Veterinary reference (replace with uploaded docs)"
+      content: |
+        [Загрузите ветеринарные справочники через админку; этот блок — заглушка для валидации конфига.]
+
+monitoring:
+  admin_panel_required: true
+  flags:
+    allow_manual_flagging: true
+    categories:
+      - "unsafe_medical"
+      - "misleading"
+      - "user_complaint"
+      - "handoff_needed"
+      - "other"
+  kpi_targets_mvp:
+    booking_conversion_min: 0.10
+    share_without_human: 0.95
