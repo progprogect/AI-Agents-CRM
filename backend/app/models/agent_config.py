@@ -107,6 +107,10 @@ class EscalationInstruction(BaseModel):
 class EscalationConfig(BaseModel):
     """Escalation rules configuration."""
 
+    enabled: bool = Field(
+        default=True,
+        description="If False, skip LLM escalation classifier entirely (no auto handoff from rules).",
+    )
     detect_contact: bool = Field(
         default=True,
         description="Escalate when user shares phone number or email address",

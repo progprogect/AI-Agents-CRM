@@ -309,6 +309,7 @@ class EscalationChain:
         esc = agent_config.escalation
         relevant = {
             "prompt_v": ESCALATION_PROMPT_VERSION,
+            "enabled": esc.enabled,
             "detect_contact": esc.detect_contact,
             "custom_rules": esc.custom_rules,
             "has_instructions": bool(esc.instructions),

@@ -102,6 +102,8 @@ export interface EscalationCustomRule {
 }
 
 export interface EscalationConfig {
+  /** If false, backend skips LLM escalation classifier entirely */
+  enabled?: boolean;
   detect_contact: boolean;
   custom_rules: EscalationCustomRule[];
   // Legacy fields — may be present in older agent configs

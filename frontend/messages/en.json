@@ -311,6 +311,8 @@
     "ragAfterCreate": "After creating the agent, you'll add documents on the RAG page — folders, PDFs, images.",
     "escalationTitle": "Escalation Rules",
     "escalationDesc": "Configure when the agent should hand off a conversation to a human operator.",
+    "escalationLlmEnabled": "Automatic escalation (LLM classifier)",
+    "escalationLlmEnabledHint": "When off, the backend skips the escalation classifier before replies — no auto handoff from medical, booking, or contact rules. Content moderation still runs.",
     "contactDetection": "Contact info detection",
     "contactDetectionHint": "Escalate automatically when the user shares a phone number or email address.",
     "customRules": "Custom rules",

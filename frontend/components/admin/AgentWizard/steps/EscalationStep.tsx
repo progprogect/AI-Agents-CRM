@@ -26,6 +26,7 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
 }) => {
   const t = useTranslations("Wizard");
   const rules: EscalationRule[] = config.escalation_rules || [];
+  const escalationEnabled = config.escalation_enabled !== false;
   const detectContact = config.escalation_detect_contact ?? true;
 
   const handleAddRule = useCallback(() => {
@@ -65,6 +66,24 @@ export const EscalationStep: React.FC<EscalationStepProps> = ({
         <p className="text-sm text-gray-600">
           {t("escalationDesc")}
         </p>
+      </div>
+
+      {/* Master switch: LLM escalation classifier */}
+      <div className="p-4 border border-[#BEBAB7] rounded-sm bg-white space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-900">{t("escalationLlmEnabled")}</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {t("escalationLlmEnabledHint")}
+            </p>
+          </div>
+          <div className="flex-shrink-0">
+            <Toggle
+              checked={escalationEnabled}
+              onChange={(v) => onUpdate({ escalation_enabled: v })}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Built-in: contact detection */}

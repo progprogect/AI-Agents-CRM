@@ -110,5 +110,57 @@ class TestProcessMessageStale(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result.get("response"))
 
 
+class TestEscalationDisabled(unittest.IsolatedAsyncioTestCase):
+    async def test_detect_escalation_not_called_when_escalation_disabled(self) -> None:
+        from app.models.agent_config import AgentConfig
+        from app.services.agent_service import AgentService
+
+        cfg_dict = {
+            "agent_id": "a1",
+            "project": "test",
+            "profile": {
+                "agent_display_name": "A",
+                "company_display_name": "C",
+            },
+            "moderation": {"enabled": False},
+            "rag": {"enabled": False},
+            "escalation": {"enabled": False},
+        }
+        agent_config = AgentConfig.from_dict(cfg_dict)
+
+        dynamodb = MagicMock()
+        dynamodb.update_conversation = AsyncMock()
+        dynamodb.get_conversation = AsyncMock(return_value=None)
+
+        esc = MagicMock()
+        esc.detect_escalation = AsyncMock(
+            return_value=MagicMock(needs_escalation=False)
+        )
+        mod = MagicMock()
+        mod.check_pre_moderation = AsyncMock(return_value=(False, None))
+        mod.check_post_moderation = AsyncMock(return_value=(False, None))
+        rag = MagicMock()
+
+        svc = AgentService(
+            agent_config=agent_config,
+            llm_factory=MagicMock(),
+            escalation_service=esc,
+            moderation_service=mod,
+            rag_service=rag,
+            dynamodb=dynamodb,
+            channel_sender=None,
+        )
+        svc.agent_chain.generate_response = AsyncMock(return_value="Hello")
+
+        result = await svc.process_message(
+            "hi",
+            "conv-1",
+            conversation_history=[],
+            is_reply_stale=None,
+        )
+        esc.detect_escalation.assert_not_called()
+        self.assertEqual(result.get("response"), "Hello")
+
+
 if __name__ == "__main__":
     unittest.main()

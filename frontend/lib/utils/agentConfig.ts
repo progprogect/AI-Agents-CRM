@@ -65,6 +65,9 @@ export interface AgentConfigFormData {
     content: string;
   }>;
 
+  // Escalation — master switch for LLM classifier (Step 5)
+  escalation_enabled?: boolean;
+
   // Escalation - contact detection toggle (Step 5)
   escalation_detect_contact?: boolean;
 
@@ -111,6 +114,7 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     // Examples defaults
     examples: [...DEFAULT_EXAMPLES],
     // Escalation
+    escalation_enabled: true,
     escalation_detect_contact: true,
     escalation_rules: [],
     // LLM defaults
@@ -158,6 +162,7 @@ export function agentConfigToFormData(
       })) || [],
 
     // Escalation
+    escalation_enabled: agentConfig.escalation?.enabled !== false,
     escalation_detect_contact: agentConfig.escalation?.detect_contact ?? true,
     escalation_rules: agentConfig.escalation?.custom_rules?.map((r: any, i: number) => ({
       id: r.id || `rule_${i}`,
@@ -301,6 +306,7 @@ export function formDataToAgentConfig(
       mode: "pre_and_post",
     },
     escalation: {
+      enabled: formData.escalation_enabled !== false,
       detect_contact: formData.escalation_detect_contact ?? true,
       custom_rules: (formData.escalation_rules || []).map((rule) => ({
         id: rule.id,

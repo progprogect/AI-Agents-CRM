@@ -96,7 +96,9 @@ handoff:
   stop_ai_after_handoff: true
 
 escalation:
-  # Резервное значение: в escalation_chain разворачивается в фиксированный абзац для классификатора.
+  # Отключить LLM-классификатор эскалации (нет авто-handoff по medical/booking rules).
+  enabled: false
+  # Если включите enabled: true — резервный токен разворачивается в escalation_chain.
   medical_question_policy: "vet_informational"
   urgent_case_policy: "advise_emergency_and_handoff"
   repeat_patient_policy: "handoff_only"

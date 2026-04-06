@@ -88,55 +88,61 @@ class AgentService:
         if mod_early:
             return mod_early
 
-        # Escalation detection
-        escalation_decision = await self.escalation_service.detect_escalation(
-            message=user_message,
-            conversation_context={
-                "conversation_id": conversation_id,
-                "previous_messages": conversation_history or [],
-            },
-            agent_id=self.agent_config.agent_id,
-            agent_config=self.agent_config,
-        )
-
-        if escalation_decision.needs_escalation:
-            escalation_type_str = getattr(
-                escalation_decision.escalation_type,
-                "value",
-                escalation_decision.escalation_type,
+        # LLM escalation classifier (optional — off when escalation.enabled is False)
+        if not self.agent_config.escalation.enabled:
+            logger.debug(
+                "Escalation classifier skipped (escalation.enabled=false)",
+                extra={"agent_id": self.agent_config.agent_id},
             )
-            # Update conversation status
-            await self.dynamodb.update_conversation(
-                conversation_id=conversation_id,
-                status=ConversationStatus.NEEDS_HUMAN,
-                handoff_reason=escalation_decision.reason,
-                request_type=escalation_type_str,
+        else:
+            escalation_decision = await self.escalation_service.detect_escalation(
+                message=user_message,
+                conversation_context={
+                    "conversation_id": conversation_id,
+                    "previous_messages": conversation_history or [],
+                },
+                agent_id=self.agent_config.agent_id,
+                agent_config=self.agent_config,
             )
 
-            result = {
-                "response": None,
-                "escalate": True,
-                "escalation_reason": escalation_decision.reason,
-                "escalation_type": escalation_type_str,
-            }
-            
-            # Include extracted contacts if available
-            if escalation_decision.extracted_contacts:
-                contacts = escalation_decision.extracted_contacts
-                result["extracted_contacts"] = {
-                    "phone_numbers": contacts.phone_numbers,
-                    "emails": contacts.emails,
+            if escalation_decision.needs_escalation:
+                escalation_type_str = getattr(
+                    escalation_decision.escalation_type,
+                    "value",
+                    escalation_decision.escalation_type,
+                )
+                # Update conversation status
+                await self.dynamodb.update_conversation(
+                    conversation_id=conversation_id,
+                    status=ConversationStatus.NEEDS_HUMAN,
+                    handoff_reason=escalation_decision.reason,
+                    request_type=escalation_type_str,
+                )
+
+                result = {
+                    "response": None,
+                    "escalate": True,
+                    "escalation_reason": escalation_decision.reason,
+                    "escalation_type": escalation_type_str,
                 }
-                logger.info(
-                    f"Extracted contacts included in escalation result",
-                    extra={
-                        "conversation_id": conversation_id,
+
+                # Include extracted contacts if available
+                if escalation_decision.extracted_contacts:
+                    contacts = escalation_decision.extracted_contacts
+                    result["extracted_contacts"] = {
                         "phone_numbers": contacts.phone_numbers,
                         "emails": contacts.emails,
-                    },
-                )
-            
-            return result
+                    }
+                    logger.info(
+                        "Extracted contacts included in escalation result",
+                        extra={
+                            "conversation_id": conversation_id,
+                            "phone_numbers": contacts.phone_numbers,
+                            "emails": contacts.emails,
+                        },
+                    )
+
+                return result
 
         if is_reply_stale and await is_reply_stale():
             return {
