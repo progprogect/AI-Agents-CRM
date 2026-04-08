@@ -332,6 +332,15 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             </span>
           </div>
           <div className="flex justify-between gap-4">
+            <span className="text-gray-600 shrink-0">{t("reviewEscalationLlm")}:</span>
+            <span className="font-medium text-gray-900">
+              {config.escalation_enabled !== false ? t("yes") : t("no")}
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 -mt-2 pl-0">
+            {t("reviewEscalationLlmHint")}
+          </p>
+          <div className="flex justify-between gap-4">
             <span className="text-gray-600 shrink-0">{t("model")}:</span>
             <span className="font-medium text-gray-900">
               {config.llm_model || "gpt-4o-mini"}
@@ -367,6 +376,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
         {modProvider === "google_ai_studio" && (
           <p className="text-xs text-gray-500">{t("moderationGeminiHint")}</p>
         )}
+        <p className="text-xs text-gray-500">{t("reviewModerationSeparateNote")}</p>
       </div>
 
       {/* Configuration views */}

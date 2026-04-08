@@ -18,6 +18,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _merge_agent_config(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    """Merge incoming config onto existing. Top-level shallow merge; `escalation` dict is deep-merged
+    so a partial PUT like {\"escalation\": {\"enabled\": false}} does not drop detect_contact, etc.
+    """
+    merged = {**existing, **incoming}
+    if "escalation" in incoming and isinstance(incoming.get("escalation"), dict):
+        old_esc = existing.get("escalation")
+        if isinstance(old_esc, dict):
+            merged["escalation"] = {**old_esc, **incoming["escalation"]}
+        else:
+            merged["escalation"] = dict(incoming["escalation"])
+    return merged
+
+
 class CreateAgentRequest(BaseModel, AgentIDValidator):
     """Request to create an agent."""
 
@@ -165,8 +179,8 @@ async def update_agent(
     if not existing:
         raise AgentNotFoundError(agent_id)
 
-    # Merge configs
-    updated_config = {**existing.get("config", {}), **config}
+    # Merge configs (escalation dict merged deeply — see _merge_agent_config)
+    updated_config = _merge_agent_config(existing.get("config", {}) or {}, config)
 
     # Validate updated configuration
     try:
