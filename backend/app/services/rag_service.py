@@ -1,6 +1,7 @@
 """RAG service for document retrieval."""
 
 import logging
+import time
 from functools import lru_cache
 from typing import Any, Optional, TypedDict
 
@@ -12,6 +13,7 @@ from app.services.llm_factory import LLMFactory, get_llm_factory
 from app.storage.dynamodb_rag import DynamoDBRAGClient, get_dynamodb_rag_client
 from app.storage.postgres_rag import PostgresRAGClient, get_postgres_rag_client
 from app.utils.llm_provider import get_rag_embeddings_config
+from app.utils.rag_context_budget import format_rag_context_with_budget
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,29 @@ class RAGMediaAttachment(TypedDict):
     media_type: str   # "image" | "video" | "audio" | "document"
     title: str
     score: float
+
+
+def _max_rag_context_chars(agent_config: Optional[AgentConfig]) -> int:
+    """Upper bound on retrieved text injected into the LLM (per agent config override)."""
+    s = get_settings()
+    max_c = s.rag_context_max_chars
+    if agent_config and agent_config.rag:
+        r = agent_config.rag.retrieval or {}
+        mc = r.get("max_context_chars")
+        if mc is not None:
+            max_c = int(mc)
+    return max_c
+
+
+def _vector_retrieval_top_k(agent_config: Optional[AgentConfig], top_k: int) -> int:
+    """Widen vector recall before budget packing (max of UI top_k and configured floor)."""
+    s = get_settings()
+    floor_k = s.rag_vector_recall_k
+    if agent_config and agent_config.rag:
+        r = agent_config.rag.retrieval or {}
+        if r.get("vector_recall_k") is not None:
+            floor_k = int(r["vector_recall_k"])
+    return max(int(top_k), int(floor_k))
 
 
 def _rag_file_type_to_media_type(file_type: str | None) -> str:
@@ -131,6 +156,32 @@ class RAGService:
                 documents=indexed_docs,
             )
 
+            from app.services.rag_indexing import _rebuild_chunks_for_postgres_document
+            from app.storage.postgres_rag import PostgresRAGClient
+
+            if isinstance(self.rag_client, PostgresRAGClient):
+                acfg_dict = agent_config.model_dump() if agent_config else {}
+                for doc in indexed_docs:
+                    doc_id = str(doc["document_id"])
+                    row = await self.rag_client.get_document(agent_id, doc_id)
+                    if not row:
+                        continue
+                    try:
+                        await _rebuild_chunks_for_postgres_document(
+                            agent_id,
+                            doc_id,
+                            str(doc.get("content", "")),
+                            self.rag_client,
+                            embeddings,
+                            acfg_dict,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Chunk rebuild after bulk index failed for %s: %s",
+                            doc_id,
+                            e,
+                        )
+
             logger.info(
                 f"Indexed {success_count} documents for agent {agent_id}, "
                 f"{failed_count} failed",
@@ -174,18 +225,24 @@ class RAGService:
                     dimensions=1536,
                 )
 
+            recall_k = _vector_retrieval_top_k(agent_config, top_k)
             results = await self.rag_chain.retrieve(
                 query=query,
                 agent_id=agent_id,
                 index_name=index_name,
                 embeddings_config=embeddings_config,
-                top_k=top_k,
+                top_k=recall_k,
                 score_threshold=score_threshold,
             )
 
             logger.debug(
-                f"Retrieved {len(results)} documents for query",
-                extra={"agent_id": agent_id, "query_length": len(query), "results_count": len(results)},
+                f"Retrieved {len(results)} documents for query (recall_k={recall_k})",
+                extra={
+                    "agent_id": agent_id,
+                    "query_length": len(query),
+                    "results_count": len(results),
+                    "rag_vector_recall_k": recall_k,
+                },
             )
 
             return results
@@ -223,16 +280,21 @@ class RAGService:
                     dimensions=1536,
                 )
 
-            context = await self.rag_chain.get_relevant_context(
+            recall_k = _vector_retrieval_top_k(agent_config, top_k)
+            raw = await self.rag_chain.retrieve(
                 query=query,
                 agent_id=agent_id,
                 index_name=index_name,
                 embeddings_config=embeddings_config,
-                top_k=top_k,
+                top_k=recall_k,
                 score_threshold=score_threshold,
             )
-
-            return context
+            if not raw:
+                return ""
+            context, _used = format_rag_context_with_budget(
+                raw, _max_rag_context_chars(agent_config)
+            )
+            return context if context.strip() else ""
         except Exception as e:
             logger.error(
                 f"RAG context formatting error for agent {agent_id}: {str(e)}",
@@ -273,15 +335,18 @@ class RAGService:
                 dimensions=1536,
             )
 
+        recall_k = _vector_retrieval_top_k(agent_config, top_k)
         try:
+            t0 = time.perf_counter()
             raw_results = await self.rag_chain.retrieve(
                 query=query,
                 agent_id=agent_id,
                 index_name=index_name,
                 embeddings_config=embeddings_config,
-                top_k=top_k,
+                top_k=recall_k,
                 score_threshold=score_threshold,
             )
+            rag_ms = (time.perf_counter() - t0) * 1000.0
         except Exception as e:
             logger.warning(
                 f"RAG retrieval error in get_context_and_media for agent {agent_id}: {e}",
@@ -293,18 +358,10 @@ class RAGService:
         if not raw_results:
             return "", []
 
-        # Build context string (identical format to rag_chain.get_relevant_context)
-        context_parts: list[str] = []
-        for i, result in enumerate(raw_results, 1):
-            title = result.get("title", "Document")
-            content = result.get("content", "")
-            part = f"[{i}] {title}\n{content}"
-            if result.get("file_url"):
-                part += f"\nImage: {result['file_url']}"
-            context_parts.append(part)
-        context = "\n\n".join(context_parts)
+        max_chars = _max_rag_context_chars(agent_config)
+        context, used_chars = format_rag_context_with_budget(raw_results, max_chars)
 
-        # Extract media attachments that clear the higher similarity bar
+        # Extract media attachments that clear the higher similarity bar (from full retrieval set)
         media: list[RAGMediaAttachment] = [
             RAGMediaAttachment(
                 url=r["file_url"],
@@ -317,11 +374,20 @@ class RAGService:
         ]
 
         logger.debug(
-            "RAG context_and_media: %d docs, %d media attachments (threshold=%.2f)",
+            "RAG context_and_media: %d hits (recall_k=%s), %d media, context_chars=%s/%s retrieval_ms=%.2f",
             len(raw_results),
+            recall_k,
             len(media),
-            media_score_threshold,
-            extra={"agent_id": agent_id},
+            used_chars,
+            max_chars,
+            rag_ms,
+            extra={
+                "agent_id": agent_id,
+                "rag_context_chars": used_chars,
+                "rag_context_budget": max_chars,
+                "rag_retrieval_ms": round(rag_ms, 2),
+                "rag_vector_recall_k": recall_k,
+            },
         )
 
         return context, media

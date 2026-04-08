@@ -9,14 +9,11 @@ pydantic-settings>=2.1.0
 langchain>=1.0.0
 langchain-openai>=1.0.0
 langchain-google-genai>=2.0.0
-langchain-community>=0.3.0
-langchain-classic>=1.0.0
 openai>=2.20.0,<3.0.0
 
 # PostgreSQL
 asyncpg>=0.29.0
 sqlalchemy[asyncio]>=2.0.0
-pgvector>=0.2.0
 
 # Encryption for secrets
 cryptography>=42.0.0

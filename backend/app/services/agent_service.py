@@ -1,6 +1,7 @@
 """Agent service - LangChain orchestrator."""
 
 import logging
+import time
 import re
 import uuid
 from collections.abc import Awaitable, Callable
@@ -47,7 +48,6 @@ class AgentService:
         self.agent_chain = AgentChain(
             agent_config=agent_config,
             llm_factory=llm_factory,
-            rag_service=rag_service,
         )
 
     async def run_pre_moderation_guard(
@@ -92,7 +92,10 @@ class AgentService:
         if not self.agent_config.escalation.enabled:
             logger.debug(
                 "Escalation classifier skipped (escalation.enabled=false)",
-                extra={"agent_id": self.agent_config.agent_id},
+                extra={
+                    "conversation_id": conversation_id,
+                    "agent_id": self.agent_config.agent_id,
+                },
             )
         else:
             escalation_decision = await self.escalation_service.detect_escalation(
@@ -158,12 +161,22 @@ class AgentService:
         rag_media_attachment = None   # first eligible RAGMediaAttachment, or None
         if self.agent_config.rag.enabled:
             try:
+                t_rag = time.perf_counter()
                 rag_context, rag_media_list = await self.rag_service.get_context_and_media(
                     query=user_message,
                     agent_id=self.agent_config.agent_id,
                     agent_config=self.agent_config,
                     top_k=self.agent_config.rag.retrieval.get("top_k", 6),
                     score_threshold=self.agent_config.rag.retrieval.get("score_threshold", 0.2),
+                )
+                rag_ms = (time.perf_counter() - t_rag) * 1000.0
+                logger.debug(
+                    "rag_retrieval_phase",
+                    extra={
+                        "conversation_id": conversation_id,
+                        "agent_id": self.agent_config.agent_id,
+                        "rag_retrieval_ms": round(rag_ms, 2),
+                    },
                 )
                 if rag_context:
                     logger.debug(
@@ -202,11 +215,22 @@ class AgentService:
 
         # Generate response
         try:
+            t_llm = time.perf_counter()
             response = await self.agent_chain.generate_response(
                 user_message=user_message,
                 conversation_history=conversation_history,
                 rag_context=rag_context,
                 rag_media_available=bool(rag_media_list),
+                conversation_id=conversation_id,
+            )
+            llm_ms = (time.perf_counter() - t_llm) * 1000.0
+            logger.debug(
+                "agent_llm_generation",
+                extra={
+                    "conversation_id": conversation_id,
+                    "agent_id": self.agent_config.agent_id,
+                    "agent_llm_ms": round(llm_ms, 2),
+                },
             )
 
             # Normalize: some LLM backends (e.g. Claude via LangChain) return a list

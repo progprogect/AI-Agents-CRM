@@ -1,0 +1,2 @@
+query,expected_doc_id_or_title,notes
+"Example: clinic opening hours","replace_with_real_chunk_id_or_title","Manual or scripted run on a test agent; see rag_metrics_and_rerank.md"

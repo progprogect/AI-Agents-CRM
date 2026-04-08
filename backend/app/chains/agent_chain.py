@@ -1,17 +1,42 @@
 """Main LangChain agent chain."""
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
-from langchain_classic.agents import AgentExecutor, create_openai_tools_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.agents import create_agent
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 
+from app.config import get_settings
 from app.models.agent_config import AgentConfig
 from app.services.llm_factory import LLMFactory
 from app.tools.booking_tool import BookingTool
-from app.services.rag_service import RAGService
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_final_ai_text(messages: list[BaseMessage]) -> str:
+    """Take the last assistant turn without pending tool calls (LangGraph agent output)."""
+    for msg in reversed(messages):
+        if not isinstance(msg, AIMessage):
+            continue
+        tool_calls = getattr(msg, "tool_calls", None) or []
+        if tool_calls:
+            continue
+        content: Any = msg.content
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict) and "text" in block:
+                    parts.append(str(block["text"]))
+                else:
+                    parts.append(str(block))
+            return "".join(parts).strip()
+    return ""
 
 
 class AgentChain:
@@ -21,46 +46,31 @@ class AgentChain:
         self,
         agent_config: AgentConfig,
         llm_factory: LLMFactory,
-        rag_service: RAGService,
     ):
         """Initialize agent chain."""
         self.agent_config = agent_config
         self.llm_factory = llm_factory
-        self.rag_service = rag_service
-        self._executor: Optional[AgentExecutor] = None
+        self._agent_graph: Any = None
 
-    async def _get_executor(self) -> AgentExecutor:
-        """Get or create agent executor."""
-        if self._executor is None:
-            llm = await self.llm_factory.get_chat_model(self.agent_config)
+    async def _get_agent_graph(self) -> Any:
+        """Build LangChain 1.x agent graph (create_agent); one graph per AgentChain instance."""
+        if self._agent_graph is not None:
+            return self._agent_graph
 
-            tools = [BookingTool(agent_id=self.agent_config.agent_id)]
+        system_prompt = self._build_system_prompt()
+        llm = await self.llm_factory.get_chat_model(self.agent_config)
 
-            # Build system prompt from config
-            system_prompt = self._build_system_prompt()
+        tools = [BookingTool(agent_id=self.agent_config.agent_id)]
 
-            # Create prompt template
-            prompt = ChatPromptTemplate.from_messages(
-                [
-                    ("system", system_prompt),
-                    MessagesPlaceholder(variable_name="chat_history"),
-                    ("human", "{input}"),
-                    MessagesPlaceholder(variable_name="agent_scratchpad"),
-                ]
-            )
+        settings = get_settings()
+        self._agent_graph = create_agent(
+            model=llm,
+            tools=tools,
+            system_prompt=system_prompt,
+            debug=settings.debug,
+        )
 
-            # Create agent
-            agent = create_openai_tools_agent(llm, tools, prompt)
-
-            # Create executor
-            self._executor = AgentExecutor(
-                agent=agent,
-                tools=tools,
-                verbose=True,
-                handle_parsing_errors=True,
-            )
-
-        return self._executor
+        return self._agent_graph
 
     def _build_system_prompt(self) -> str:
         """Build system prompt from agent config."""
@@ -117,7 +127,7 @@ Response Policy (strict priority):
 Language:
 - Respond only in the language of the user's current message
 - If user switches language, switch immediately
-- Do not mix languages unless user explicitly requests it
+- Do not mix languages unless the user explicitly requests it
 
 Grounding:
 - Use only grounded sources: RAG context, approved examples, and escalation rules
@@ -190,13 +200,13 @@ Align your tone and boundaries with these configured expectations (there is no s
             style_description,
             response_policy,
         ]
-        
+
         if examples_section:
             prompt_parts.append(examples_section)
-        
+
         if escalation_section:
             prompt_parts.append(escalation_section)
-        
+
         prompt_parts.append("""Remember:
 - Be friendly and professional
 - Never provide medical diagnoses or treatment advice
@@ -207,7 +217,7 @@ Align your tone and boundaries with these configured expectations (there is no s
 When context includes "Image: URL", you may suggest relevant images in your response.
 Use format: [Image: URL] or ![description](URL) for the user to view.
 """)
-        
+
         return "\n\n".join(prompt_parts)
 
     # Marker the LLM must include when it wants to attach a RAG document to the response.
@@ -219,14 +229,20 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         conversation_history: Optional[list[dict]] = None,
         rag_context: Optional[str] = None,
         rag_media_available: bool = False,
+        conversation_id: Optional[str] = None,
     ) -> str:
-        """Generate response using agent chain."""
-        executor = await self._get_executor()
+        """Generate response using LangChain create_agent graph."""
+        graph = await self._get_agent_graph()
 
-        # Prepare input with context
+        # Prepare input with context (explicit markers; retrieved text is not user-authored)
         input_text = user_message
         if rag_context:
-            input_text = f"Context:\n{rag_context}\n\nUser message: {user_message}"
+            input_text = (
+                "---BEGIN_RETRIEVED_CONTEXT---\n"
+                f"{rag_context}\n"
+                "---END_RETRIEVED_CONTEXT---\n\n"
+                f"User message: {user_message}"
+            )
             if rag_media_available:
                 input_text += (
                     "\n\nImportant: Some context documents have attached files (images, PDFs). "
@@ -236,41 +252,39 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     "greetings, simple questions, or casual conversation."
                 )
 
-        # Prepare chat history (last 50 messages for context)
-        # Note: Consider token limits - 50 messages ≈ 2000-3000 tokens
-        chat_history = []
+        messages_lc: list[BaseMessage] = []
         if conversation_history:
-            # conversation_history is already in chronological order (oldest first)
-            # Take last 50 messages (most recent)
-            # IMPORTANT: Current user message should already be excluded in chat.py
-            # to avoid duplication (it's passed as 'input' separately)
-            for msg in conversation_history[-50:]:  # Last 50 messages
+            for msg in conversation_history[-50:]:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                # Normalize role to lowercase for comparison
                 role_lower = role.lower() if isinstance(role, str) else str(role).lower()
                 if role_lower == "user":
-                    chat_history.append(("human", content))
+                    messages_lc.append(HumanMessage(content=content))
                 elif role_lower == "agent":
-                    chat_history.append(("ai", content))
-                # Skip admin messages as they're not part of user-agent conversation
+                    messages_lc.append(AIMessage(content=content))
 
-        # Log history for debugging (first and last few messages)
-        if chat_history:
+        messages_lc.append(HumanMessage(content=input_text))
+
+        if messages_lc[:-1]:
             logger.debug(
-                f"Chat history prepared: {len(chat_history)} messages",
+                f"Chat history prepared: {len(messages_lc) - 1} messages",
                 extra={
                     "agent_id": self.agent_config.agent_id,
-                    "history_length": len(chat_history),
+                    "conversation_id": conversation_id,
+                    "history_length": len(messages_lc) - 1,
                     "first_message_preview": (
-                        chat_history[0][1][:50] + "..." if len(chat_history[0][1]) > 50
-                        else chat_history[0][1]
-                    ) if chat_history else None,
+                        messages_lc[0].content[:50] + "..."
+                        if isinstance(messages_lc[0].content, str) and len(messages_lc[0].content) > 50
+                        else str(messages_lc[0].content)[:50]
+                    ),
                     "last_message_preview": (
-                        chat_history[-1][1][:50] + "..." if len(chat_history[-1][1]) > 50
-                        else chat_history[-1][1]
-                    ) if chat_history else None,
-                    "current_user_message_preview": user_message[:50] + "..." if len(user_message) > 50 else user_message,
+                        messages_lc[-2].content[:50] + "..."
+                        if isinstance(messages_lc[-2].content, str) and len(messages_lc[-2].content) > 50
+                        else str(messages_lc[-2].content)[:50]
+                    ),
+                    "current_user_message_preview": user_message[:50] + "..."
+                    if len(user_message) > 50
+                    else user_message,
                 },
             )
         else:
@@ -278,27 +292,36 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 "No chat history available (new conversation)",
                 extra={
                     "agent_id": self.agent_config.agent_id,
-                    "current_user_message_preview": user_message[:50] + "..." if len(user_message) > 50 else user_message,
+                    "conversation_id": conversation_id,
+                    "current_user_message_preview": user_message[:50] + "..."
+                    if len(user_message) > 50
+                    else user_message,
                 },
             )
 
+        meta: dict[str, str] = {"agent_id": self.agent_config.agent_id}
+        if conversation_id:
+            meta["conversation_id"] = conversation_id
+
         try:
-            result = await executor.ainvoke(
-                {
-                    "input": input_text,
-                    "chat_history": chat_history,
-                }
+            result = await graph.ainvoke(
+                {"messages": messages_lc},
+                config=RunnableConfig(tags=["agent_chat"], metadata=meta),
             )
-            return result.get("output", "I apologize, but I couldn't generate a response.")
+            out_messages = result.get("messages") or []
+            text = _extract_final_ai_text(out_messages)
+            if text:
+                return text
+            return "I apologize, but I couldn't generate a response."
         except Exception as e:
             logger.error(
                 f"Error generating response: {str(e)}",
                 exc_info=True,
                 extra={
                     "agent_id": self.agent_config.agent_id,
-                    "history_length": len(chat_history),
+                    "conversation_id": conversation_id,
+                    "history_length": len(messages_lc) - 1,
                     "user_message_preview": user_message[:100] if user_message else None,
                 },
             )
             return f"I apologize, but I encountered an error: {str(e)}"
-

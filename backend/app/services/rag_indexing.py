@@ -7,11 +7,13 @@ from typing import Any, Optional
 from uuid import UUID
 
 from app.chains.rag_chain import RAGChain
+from app.config import get_settings
 from app.models.agent_config import EmbeddingsConfig
 from app.services.image_processor_service import get_image_processor_service
 from app.services.llm_factory import get_llm_factory
 from app.storage.postgres_rag import PostgresRAGClient, cosine_similarity
 from app.utils.llm_provider import get_rag_embeddings_config
+from app.utils.text_chunking import split_text_into_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,39 @@ async def extract_text_content(
     else:
         text_content = filename
     return text_content
+
+
+async def _rebuild_chunks_for_postgres_document(
+    agent_id: str,
+    document_id: str,
+    text_content: str,
+    rag_client: PostgresRAGClient,
+    embeddings: Any,
+    agent_config_dict: dict[str, Any],
+) -> None:
+    """Embed overlapping chunks for semantic search (Postgres rag_chunks table)."""
+    try:
+        s = get_settings()
+        rag = (agent_config_dict or {}).get("rag") or {}
+        ret = rag.get("retrieval") or {}
+        chunk_size = int(ret.get("chunk_size_chars", s.rag_chunk_size_chars))
+        overlap = int(ret.get("chunk_overlap_chars", s.rag_chunk_overlap_chars))
+        chunks = split_text_into_chunks(text_content, chunk_size, overlap)
+        if not chunks:
+            await rag_client.replace_document_chunks(agent_id, document_id, [])
+            return
+        rows: list[tuple[int, str, list[float]]] = []
+        for idx, ch in enumerate(chunks):
+            emb = await embeddings.aembed_query(ch)
+            rows.append((idx, ch, emb))
+        await rag_client.replace_document_chunks(agent_id, document_id, rows)
+    except Exception as e:
+        logger.warning(
+            "RAG chunk indexing failed for %s (non-fatal): %s",
+            document_id,
+            e,
+            exc_info=True,
+        )
 
 
 async def index_rag_document_core(
@@ -137,6 +172,16 @@ async def index_rag_document_core(
         file_size=len(content),
     )
 
+    if not embedding_failed and embeddings is not None:
+        await _rebuild_chunks_for_postgres_document(
+            agent_id,
+            doc_id,
+            text_content,
+            rag_client,
+            embeddings,
+            agent_config_dict,
+        )
+
     image_processor = get_image_processor_service()
     if file_type == "image" and embeddings is not None:
         image_docs = await rag_client.list_image_documents_with_embeddings(agent_id)
@@ -176,6 +221,14 @@ async def index_rag_document_core(
                         new_emb = await embeddings.aembed_query(new_content)
                         await rag_client.update_document_content(
                             agent_id, d["document_id"], new_content, new_emb
+                        )
+                        await _rebuild_chunks_for_postgres_document(
+                            agent_id,
+                            d["document_id"],
+                            new_content,
+                            rag_client,
+                            embeddings,
+                            agent_config_dict,
                         )
             except Exception as e:
                 logger.warning(f"Comparative description failed for group: {e}")

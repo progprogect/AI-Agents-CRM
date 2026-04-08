@@ -22,7 +22,7 @@ AI-powered assistant platform for customer conversations and CRM workflows. Buil
   - OpenSearch: Vector database for RAG documents
   - ElastiCache (Redis): Session management and caching
   - Secrets Manager: Secure API key storage
-- **LangChain**: LLM orchestration and agent chains
+- **LangChain** (`create_agent`, LangGraph via `langchain` package): LLM orchestration and tools; см. `backend/docs/architecture_langchain.md`
 
 ### Frontend
 - **Next.js 14**: React framework with App Router

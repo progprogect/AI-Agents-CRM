@@ -108,6 +108,56 @@ class PostgresRAGClient:
             logger.error(f"Failed to index document {document_id}: {e}", exc_info=True)
             return False
 
+    async def replace_document_chunks(
+        self,
+        agent_id: str,
+        document_id: str,
+        chunks: list[tuple[int, str, list[float]]],
+    ) -> bool:
+        """Replace all chunks for a document (chunk_index, content, embedding)."""
+        if not chunks:
+            try:
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        """DELETE FROM rag_chunks WHERE agent_id = $1 AND document_id = $2""",
+                        agent_id,
+                        document_id,
+                    )
+                return True
+            except Exception as e:
+                logger.error(f"Failed to clear chunks for {document_id}: {e}", exc_info=True)
+                return False
+
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        """DELETE FROM rag_chunks WHERE agent_id = $1 AND document_id = $2""",
+                        agent_id,
+                        document_id,
+                    )
+                    for chunk_index, content, embedding in chunks:
+                        emb_json = json.dumps(embedding)
+                        await conn.execute(
+                            """
+                            INSERT INTO rag_chunks (
+                                agent_id, document_id, chunk_index, content, embedding, metadata
+                            )
+                            VALUES ($1, $2, $3, $4, $5::jsonb, '{}'::jsonb)
+                            """,
+                            agent_id,
+                            document_id,
+                            chunk_index,
+                            content,
+                            emb_json,
+                        )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to replace chunks for {document_id}: {e}", exc_info=True)
+            return False
+
     async def bulk_index_documents(
         self,
         index_name: str,
@@ -144,6 +194,13 @@ class PostgresRAGClient:
                         failed_count += 1
         return success_count, failed_count
 
+    def _parse_embedding(self, emb_raw: Any) -> list[float]:
+        if isinstance(emb_raw, str):
+            return json.loads(emb_raw)
+        if isinstance(emb_raw, list):
+            return emb_raw
+        return []
+
     async def search(
         self,
         index_name: str,
@@ -151,6 +208,106 @@ class PostgresRAGClient:
         agent_id: str,
         top_k: int = 6,
         score_threshold: float = 0.2,
+    ) -> list[dict[str, Any]]:
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                chunk_rows = await conn.fetch(
+                    """
+                    SELECT c.chunk_index, c.content, c.embedding,
+                           d.title, d.document_id, d.file_url, d.file_type
+                    FROM rag_chunks c
+                    INNER JOIN rag_documents d
+                        ON d.agent_id = c.agent_id AND d.document_id = c.document_id
+                    WHERE c.agent_id = $1
+                    """,
+                    agent_id,
+                )
+                legacy_rows = await conn.fetch(
+                    """
+                    SELECT d.document_id, d.title, d.content, d.embedding, d.file_url, d.file_type
+                    FROM rag_documents d
+                    WHERE d.agent_id = $1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM rag_chunks c
+                          WHERE c.agent_id = d.agent_id AND c.document_id = d.document_id
+                      )
+                    """,
+                    agent_id,
+                )
+
+            results: list[dict[str, Any]] = []
+
+            for row in chunk_rows:
+                try:
+                    emb = self._parse_embedding(row.get("embedding"))
+                    if not emb:
+                        continue
+                    if _is_user_chat_media_storage_url(row.get("file_url")):
+                        continue
+                    sim = cosine_similarity(query_embedding, emb)
+                    if sim >= score_threshold:
+                        r: dict[str, Any] = {
+                            "document_id": row["document_id"],
+                            "title": row.get("title", ""),
+                            "content": row.get("content", ""),
+                            "score": sim,
+                            "chunk_index": row.get("chunk_index"),
+                        }
+                        if row.get("file_url"):
+                            r["file_url"] = row["file_url"]
+                            r["file_type"] = row.get("file_type") or "text"
+                        results.append(r)
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    logger.warning(
+                        f"Error processing chunk {row.get('document_id')}: {e}"
+                    )
+                    continue
+
+            for row in legacy_rows:
+                try:
+                    emb = self._parse_embedding(row.get("embedding"))
+                    if not emb:
+                        continue
+                    if _is_user_chat_media_storage_url(row.get("file_url")):
+                        continue
+                    sim = cosine_similarity(query_embedding, emb)
+                    if sim >= score_threshold:
+                        r = {
+                            "document_id": row["document_id"],
+                            "title": row.get("title", ""),
+                            "content": row.get("content", ""),
+                            "score": sim,
+                        }
+                        if row.get("file_url"):
+                            r["file_url"] = row["file_url"]
+                            r["file_type"] = row.get("file_type") or "text"
+                        results.append(r)
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    logger.warning(f"Error processing document {row.get('document_id')}: {e}")
+                    continue
+
+            results.sort(key=lambda x: x["score"], reverse=True)
+            return results[:top_k]
+        except Exception as e:
+            # rag_chunks table may not exist before migration — fall back to document-only search
+            if "rag_chunks" in str(e).lower() or "does not exist" in str(e).lower():
+                logger.warning(
+                    "Chunk search unavailable (%s); falling back to document-level search",
+                    e,
+                )
+                return await self._search_documents_only(
+                    query_embedding, agent_id, top_k, score_threshold
+                )
+            logger.error(f"Error searching RAG: {e}", exc_info=True)
+            return []
+
+    async def _search_documents_only(
+        self,
+        query_embedding: list[float],
+        agent_id: str,
+        top_k: int,
+        score_threshold: float,
     ) -> list[dict[str, Any]]:
         try:
             pool = await get_pool()
@@ -164,13 +321,7 @@ class PostgresRAGClient:
             results = []
             for row in rows:
                 try:
-                    emb_raw = row.get("embedding")
-                    if isinstance(emb_raw, str):
-                        emb = json.loads(emb_raw)
-                    elif isinstance(emb_raw, list):
-                        emb = emb_raw
-                    else:
-                        emb = []
+                    emb = self._parse_embedding(row.get("embedding"))
                     if not emb:
                         continue
                     if _is_user_chat_media_storage_url(row.get("file_url")):
@@ -193,7 +344,7 @@ class PostgresRAGClient:
             results.sort(key=lambda x: x["score"], reverse=True)
             return results[:top_k]
         except Exception as e:
-            logger.error(f"Error searching RAG: {e}", exc_info=True)
+            logger.error(f"Error searching RAG (fallback): {e}", exc_info=True)
             return []
 
     async def get_document(

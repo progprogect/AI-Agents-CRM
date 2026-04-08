@@ -78,6 +78,7 @@ class EscalationService:
     ) -> EscalationDecision:
         """Detect if message requires escalation using LLM-based detection."""
         config = agent_config or self.agent_config
+        conv_id = (conversation_context or {}).get("conversation_id")
 
         try:
             decision = await self.escalation_chain.detect(
@@ -92,41 +93,50 @@ class EscalationService:
             if decision.extracted_contacts:
                 c = decision.extracted_contacts
                 if c.phone_numbers or c.emails:
+                    _extra = {
+                        "agent_id": agent_id,
+                        "phone_numbers": c.phone_numbers,
+                        "emails": c.emails,
+                    }
+                    if conv_id:
+                        _extra["conversation_id"] = conv_id
                     logger.info(
                         "Contacts extracted: phones=%s, emails=%s",
                         c.phone_numbers,
                         c.emails,
-                        extra={
-                            "agent_id": agent_id,
-                            "phone_numbers": c.phone_numbers,
-                            "emails": c.emails,
-                        },
+                        extra=_extra,
                     )
 
             if decision.needs_escalation:
                 escalation_type_str = getattr(
                     decision.escalation_type, "value", decision.escalation_type
                 )
+                _extra_esc = {
+                    "agent_id": agent_id,
+                    "escalation_type": escalation_type_str,
+                    "confidence": decision.confidence,
+                    "matched_rule_ids": decision.matched_rule_ids,
+                    "has_contacts": decision.extracted_contacts is not None,
+                }
+                if conv_id:
+                    _extra_esc["conversation_id"] = conv_id
                 logger.info(
                     "Escalation detected: %s",
                     escalation_type_str,
-                    extra={
-                        "agent_id": agent_id,
-                        "escalation_type": escalation_type_str,
-                        "confidence": decision.confidence,
-                        "matched_rule_ids": decision.matched_rule_ids,
-                        "has_contacts": decision.extracted_contacts is not None,
-                    },
+                    extra=_extra_esc,
                 )
 
             return decision
         except Exception as e:
+            _err_extra = {"agent_id": agent_id, "message_length": len(message)}
+            if conv_id:
+                _err_extra["conversation_id"] = conv_id
             logger.error(
                 "Escalation detection error for agent %s: %s",
                 agent_id,
                 e,
                 exc_info=True,
-                extra={"agent_id": agent_id, "message_length": len(message)},
+                extra=_err_extra,
             )
             return fail_closed_escalation_decision()
 

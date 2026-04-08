@@ -5,9 +5,9 @@ import json
 import logging
 from typing import Any, Optional
 
-from langchain_classic.chains import LLMChain
-from langchain_classic.output_parsers import PydanticOutputParser
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import Runnable, RunnableConfig
 
 from app.config import get_settings
 from app.models.agent_config import AgentConfig
@@ -22,8 +22,8 @@ from app.utils.langchain_prompt import escape_braces_for_chat_template
 logger = logging.getLogger(__name__)
 
 # Bump when escalation system/human prompt text or how it is assembled changes so
-# cached LLMChain instances in EscalationChain._chains are invalidated (long-lived workers).
-ESCALATION_PROMPT_VERSION = 6
+# cached Runnable chains in EscalationChain._chains are invalidated (long-lived workers).
+ESCALATION_PROMPT_VERSION = 7
 
 # Reserved value for EscalationConfig.medical_question_policy — expanded to a fixed classifier paragraph.
 MEDICAL_QUESTION_POLICY_VET_INFORMATIONAL = "vet_informational"
@@ -75,11 +75,25 @@ _ESCALATION_OUTPUT_PARSER = PydanticOutputParser(pydantic_object=EscalationDecis
 
 
 def _extract_llm_text(result: Any) -> str:
-    """Normalize LLMChain / chat model return payload to a single string."""
+    """Normalize Runnable / LLM return payload to a single string (AIMessage or dict)."""
     if result is None:
         return ""
     if isinstance(result, str):
         return result.strip()
+    if hasattr(result, "content") and not isinstance(result, dict):
+        content = getattr(result, "content", None)
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict) and "text" in block:
+                    parts.append(str(block["text"]))
+                else:
+                    parts.append(str(block))
+            return "".join(parts).strip()
     if isinstance(result, dict):
         t = result.get("text")
         if t is None:
@@ -122,6 +136,15 @@ def _parse_escalation_json_lenient_dict(raw: str) -> dict:
     if not isinstance(obj, dict):
         raise ValueError("Escalation JSON root must be an object")
     return obj
+
+
+def _coerce_escalation_decision(out: Any) -> EscalationDecision:
+    """Normalize with_structured_output payload to EscalationDecision."""
+    if isinstance(out, EscalationDecision):
+        return out
+    if isinstance(out, dict):
+        return EscalationDecision.model_validate(out)
+    raise TypeError(f"Unexpected escalation output type: {type(out)}")
 
 
 def parse_escalation_from_llm_text(raw: str) -> EscalationDecision:
@@ -294,7 +317,8 @@ class EscalationChain:
         """Initialize escalation chain."""
         self.llm_factory = llm_factory
         self.agent_config = agent_config
-        self._chains: dict[str, LLMChain] = {}
+        self._chains: dict[str, Runnable] = {}
+        self._chains_structured: dict[str, Runnable] = {}
 
     def _make_cache_key(
         self,
@@ -342,28 +366,67 @@ class EscalationChain:
         new_llm = config.llm.model_copy(update={"temperature": 0.0, "max_output_tokens": max_out})
         return config.model_copy(update={"llm": new_llm})
 
+    async def _get_llm_for_escalation(
+        self,
+        agent_id: Optional[str],
+        agent_config: Optional[AgentConfig],
+    ) -> Any:
+        """Shared LLM instance config for escalation (text or structured path)."""
+        settings = get_settings()
+        config = agent_config or self.agent_config
+        if config:
+            llm_cfg = self._escalation_llm_config(config)
+            return await self.llm_factory.get_chat_model(llm_cfg)
+        from langchain_openai import ChatOpenAI
+
+        client = await self.llm_factory.get_client(agent_id)
+        return ChatOpenAI(
+            model=settings.openai_model,
+            temperature=0.0,
+            openai_api_key=client.api_key,
+            timeout=settings.openai_timeout,
+        )
+
+    async def _get_structured_chain(
+        self, agent_id: Optional[str] = None, agent_config: Optional[AgentConfig] = None
+    ) -> Runnable:
+        """prompt | llm.with_structured_output(EscalationDecision) — no manual JSON parsing."""
+        config = agent_config or self.agent_config
+        cache_key = self._make_cache_key(agent_id=agent_id, agent_config=config)
+
+        if cache_key not in self._chains_structured:
+            llm = await self._get_llm_for_escalation(agent_id, agent_config)
+            base_system = self._build_system_prompt(config)
+            system_prompt = escape_braces_for_chat_template(
+                f"{base_system}\n\n"
+                "Fill the structured response fields per the schema. "
+                "Follow consistency rules for matched_rule_ids and needs_escalation."
+            )
+            logger.debug(
+                "EscalationChain: creating structured Runnable. cache_key=%s agent_id=%s",
+                cache_key,
+                getattr(config, "agent_id", agent_id),
+            )
+            prompt_template = ChatPromptTemplate.from_messages(
+                [
+                    ("system", system_prompt),
+                    ("human", "User message: {message}\n\nConversation context: {context}"),
+                ]
+            )
+            structured_llm = llm.with_structured_output(EscalationDecision)
+            self._chains_structured[cache_key] = prompt_template | structured_llm
+
+        return self._chains_structured[cache_key]
+
     async def _get_chain(
         self, agent_id: Optional[str] = None, agent_config: Optional[AgentConfig] = None
-    ) -> LLMChain:
-        """Get or create escalation chain (cached per agent_id + config hash)."""
+    ) -> Runnable:
+        """Fallback: prompt|llm text output + parse_escalation_from_llm_text in detect()."""
         config = agent_config or self.agent_config
         cache_key = self._make_cache_key(agent_id=agent_id, agent_config=config)
 
         if cache_key not in self._chains:
-            settings = get_settings()
-            if config:
-                llm_cfg = self._escalation_llm_config(config)
-                llm = await self.llm_factory.get_chat_model(llm_cfg)
-            else:
-                from langchain_openai import ChatOpenAI
-
-                client = await self.llm_factory.get_client(agent_id)
-                llm = ChatOpenAI(
-                    model=settings.openai_model,
-                    temperature=0.0,
-                    openai_api_key=client.api_key,
-                    timeout=settings.openai_timeout,
-                )
+            llm = await self._get_llm_for_escalation(agent_id, agent_config)
 
             base_system = self._build_system_prompt(config)
             system_prompt = escape_braces_for_chat_template(
@@ -371,7 +434,7 @@ class EscalationChain:
                 f"{_ESCALATION_OUTPUT_PARSER.get_format_instructions()}"
             )
             logger.debug(
-                "EscalationChain: creating new LLMChain. cache_key=%s agent_id=%s",
+                "EscalationChain: creating text fallback prompt|llm Runnable. cache_key=%s agent_id=%s",
                 cache_key,
                 getattr(config, "agent_id", agent_id),
             )
@@ -382,8 +445,7 @@ class EscalationChain:
                     ("human", "User message: {message}\n\nConversation context: {context}"),
                 ]
             )
-            # Parsing in detect(): strict parser first, then lenient JSON (phase 2 fallback).
-            self._chains[cache_key] = LLMChain(llm=llm, prompt=prompt_template)
+            self._chains[cache_key] = prompt_template | llm
 
         return self._chains[cache_key]
 
@@ -395,8 +457,6 @@ class EscalationChain:
         agent_config: Optional[AgentConfig] = None,
     ) -> EscalationDecision:
         """Detect if escalation is needed. One retry on failure, then fail-closed."""
-        chain = await self._get_chain(agent_id, agent_config)
-
         context_str = ""
         if context:
             context_str = f"Previous messages: {context.get('previous_messages', [])}"
@@ -405,17 +465,39 @@ class EscalationChain:
         if not context_str:
             context_str = "No previous context"
 
+        meta: dict[str, Any] = {
+            "agent_id": agent_id or (agent_config.agent_id if agent_config else None),
+        }
+        if context and context.get("conversation_id"):
+            meta["conversation_id"] = str(context["conversation_id"])
+        rc = RunnableConfig(tags=["escalation"], metadata=meta)
+
+        payload = {"message": message, "context": context_str}
+
+        # Primary path: structured output (OpenAI / Gemini native or tool-based schema)
+        try:
+            schain = await self._get_structured_chain(agent_id, agent_config)
+            out = await schain.ainvoke(payload, config=rc)
+            return _coerce_escalation_decision(out)
+        except Exception as structured_err:
+            logger.warning(
+                "Escalation structured output failed, using text+JSON fallback: %s",
+                structured_err,
+                exc_info=False,
+            )
+
         last_error: Optional[Exception] = None
+        chain = await self._get_chain(agent_id, agent_config)
         for attempt in range(2):
             try:
-                result = await chain.ainvoke({"message": message, "context": context_str})
+                result = await chain.ainvoke(payload, config=rc)
                 text = _extract_llm_text(result)
                 decision = parse_escalation_from_llm_text(text)
                 return decision
             except Exception as e:
                 last_error = e
                 logger.warning(
-                    "EscalationChain.detect attempt %s failed: %s",
+                    "EscalationChain.detect fallback attempt %s failed: %s",
                     attempt + 1,
                     e,
                     exc_info=attempt == 1,

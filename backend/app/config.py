@@ -306,6 +306,39 @@ class Settings(BaseSettings):
         default=None, description="WhatsApp app secret for webhook signature verification"
     )
 
+    # RAG (global defaults; per-agent overrides in agent config rag.retrieval)
+    rag_chunk_size_chars: int = Field(
+        default=1200,
+        ge=400,
+        le=8000,
+        description="Default max characters per RAG chunk when indexing",
+        alias="RAG_CHUNK_SIZE_CHARS",
+    )
+    rag_chunk_overlap_chars: int = Field(
+        default=150,
+        ge=0,
+        le=2000,
+        description="Overlap between adjacent RAG chunks",
+        alias="RAG_CHUNK_OVERLAP_CHARS",
+    )
+    rag_context_max_chars: int = Field(
+        default=28000,
+        ge=2000,
+        le=200000,
+        description="Max total characters of retrieved RAG text injected into the LLM per turn",
+        alias="RAG_CONTEXT_MAX_CHARS",
+    )
+    rag_vector_recall_k: int = Field(
+        default=24,
+        ge=4,
+        le=200,
+        description=(
+            "Minimum vector search result count before budget packing; "
+            "use max(agent top_k, this) for wider recall without extra rerank model"
+        ),
+        alias="RAG_VECTOR_RECALL_K",
+    )
+
 
 @lru_cache()
 def get_settings() -> Settings:
