@@ -7,7 +7,7 @@
 | Основной чат | **`create_agent`** из `langchain.agents` (граф на LangGraph внутри пакета `langchain`) + `ainvoke` ([`agent_chain.py`](../app/chains/agent_chain.py)); `debug` включается из `settings.debug` |
 | Эскалация | `ChatPromptTemplate` + `BaseChatModel`: основной путь — **`with_structured_output(EscalationDecision)`**; при сбое — текстовый ответ + разбор JSON; fallback-парсер — `PydanticOutputParser` из **`langchain_core`** ([`escalation_chain.py`](../app/chains/escalation_chain.py)) |
 | RAG | `langchain_core.embeddings.Embeddings` + самописный поиск в Postgres/DynamoDB; чанки в `rag_chunks`, бюджет контекста, опционально **широкий recall** перед бюджетом |
-| Инструменты | `langchain_core.tools.BaseTool` (`BookingTool`) |
+| Инструменты | Сейчас **не подключены** (`create_agent` с пустым списком tools); отдельные tools можно добавить позже |
 
 ## Разрыв с рекомендациями LangChain 1.x
 

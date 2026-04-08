@@ -10,7 +10,6 @@ from langchain_core.runnables import RunnableConfig
 from app.config import get_settings
 from app.models.agent_config import AgentConfig
 from app.services.llm_factory import LLMFactory
-from app.tools.booking_tool import BookingTool
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +59,10 @@ class AgentChain:
         system_prompt = self._build_system_prompt()
         llm = await self.llm_factory.get_chat_model(self.agent_config)
 
-        tools = [BookingTool(agent_id=self.agent_config.agent_id)]
-
         settings = get_settings()
         self._agent_graph = create_agent(
             model=llm,
-            tools=tools,
+            tools=[],
             system_prompt=system_prompt,
             debug=settings.debug,
         )
@@ -211,8 +208,6 @@ Align your tone and boundaries with these configured expectations (there is no s
 - Be friendly and professional
 - Never provide medical diagnoses or treatment advice
 - For urgent or medical situations, direct the user toward appropriate care and human support per your guidelines above (handoff is handled by the system when rules require it)
-- Help with booking appointments
-- Use available tools when needed
 
 When context includes "Image: URL", you may suggest relevant images in your response.
 Use format: [Image: URL] or ![description](URL) for the user to view.

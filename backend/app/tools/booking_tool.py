@@ -1,4 +1,4 @@
-"""Tool for booking intent detection."""
+"""Tool for booking intent detection (not registered on AgentChain in the current product build)."""
 
 from typing import Optional
 
