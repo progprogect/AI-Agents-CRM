@@ -35,11 +35,12 @@ def requires_max_completion_tokens(model: str) -> bool:
         if model_lower.startswith(prefix):
             return True
     
-    # Check for o1/o3 variants (e.g., "o1-*", "o3-*")
-    # Only o1 and o3 models require max_completion_tokens
+    # Check for o1/o3/o4 variants (e.g., "o1-*", "o3-*", "o4-*")
     if model_lower.startswith("o1-") or model_lower.startswith("o3-"):
         return True
-    
+    if model_lower.startswith("o4-") or model_lower in ("o4", "o4-mini"):
+        return True
+
     # Check for gpt-5.* models (these require max_completion_tokens)
     if model_lower.startswith("gpt-5"):
         return True

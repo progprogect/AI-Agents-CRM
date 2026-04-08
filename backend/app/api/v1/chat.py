@@ -161,11 +161,10 @@ async def close_conversation(
             status=ConversationStatus.CLOSED.value,
         )
 
-    closed_at_iso = to_utc_iso_string(utc_now())
     await deps.dynamodb.update_conversation(
         conversation_id=conversation_id,
         status=ConversationStatus.CLOSED,
-        closed_at=closed_at_iso,
+        closed_at=utc_now(),
     )
     return CloseConversationResponse(
         conversation_id=conversation_id,

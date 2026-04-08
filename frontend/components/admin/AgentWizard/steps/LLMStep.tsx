@@ -2,7 +2,7 @@
 
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { Select } from "@/components/shared/Select";
 import { Slider } from "@/components/shared/Slider";
@@ -22,8 +22,35 @@ const PROVIDER_OPTIONS = [
   { value: "google_ai_studio", label: "Google AI Studio (Gemini)" },
 ];
 
-const OPENAI_MODELS = [
-  { value: "gpt-4.1", label: "GPT-4.1", description: "Latest flagship model — high capability, non-reasoning" },
+type ModelOption = { value: string; label: string; description: string };
+
+const OPENAI_MODELS: ModelOption[] = [
+  {
+    value: "gpt-5.2",
+    label: "GPT-5.2",
+    description: "Newer GPT-5 generation — check OpenAI docs for availability in your org",
+  },
+  {
+    value: "gpt-5.1",
+    label: "GPT-5.1",
+    description: "GPT-5 family — verify model id in OpenAI dashboard if a call fails",
+  },
+  {
+    value: "gpt-5",
+    label: "GPT-5",
+    description: "Frontier GPT-5 — large context; confirm rate limits and access",
+  },
+  {
+    value: "gpt-5-mini",
+    label: "GPT-5 mini",
+    description: "Lower-latency / cost GPT-5 variant",
+  },
+  {
+    value: "gpt-5-nano",
+    label: "GPT-5 nano",
+    description: "Smallest GPT-5 variant for high-volume simple tasks",
+  },
+  { value: "gpt-4.1", label: "GPT-4.1", description: "High capability, non-reasoning flagship-class model" },
   { value: "gpt-4o", label: "GPT-4o", description: "Fast and intelligent multimodal model" },
   { value: "gpt-4o-mini", label: "GPT-4o Mini", description: "Fast and affordable — recommended for most use cases" },
   { value: "o3", label: "o3", description: "Advanced reasoning model — coding, math, science" },
@@ -33,7 +60,7 @@ const OPENAI_MODELS = [
   { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo (Legacy)", description: "Lightweight model for simple tasks" },
 ];
 
-const GEMINI_MODELS = [
+const GEMINI_MODELS: ModelOption[] = [
   {
     value: "gemini-3.1-pro-preview",
     label: "Gemini 3.1 Pro",
@@ -64,10 +91,27 @@ export const LLMStep: React.FC<LLMStepProps> = ({
 }) => {
   const t = useTranslations("Wizard");
   const provider = config.llm_provider || "openai";
-  const modelOptions = provider === "google_ai_studio" ? GEMINI_MODELS : OPENAI_MODELS;
   const defaultModel = provider === "google_ai_studio" ? "gemini-2.5-flash" : "gpt-4o-mini";
   const currentModel = config.llm_model || defaultModel;
-  const selectedModel = modelOptions.find((m) => m.value === currentModel) || modelOptions[0];
+
+  const modelOptions = useMemo((): ModelOption[] => {
+    const base = provider === "google_ai_studio" ? GEMINI_MODELS : OPENAI_MODELS;
+    const cur = config.llm_model || defaultModel;
+    if (base.some((m) => m.value === cur)) {
+      return base;
+    }
+    return [
+      {
+        value: cur,
+        label: `${cur} (${t("modelFromConfig")})`,
+        description: "",
+      },
+      ...base,
+    ];
+  }, [provider, config.llm_model, defaultModel, t]);
+
+  const selectedModel =
+    modelOptions.find((m) => m.value === currentModel) ?? modelOptions[0];
 
   const handleProviderChange = (newProvider: string) => {
     const newDefault = newProvider === "google_ai_studio" ? "gemini-2.5-flash" : "gpt-4o-mini";

@@ -150,6 +150,7 @@ export interface RAGConfig {
   embeddings_provider?: string;
   vision_provider?: string;
   vector_store: Record<string, any>;
+  /** Typical keys: `top_k` (1–50), `score_threshold` (0–1) */
   retrieval: Record<string, any>;
   scope: string;
   sources: RAGSource[];

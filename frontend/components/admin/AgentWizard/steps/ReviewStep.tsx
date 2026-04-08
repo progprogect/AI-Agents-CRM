@@ -319,6 +319,22 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
               {config.rag_enabled ? t("yes") : t("no")}
             </span>
           </div>
+          {config.rag_enabled && (
+            <>
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-600 shrink-0">{t("ragReviewTopK")}:</span>
+                <span className="font-medium text-gray-900">
+                  {config.rag_top_k ?? 6}
+                </span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-600 shrink-0">{t("ragReviewScoreThreshold")}:</span>
+                <span className="font-medium text-gray-900">
+                  {config.rag_score_threshold ?? 0.2}
+                </span>
+              </div>
+            </>
+          )}
           <div className="flex justify-between gap-4">
             <span className="text-gray-600 shrink-0">{t("examples")}:</span>
             <span className="font-medium text-gray-900">

@@ -14,6 +14,20 @@ export interface EscalationRule {
 }
 
 // Standard examples (pre-filled)
+const DEFAULT_RAG_TOP_K = 6;
+const DEFAULT_RAG_SCORE_THRESHOLD = 0.2;
+
+function clampRagTopK(value: unknown): number {
+  const n = typeof value === "number" && !Number.isNaN(value) ? Math.round(value) : DEFAULT_RAG_TOP_K;
+  return Math.min(50, Math.max(1, n));
+}
+
+function clampRagScoreThreshold(value: unknown): number {
+  const n =
+    typeof value === "number" && !Number.isNaN(value) ? value : DEFAULT_RAG_SCORE_THRESHOLD;
+  return Math.min(1, Math.max(0, n));
+}
+
 export const DEFAULT_EXAMPLES: ConversationExample[] = [
   {
     id: "example_pricing",
@@ -59,6 +73,10 @@ export interface AgentConfigFormData {
   rag_vision_provider?: string;
   /** Google AI vision model id; empty = backend default (gemini-3.1-pro-preview) */
   rag_vision_model?: string;
+  /** RAG retrieval: number of chunks (1–50) */
+  rag_top_k?: number;
+  /** RAG retrieval: minimum similarity 0–1 */
+  rag_score_threshold?: number;
   rag_documents: Array<{
     id: string;
     title: string;
@@ -125,6 +143,8 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     moderation_provider: "openai",
     moderation_model: "omni-moderation-latest",
     moderation_enabled: true,
+    rag_top_k: DEFAULT_RAG_TOP_K,
+    rag_score_threshold: DEFAULT_RAG_SCORE_THRESHOLD,
     // System prompt defaults (empty — user fills in)
     system_persona: "",
     system_hard_rules: "",
@@ -198,6 +218,8 @@ export function agentConfigToFormData(
     rag_embeddings_provider: agentConfig.rag?.embeddings_provider || agentConfig.embeddings?.provider || "openai",
     rag_vision_provider: agentConfig.rag?.vision_provider || agentConfig.llm?.provider || "openai",
     rag_vision_model: agentConfig.rag?.vision_model,
+    rag_top_k: clampRagTopK(agentConfig.rag?.retrieval?.top_k),
+    rag_score_threshold: clampRagScoreThreshold(agentConfig.rag?.retrieval?.score_threshold),
     moderation_provider: agentConfig.moderation?.provider || "openai",
     moderation_model: agentConfig.moderation?.model,
     moderation_enabled: agentConfig.moderation?.enabled !== false,
@@ -282,8 +304,8 @@ export function formDataToAgentConfig(
         index_name: `agent_${formData.agent_id}_documents`,
       },
       retrieval: {
-        top_k: 6,
-        score_threshold: 0.2,
+        top_k: clampRagTopK(formData.rag_top_k),
+        score_threshold: clampRagScoreThreshold(formData.rag_score_threshold),
       },
       scope: "agent_only",
       sources: formData.rag_enabled

@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Toggle } from "@/components/shared/Toggle";
 import { Select } from "@/components/shared/Select";
+import { Input } from "@/components/shared/Input";
+import { Slider } from "@/components/shared/Slider";
 import type { AgentConfigFormData } from "@/lib/utils/agentConfig";
 
 const EMBEDDINGS_PROVIDER_OPTIONS = [
@@ -111,6 +113,34 @@ export const RAGStep: React.FC<RAGStepProps> = ({
               options={VISION_PROVIDER_OPTIONS}
               className={selectTouchClass}
             />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input
+              type="number"
+              label={t("ragTopK")}
+              value={config.rag_top_k ?? 6}
+              min={1}
+              max={50}
+              onChange={(e) => {
+                const raw = parseInt(e.target.value, 10);
+                const v = Number.isNaN(raw) ? 6 : Math.min(50, Math.max(1, raw));
+                onUpdate({ rag_top_k: v });
+              }}
+              helperText={t("ragTopKHint")}
+            />
+            <div className="md:col-span-1">
+              <Slider
+                label={t("ragScoreThreshold")}
+                value={config.rag_score_threshold ?? 0.2}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={(e) =>
+                  onUpdate({ rag_score_threshold: parseFloat(e.target.value) })
+                }
+              />
+              <p className="mt-1 text-xs text-gray-500">{t("ragScoreThresholdHint")}</p>
+            </div>
           </div>
           {(config.rag_vision_provider || "openai") === "google_ai_studio" && (
             <div>
