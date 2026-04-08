@@ -113,14 +113,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     >
       {/* Logo row — contains close button on mobile */}
       <div className="relative flex items-center h-[72px] px-6 border-b border-[#BEBAB7] flex-shrink-0">
-        <Image
-          src="/logo.png"
-          alt="Лапа Моя"
-          width={32}
-          height={32}
-          className="h-8 w-8 object-contain"
-          priority
-        />
+        <Link
+          href="/"
+          className="inline-flex shrink-0 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#251D1C] focus-visible:ring-offset-2"
+          aria-label={t("logoHomeAria")}
+          onClick={() => onClose()}
+        >
+          <Image
+            src="/logo.png"
+            alt=""
+            width={32}
+            height={32}
+            className="h-8 w-8 object-contain"
+            priority
+          />
+        </Link>
         {/* Close button — mobile only */}
         <button
           onClick={onClose}

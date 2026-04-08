@@ -17,6 +17,7 @@
     "users": "Users",
     "adminNav": "Admin navigation",
     "mainNav": "Main navigation",
+    "logoHomeAria": "Go to site home page",
     "closeMenu": "Close navigation menu",
     "navigateTo": "Navigate to {name}",
     "requireAttention": "{count} require attention"

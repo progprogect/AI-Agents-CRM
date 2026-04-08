@@ -17,6 +17,7 @@
     "users": "Пользователи",
     "adminNav": "Навигация администратора",
     "mainNav": "Основная навигация",
+    "logoHomeAria": "На главную страницу сайта",
     "closeMenu": "Закрыть меню",
     "navigateTo": "Перейти к {name}",
     "requireAttention": "{count} требуют внимания"
