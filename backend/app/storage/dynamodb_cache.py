@@ -12,8 +12,14 @@ from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Any, Optional
 
-import boto3
-from botocore.exceptions import ClientError
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+    _BOTO3_AVAILABLE = True
+except ImportError:
+    boto3 = None  # type: ignore[assignment]
+    ClientError = Exception  # type: ignore[assignment,misc]
+    _BOTO3_AVAILABLE = False
 
 from app.config import Settings, get_settings
 from app.utils.datetime_utils import utc_now

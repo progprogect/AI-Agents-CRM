@@ -13,8 +13,16 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Any, Optional
 
-import boto3
-from botocore.exceptions import ClientError
+# boto3 is not installed in production; import lazily to avoid ImportError at startup.
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+    _BOTO3_AVAILABLE = True
+except ImportError:
+    boto3 = None  # type: ignore[assignment]
+    ClientError = Exception  # type: ignore[assignment,misc]
+    _BOTO3_AVAILABLE = False
+
 from pydantic import BaseModel
 
 from app.config import Settings, get_settings
