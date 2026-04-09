@@ -16,7 +16,7 @@ from tenacity import (
 
 from app.config import Settings, get_settings
 from app.models.agent_config import AgentConfig, EmbeddingsConfig
-from app.storage.secrets import SecretsManager, get_secrets_manager
+from app.storage.secrets import SecretsManager
 from app.storage.postgres_secrets import PostgresSecretsManager, get_postgres_secrets_manager
 from app.utils.llm_provider import (
     create_chat_model,
