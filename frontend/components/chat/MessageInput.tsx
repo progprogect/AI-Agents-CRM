@@ -10,16 +10,45 @@ import React, {
 import { Button } from "@/components/shared/Button";
 import type { ChatSendPayload } from "@/lib/types/message";
 
-// Web Speech API type declarations (not in default TS lib)
+// Minimal Web Speech API type shim — not in standard TS DOM lib
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+interface SpeechRecognitionResult {
+  [index: number]: SpeechRecognitionAlternative;
+}
+interface SpeechRecognitionResultList {
+  [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
 declare global {
   interface Window {
-    SpeechRecognition?: new () => SpeechRecognition;
-    webkitSpeechRecognition?: new () => SpeechRecognition;
+    SpeechRecognition?: new () => SpeechRecognitionInstance;
+    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
   }
 }
 
 /** Returns the browser SpeechRecognition constructor, or null if unsupported. */
-function getSpeechRecognition(): (new () => SpeechRecognition) | null {
+function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
   if (typeof window === "undefined") return null;
   return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
 }
@@ -113,7 +142,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   // Initialise to false so server-rendered HTML matches the first client
   // render — avoids Next.js hydration mismatch when window is unavailable SSR.
   const [speechSupported, setSpeechSupported] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
