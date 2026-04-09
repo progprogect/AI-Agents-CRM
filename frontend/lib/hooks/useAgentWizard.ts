@@ -7,7 +7,7 @@ import { validateAgentConfig, type ValidationError } from "../utils/validation";
 
 const DRAFT_STORAGE_KEY = "agent_wizard_draft";
 
-export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
 interface WizardState {
   currentStep: WizardStep;
@@ -157,7 +157,8 @@ export function useAgentWizard() {
       4: ["rag_enabled", "rag_embeddings_provider", "rag_vision_provider", "rag_vision_model"],
       5: ["escalation_rules"],
       6: ["llm_provider", "llm_model", "llm_temperature", "llm_max_tokens"],
-      7: [],
+      7: ["workflow_enabled", "workflow_steps"],
+      8: [],
     };
 
     const stepErrors = errors.filter((error) =>
@@ -171,7 +172,7 @@ export function useAgentWizard() {
 
   const nextStep = useCallback(() => {
     if (validateCurrentStep()) {
-      const next = Math.min(state.currentStep + 1, 7) as WizardStep;
+      const next = Math.min(state.currentStep + 1, 8) as WizardStep;
       dispatch({ type: "SET_STEP", step: next });
       return true;
     }

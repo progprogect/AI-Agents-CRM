@@ -23,6 +23,8 @@ KEY_LAST_INPUT_PREFIX = "agent_reply:last_input:"
 KEY_LAST_PLAIN_PREFIX = "agent_reply:last_plain:"
 KEY_DUE = "agent_reply:due"
 KEY_LOCK_PREFIX = "agent_reply:lock:"
+KEY_TIMER_DUE = "agent_reply:timer_due"
+KEY_TIMER_LOCK_PREFIX = "agent_reply:timer_lock:"
 LOCK_TTL_SECONDS = 120
 
 
@@ -250,6 +252,131 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
             )
 
 
+async def schedule_timer_trigger(conversation_id: str, pending_timer: dict) -> None:
+    """Add a workflow timer trigger to the Redis timer ZSET.
+
+    pending_timer must contain:
+      fire_at_ms  – absolute epoch millisecond when to fire
+      delay_seconds, message_template, step_id – forwarded to execute_timer_trigger
+    """
+    redis = get_redis_client()
+    if not await redis.ping():
+        logger.warning(
+            "Redis unavailable; timer trigger not scheduled for %s",
+            conversation_id,
+            extra={"conversation_id": conversation_id},
+        )
+        return
+    fire_at_ms = pending_timer.get("fire_at_ms", int(time.time() * 1000) + pending_timer.get("delay_seconds", 0) * 1000)
+    import json as _json
+    payload = _json.dumps(pending_timer)
+    await redis.set(f"agent_reply:timer_payload:{conversation_id}", payload, ttl=int(pending_timer.get("delay_seconds", 3600)) * 2 + 300)
+    await redis.zadd(KEY_TIMER_DUE, {conversation_id: float(fire_at_ms)})
+    logger.info(
+        "Timer trigger scheduled for %s at %d ms",
+        conversation_id,
+        fire_at_ms,
+        extra={"conversation_id": conversation_id},
+    )
+
+
+async def execute_timer_trigger(conversation_id: str) -> None:
+    """Fire a scheduled workflow timer trigger for a conversation."""
+    import json as _json
+    from app.dependencies import get_dynamodb
+
+    redis = get_redis_client()
+    dynamodb = get_dynamodb()
+    settings = get_settings()
+
+    # Load timer payload from Redis
+    raw = await redis.get(f"agent_reply:timer_payload:{conversation_id}")
+    if not raw:
+        logger.warning("Timer payload missing for %s; skipping", conversation_id, extra={"conversation_id": conversation_id})
+        return
+    try:
+        timer = _json.loads(raw)
+    except Exception as exc:
+        logger.error("Failed to parse timer payload for %s: %s", conversation_id, exc)
+        return
+
+    conversation = await dynamodb.get_conversation(conversation_id)
+    if not conversation:
+        return
+    status_value = get_enum_value(conversation.status)
+    if status_value in (ConversationStatus.CLOSED.value, ConversationStatus.NEEDS_HUMAN.value, ConversationStatus.HUMAN_ACTIVE.value):
+        return
+
+    agent_data = await dynamodb.get_agent(conversation.agent_id)
+    if not agent_data or "config" not in agent_data:
+        return
+
+    from app.models.agent_config import AgentConfig
+    from app.services.channel_binding_service import ChannelBindingService
+    from app.services.channel_sender import get_channel_sender
+    from app.services.instagram_service import InstagramService
+    from app.services.telegram_service import TelegramService
+    from app.storage.resolver import get_secrets_manager
+
+    agent_config = AgentConfig.from_dict(agent_data["config"])
+    conversation_channel = get_enum_value(conversation.channel)
+
+    instagram_service = None
+    telegram_service = None
+    if conversation_channel != MessageChannel.WEB_CHAT.value:
+        secrets_manager = get_secrets_manager()
+        binding_service = ChannelBindingService(dynamodb, secrets_manager)
+        if conversation_channel == MessageChannel.INSTAGRAM.value:
+            instagram_service = InstagramService(binding_service, dynamodb, settings)
+        elif conversation_channel == MessageChannel.TELEGRAM.value:
+            telegram_service = TelegramService(binding_service, dynamodb, settings)
+
+    from app.models.message import MessageChannel as MC
+    channel_enum = MC(conversation_channel) if conversation_channel else MC.WEB_CHAT
+    channel_sender = get_channel_sender(channel_enum, dynamodb, instagram_service, telegram_service)
+
+    # Resolve message text (substitute collected variables if available)
+    message_text = timer.get("message_template", "")
+
+    # Try to obtain collected variables from LangGraph checkpointer state
+    try:
+        from app.storage.postgres_checkpointer import get_checkpointer
+        checkpointer = get_checkpointer()
+        state_snapshot = await checkpointer.aget({"configurable": {"thread_id": conversation_id}})
+        if state_snapshot and state_snapshot.values.get("collected"):
+            collected = state_snapshot.values["collected"]
+            for k, v in collected.items():
+                message_text = message_text.replace(f"{{{k}}}", str(v))
+    except Exception:
+        pass
+
+    if not message_text:
+        return
+
+    # Send via channel sender
+    try:
+        await channel_sender.send_message(
+            conversation_id=conversation_id,
+            message_text=message_text,
+        )
+        logger.info(
+            "Timer trigger message sent for conversation %s",
+            conversation_id,
+            extra={"conversation_id": conversation_id},
+        )
+    except Exception as exc:
+        logger.error(
+            "Timer trigger send failed for %s: %s",
+            conversation_id,
+            exc,
+            exc_info=True,
+            extra={"conversation_id": conversation_id},
+        )
+
+    # Clean up payload key
+    await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
+
+
 async def _poll_due_once() -> None:
     settings = get_settings()
     if settings.agent_reply_debounce_seconds <= 0:
@@ -260,11 +387,13 @@ async def _poll_due_once() -> None:
         return
 
     now_ms = int(time.time() * 1000)
+
+    # --- Poll reply debounce queue ---
     try:
         due = await redis.zrangebyscore(KEY_DUE, "-inf", now_ms, num=50)
     except Exception as exc:
         logger.debug("agent_reply poll zrangebyscore: %s", exc)
-        return
+        due = []
 
     for conversation_id in due:
         lock_key = f"{KEY_LOCK_PREFIX}{conversation_id}"
@@ -296,6 +425,42 @@ async def _poll_due_once() -> None:
                     )
 
             asyncio.create_task(_run(conversation_id, expected_version))
+        finally:
+            await redis.delete(lock_key)
+
+    # --- Poll timer trigger queue ---
+    try:
+        timer_due = await redis.zrangebyscore(KEY_TIMER_DUE, "-inf", now_ms, num=50)
+    except Exception as exc:
+        logger.debug("agent_reply timer poll zrangebyscore: %s", exc)
+        timer_due = []
+
+    for conversation_id in timer_due:
+        lock_key = f"{KEY_TIMER_LOCK_PREFIX}{conversation_id}"
+        acquired = await redis.set_nx_ex(lock_key, "1", LOCK_TTL_SECONDS)
+        if not acquired:
+            continue
+
+        try:
+            score = await redis.zscore(KEY_TIMER_DUE, conversation_id)
+            if score is None or score > now_ms:
+                continue
+
+            await redis.zrem(KEY_TIMER_DUE, conversation_id)
+
+            async def _run_timer(cid: str) -> None:
+                try:
+                    await execute_timer_trigger(cid)
+                except Exception as exc:
+                    logger.error(
+                        "Timer trigger task failed for %s: %s",
+                        cid,
+                        exc,
+                        exc_info=True,
+                        extra={"conversation_id": cid},
+                    )
+
+            asyncio.create_task(_run_timer(conversation_id))
         finally:
             await redis.delete(lock_key)
 

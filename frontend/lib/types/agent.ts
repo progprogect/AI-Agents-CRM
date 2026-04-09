@@ -29,6 +29,7 @@ export interface AgentConfig {
   prompts: PromptsConfig;
   rag: RAGConfig;
   monitoring: MonitoringConfig;
+  workflow?: WorkflowConfig;
 }
 
 export interface PrivacyConfig {
@@ -167,6 +168,33 @@ export interface MonitoringConfig {
   admin_panel_required: boolean;
   flags: Record<string, any>;
   kpi_targets_mvp: Record<string, number>;
+}
+
+export interface WorkflowTimerTrigger {
+  delay_seconds: number;
+  message_template: string;
+}
+
+export interface WorkflowTransition {
+  condition: string;
+  next_step_id: string;
+  is_forced: boolean;
+}
+
+export interface WorkflowStep {
+  id: string;
+  name: string;
+  instructions: string;
+  collect: string[];
+  required: boolean;
+  transitions: WorkflowTransition[];
+  timer_trigger?: WorkflowTimerTrigger | null;
+}
+
+export interface WorkflowConfig {
+  enabled: boolean;
+  start_step_id: string;
+  steps: WorkflowStep[];
 }
 
 

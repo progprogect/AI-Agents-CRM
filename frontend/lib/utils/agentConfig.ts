@@ -13,6 +13,36 @@ export interface EscalationRule {
   description: string; // what the agent should do, e.g. "Transfer to human immediately"
 }
 
+// ---------------------------------------------------------------------------
+// Workflow types
+// ---------------------------------------------------------------------------
+
+export interface WorkflowTimerTrigger {
+  delay_seconds: number;
+  message_template: string;
+}
+
+export interface WorkflowTransition {
+  condition: string;       // natural-language condition for LLM evaluator
+  next_step_id: string;
+  is_forced: boolean;      // if true, user cannot advance until condition is met
+}
+
+export interface WorkflowStep {
+  id: string;
+  name: string;
+  instructions: string;
+  collect: string[];
+  required: boolean;
+  transitions: WorkflowTransition[];
+  timer_trigger?: WorkflowTimerTrigger | null;
+}
+
+export interface WorkflowFormStep extends WorkflowStep {
+  // Local UI-only field used as React key; synced to id
+  _localId?: string;
+}
+
 // Standard examples (pre-filled)
 const DEFAULT_RAG_TOP_K = 6;
 const DEFAULT_RAG_SCORE_THRESHOLD = 0.2;
@@ -110,6 +140,11 @@ export interface AgentConfigFormData {
   moderation_provider?: string;
   moderation_model?: string;
   moderation_enabled?: boolean;
+
+  // Workflow (Step 8)
+  workflow_enabled?: boolean;
+  workflow_start_step_id?: string;
+  workflow_steps?: WorkflowFormStep[];
 }
 
 /**
@@ -149,6 +184,10 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     system_persona: "",
     system_hard_rules: "",
     system_goal: "",
+    // Workflow defaults (Step 8)
+    workflow_enabled: false,
+    workflow_start_step_id: "step_1",
+    workflow_steps: [],
   };
 }
 
@@ -223,6 +262,25 @@ export function agentConfigToFormData(
     moderation_provider: agentConfig.moderation?.provider || "openai",
     moderation_model: agentConfig.moderation?.model,
     moderation_enabled: agentConfig.moderation?.enabled !== false,
+
+    // Workflow
+    workflow_enabled: agentConfig.workflow?.enabled === true,
+    workflow_start_step_id: agentConfig.workflow?.start_step_id || "step_1",
+    workflow_steps: (agentConfig.workflow?.steps || []).map((s: any, i: number) => ({
+      id: s.id || `step_${i + 1}`,
+      name: s.name || "",
+      instructions: s.instructions || "",
+      collect: s.collect || [],
+      required: s.required || false,
+      transitions: (s.transitions || []).map((t: any) => ({
+        condition: t.condition || "",
+        next_step_id: t.next_step_id || "",
+        is_forced: t.is_forced || false,
+      })),
+      timer_trigger: s.timer_trigger
+        ? { delay_seconds: s.timer_trigger.delay_seconds, message_template: s.timer_trigger.message_template }
+        : undefined,
+    })) as WorkflowFormStep[],
   };
 
   return formData;
@@ -334,6 +392,25 @@ export function formDataToAgentConfig(
         id: rule.id,
         name: rule.name,
         description: rule.description,
+      })),
+    },
+    workflow: {
+      enabled: formData.workflow_enabled === true,
+      start_step_id: formData.workflow_start_step_id || "step_1",
+      steps: (formData.workflow_steps || []).map((s) => ({
+        id: s.id,
+        name: s.name,
+        instructions: s.instructions,
+        collect: s.collect || [],
+        required: s.required || false,
+        transitions: (s.transitions || []).map((t) => ({
+          condition: t.condition,
+          next_step_id: t.next_step_id,
+          is_forced: t.is_forced || false,
+        })),
+        timer_trigger: s.timer_trigger
+          ? { delay_seconds: s.timer_trigger.delay_seconds, message_template: s.timer_trigger.message_template }
+          : null,
       })),
     },
   };

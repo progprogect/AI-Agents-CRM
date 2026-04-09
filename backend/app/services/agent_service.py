@@ -1,8 +1,15 @@
-"""Agent service - LangChain orchestrator."""
+"""Agent service - LangGraph-based orchestrator.
+
+AgentChain now contains all pipeline logic (pre-moderation, escalation,
+RAG, LLM, post-moderation, workflow transitions).  AgentService is
+responsible for:
+  - the pre-moderation fast path used by debounce scheduling
+  - persisting the agent message to the database
+  - sending the message through the channel sender
+  - returning the agreed dict contract to callers
+"""
 
 import logging
-import time
-import re
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Optional
@@ -37,7 +44,6 @@ class AgentService:
         dynamodb: DynamoDBClient,
         channel_sender: Optional[ChannelSender] = None,
     ):
-        """Initialize agent service."""
         self.agent_config = agent_config
         self.llm_factory = llm_factory
         self.escalation_service = escalation_service
@@ -82,71 +88,13 @@ class AgentService:
         conversation_history: Optional[list[dict]] = None,
         is_reply_stale: Optional[Callable[[], Awaitable[bool]]] = None,
     ) -> dict:
-        """Process user message and generate response."""
-        # Pre-moderation check
-        mod_early = await self.run_pre_moderation_guard(user_message, conversation_id)
-        if mod_early:
-            return mod_early
+        """Process a user message through the LangGraph workflow and return result dict.
 
-        # LLM escalation classifier (optional — off when escalation.enabled is False)
-        if not self.agent_config.escalation.enabled:
-            logger.debug(
-                "Escalation classifier skipped (escalation.enabled=false)",
-                extra={
-                    "conversation_id": conversation_id,
-                    "agent_id": self.agent_config.agent_id,
-                },
-            )
-        else:
-            escalation_decision = await self.escalation_service.detect_escalation(
-                message=user_message,
-                conversation_context={
-                    "conversation_id": conversation_id,
-                    "previous_messages": conversation_history or [],
-                },
-                agent_id=self.agent_config.agent_id,
-                agent_config=self.agent_config,
-            )
-
-            if escalation_decision.needs_escalation:
-                escalation_type_str = getattr(
-                    escalation_decision.escalation_type,
-                    "value",
-                    escalation_decision.escalation_type,
-                )
-                # Update conversation status
-                await self.dynamodb.update_conversation(
-                    conversation_id=conversation_id,
-                    status=ConversationStatus.NEEDS_HUMAN,
-                    handoff_reason=escalation_decision.reason,
-                    request_type=escalation_type_str,
-                )
-
-                result = {
-                    "response": None,
-                    "escalate": True,
-                    "escalation_reason": escalation_decision.reason,
-                    "escalation_type": escalation_type_str,
-                }
-
-                # Include extracted contacts if available
-                if escalation_decision.extracted_contacts:
-                    contacts = escalation_decision.extracted_contacts
-                    result["extracted_contacts"] = {
-                        "phone_numbers": contacts.phone_numbers,
-                        "emails": contacts.emails,
-                    }
-                    logger.info(
-                        "Extracted contacts included in escalation result",
-                        extra={
-                            "conversation_id": conversation_id,
-                            "phone_numbers": contacts.phone_numbers,
-                            "emails": contacts.emails,
-                        },
-                    )
-
-                return result
-
+        The dict contract is unchanged from the previous implementation so all
+        callers (chat.py, websocket.py, agent_reply_coordinator.py, channel services)
+        continue to work without modification.
+        """
+        # Fast-path: stale check before doing any work
         if is_reply_stale and await is_reply_stale():
             return {
                 "response": None,
@@ -155,178 +103,99 @@ class AgentService:
                 "agent_message_id": None,
             }
 
-        # Retrieve RAG context (text + any media attachments) in one DB call
-        rag_context = None
-        rag_media_list: list = []
-        rag_media_attachment = None   # first eligible RAGMediaAttachment, or None
-        if self.agent_config.rag.enabled:
-            try:
-                t_rag = time.perf_counter()
-                rag_context, rag_media_list = await self.rag_service.get_context_and_media(
-                    query=user_message,
-                    agent_id=self.agent_config.agent_id,
-                    agent_config=self.agent_config,
-                    top_k=self.agent_config.rag.retrieval.get("top_k", 6),
-                    score_threshold=self.agent_config.rag.retrieval.get("score_threshold", 0.2),
-                )
-                rag_ms = (time.perf_counter() - t_rag) * 1000.0
-                logger.debug(
-                    "rag_retrieval_phase",
-                    extra={
-                        "conversation_id": conversation_id,
-                        "agent_id": self.agent_config.agent_id,
-                        "rag_retrieval_ms": round(rag_ms, 2),
-                    },
-                )
-                if rag_context:
-                    logger.debug(
-                        f"RAG context retrieved for conversation {conversation_id}",
-                        extra={
-                            "conversation_id": conversation_id,
-                            "agent_id": self.agent_config.agent_id,
-                            "context_length": len(rag_context),
-                            "media_attachments": len(rag_media_list),
-                        },
-                    )
-                # Take the highest-scored media item (already sorted by RAG search)
-                if rag_media_list:
-                    rag_media_attachment = rag_media_list[0]
-                    logger.info(
-                        "RAG media attachment selected for conversation %s: %s (%s, score=%.3f)",
-                        conversation_id,
-                        rag_media_attachment["title"],
-                        rag_media_attachment["media_type"],
-                        rag_media_attachment["score"],
-                        extra={"conversation_id": conversation_id},
-                    )
-            except Exception as e:
-                # Log error but continue without RAG
-                logger.warning(
-                    f"RAG retrieval error for conversation {conversation_id}: {str(e)}",
-                    exc_info=True,
-                    extra={
-                        "conversation_id": conversation_id,
-                        "agent_id": self.agent_config.agent_id,
-                    },
-                )
-
-        # Filled after successful LLM response (single fetch for channel + save/send).
-        conversation = None
-
-        # Generate response
+        # Invoke the LangGraph graph — it handles pre-mod, escalation, RAG, LLM, post-mod, transitions
         try:
-            t_llm = time.perf_counter()
-            response = await self.agent_chain.generate_response(
+            graph_result = await self.agent_chain.generate_response(
                 user_message=user_message,
                 conversation_history=conversation_history,
-                rag_context=rag_context,
-                rag_media_available=bool(rag_media_list),
                 conversation_id=conversation_id,
+                moderation_service=self.moderation_service,
+                escalation_service=self.escalation_service,
+                rag_service=self.rag_service,
+                is_reply_stale=is_reply_stale,
             )
-            llm_ms = (time.perf_counter() - t_llm) * 1000.0
-            logger.debug(
-                "agent_llm_generation",
-                extra={
-                    "conversation_id": conversation_id,
-                    "agent_id": self.agent_config.agent_id,
-                    "agent_llm_ms": round(llm_ms, 2),
-                },
-            )
-
-            # Normalize: some LLM backends (e.g. Claude via LangChain) return a list
-            # of content blocks instead of a plain string.
-            if isinstance(response, list):
-                parts = []
-                for item in response:
-                    if isinstance(item, dict):
-                        parts.append(item.get("text", ""))
-                    elif isinstance(item, str):
-                        parts.append(item)
-                response = "".join(parts).strip()
-
-            # Strip internal Claude safety/processing markers that leak into output
-            response = re.sub(
-                r"^\[(?:SAFETY_HANDLER|THINKING|INTERNAL|SYSTEM|TOOL_USE)\][^\n]*\n?",
-                "",
-                response,
-                flags=re.IGNORECASE,
-            ).strip()
-
-            if not response or not response.strip():
-                logger.warning(
-                    f"Empty response generated for conversation {conversation_id}",
-                    extra={
-                        "conversation_id": conversation_id,
-                        "agent_id": self.agent_config.agent_id,
-                    },
-                )
-                response = "I apologize, but I couldn't generate a response. Please try again."
-            
-            # Only attach RAG media when LLM explicitly requested it via [ATTACH_MEDIA]
-            if rag_media_attachment and AgentChain.ATTACH_MEDIA_MARKER not in response:
-                rag_media_attachment = None
-            if AgentChain.ATTACH_MEDIA_MARKER in response:
-                response = response.replace(AgentChain.ATTACH_MEDIA_MARKER, "").strip()
-
-            conversation = await self.dynamodb.get_conversation(conversation_id)
-            channel_val = get_enum_value(conversation.channel) if conversation else None
-
-            # WhatsApp: bare image URLs + markdown strip; other plain-text channels: existing cleaner
-            try:
-                from app.utils.text_formatting import (
-                    clean_agent_response,
-                    format_agent_text_for_whatsapp,
-                )
-
-                if channel_val == MessageChannel.WHATSAPP.value:
-                    response = format_agent_text_for_whatsapp(response)
-                else:
-                    cleaned = clean_agent_response(response)
-                    if cleaned is not None:
-                        response = cleaned
-            except Exception as e:
-                logger.error(
-                    f"Failed to clean markdown for conversation {conversation_id}: {str(e)}",
-                    exc_info=True,
-                    extra={
-                        "conversation_id": conversation_id,
-                        "agent_id": self.agent_config.agent_id,
-                    },
-                )
-                # Continue with original response if cleaning fails
-        except Exception as e:
+        except Exception as exc:
             logger.error(
-                f"Response generation error for conversation {conversation_id}: {str(e)}",
+                "Agent graph error for conversation %s: %s",
+                conversation_id,
+                exc,
                 exc_info=True,
-                extra={
-                    "conversation_id": conversation_id,
-                    "agent_id": self.agent_config.agent_id,
-                },
+                extra={"conversation_id": conversation_id, "agent_id": self.agent_config.agent_id},
             )
             raise MessageProcessingError(
-                f"Failed to generate response: {str(e)}",
+                f"Failed to generate response: {exc}",
                 conversation_id=conversation_id,
             )
 
-        # Post-moderation check
-        if self.agent_config.moderation.enabled:
-            flagged, moderation_result = await self.moderation_service.check_post_moderation(
-                response, self.agent_config
+        # --- Escalation or moderation flagged from within the graph ---
+        if graph_result.get("escalate"):
+            escalation_type = graph_result.get("escalation_type")
+            await self.dynamodb.update_conversation(
+                conversation_id=conversation_id,
+                status=ConversationStatus.NEEDS_HUMAN,
+                handoff_reason=graph_result.get("escalation_reason", "Escalation"),
+                **({"request_type": escalation_type} if escalation_type else {}),
             )
-            if flagged:
-                # Update conversation status
-                await self.dynamodb.update_conversation(
-                    conversation_id=conversation_id,
-                    status=ConversationStatus.NEEDS_HUMAN,
-                    handoff_reason="Generated content moderation violation",
-                )
-                return {
-                    "response": None,
-                    "escalate": True,
-                    "escalation_reason": "Generated content moderation violation",
-                    "moderation_result": moderation_result,
-                }
+            logger.info(
+                "Escalation from graph for conversation %s: %s",
+                conversation_id,
+                graph_result.get("escalation_reason"),
+                extra={
+                    "conversation_id": conversation_id,
+                    "agent_id": self.agent_config.agent_id,
+                    "escalation_type": escalation_type,
+                },
+            )
+            return graph_result
 
+        # --- Stale reply (aborted inside graph) ---
+        if graph_result.get("aborted"):
+            return graph_result
+
+        response = graph_result.get("response") or ""
+        rag_media_url = graph_result.get("rag_media_url")
+        rag_media_type = graph_result.get("rag_media_type")
+
+        # --- Schedule timer trigger if workflow requested one ---
+        pending_timer = graph_result.get("pending_timer")
+        if pending_timer:
+            try:
+                from app.services.agent_reply_coordinator import schedule_timer_trigger
+                await schedule_timer_trigger(conversation_id, pending_timer)
+                logger.info(
+                    "Timer trigger scheduled for conversation %s in %ds",
+                    conversation_id,
+                    pending_timer.get("delay_seconds"),
+                    extra={"conversation_id": conversation_id, "agent_id": self.agent_config.agent_id},
+                )
+            except Exception as exc:
+                logger.warning("Failed to schedule timer trigger: %s", exc)
+
+        # --- Format response text for channel ---
+        conversation = await self.dynamodb.get_conversation(conversation_id)
+        channel_val = get_enum_value(conversation.channel) if conversation else None
+
+        try:
+            from app.utils.text_formatting import (
+                clean_agent_response,
+                format_agent_text_for_whatsapp,
+            )
+            if channel_val == MessageChannel.WHATSAPP.value:
+                response = format_agent_text_for_whatsapp(response)
+            else:
+                cleaned = clean_agent_response(response)
+                if cleaned is not None:
+                    response = cleaned
+        except Exception as exc:
+            logger.error(
+                "Failed to clean markdown for conversation %s: %s",
+                conversation_id,
+                exc,
+                exc_info=True,
+                extra={"conversation_id": conversation_id, "agent_id": self.agent_config.agent_id},
+            )
+
+        # --- Second stale check before persisting ---
         if is_reply_stale and await is_reply_stale():
             return {
                 "response": None,
@@ -335,14 +204,15 @@ class AgentService:
                 "agent_message_id": None,
             }
 
-        # Save agent message to database first (conversation loaded after LLM step above)
+        # --- Persist agent message ---
         agent_message_id = None
+        agent_message_ts = None
         if conversation:
             agent_message_id = str(uuid.uuid4())
             msg_metadata: dict = {}
-            if rag_media_attachment:
-                msg_metadata["media_url"] = rag_media_attachment["url"]
-                msg_metadata["media_type"] = rag_media_attachment["media_type"]
+            if rag_media_url:
+                msg_metadata["media_url"] = rag_media_url
+                msg_metadata["media_type"] = rag_media_type
             agent_message = Message(
                 message_id=agent_message_id,
                 conversation_id=conversation_id,
@@ -355,47 +225,41 @@ class AgentService:
                 metadata=msg_metadata,
             )
             await self.dynamodb.create_message(agent_message)
+            agent_message_ts = to_utc_iso_string(agent_message.timestamp)
 
-        # Send message through channel sender if provided and not web chat.
-        # For web chat, delivery is handled by WebSocket in websocket.py;
-        # the media metadata saved above will be picked up when the frontend polls.
+        # --- Send via channel sender (non-web channels) ---
         if self.channel_sender:
             try:
-                conversation_channel = get_enum_value(conversation.channel) if conversation else None
-                if conversation_channel and conversation_channel != MessageChannel.WEB_CHAT.value:
+                if channel_val and channel_val != MessageChannel.WEB_CHAT.value:
                     await self.channel_sender.send_message(
                         conversation_id=conversation_id,
                         message_text=response,
-                        media_url=rag_media_attachment["url"] if rag_media_attachment else None,
-                        media_type=rag_media_attachment["media_type"] if rag_media_attachment else None,
+                        media_url=rag_media_url,
+                        media_type=rag_media_type,
                     )
                     logger.info(
                         "Sent agent message for conversation %s (media=%s)",
                         conversation_id,
-                        rag_media_attachment["media_type"] if rag_media_attachment else "none",
-                        extra={
-                            "conversation_id": conversation_id,
-                            "channel": conversation_channel,
-                        },
+                        rag_media_type or "none",
+                        extra={"conversation_id": conversation_id, "channel": channel_val},
                     )
-            except Exception as e:
+            except Exception as exc:
                 logger.error(
-                    f"Failed to send message through channel sender: {e}",
+                    "Failed to send message through channel sender: %s",
+                    exc,
                     exc_info=True,
                     extra={"conversation_id": conversation_id},
                 )
-                # Don't fail the whole request if channel sending fails
 
-        result = {
+        return {
             "response": response,
             "escalate": False,
-            "rag_context_used": bool(rag_context),
-            "rag_media_url": rag_media_attachment["url"] if rag_media_attachment else None,
-            "rag_media_type": rag_media_attachment["media_type"] if rag_media_attachment else None,
+            "rag_context_used": graph_result.get("rag_context_used", False),
+            "rag_media_url": rag_media_url,
+            "rag_media_type": rag_media_type,
             "agent_message_id": agent_message_id,
-            "agent_message_timestamp": to_utc_iso_string(agent_message.timestamp) if conversation and agent_message_id else None,
+            "agent_message_timestamp": agent_message_ts,
         }
-        return result
 
 
 def create_agent_service(
@@ -418,4 +282,3 @@ def create_agent_service(
         dynamodb=dynamodb,
         channel_sender=channel_sender,
     )
-

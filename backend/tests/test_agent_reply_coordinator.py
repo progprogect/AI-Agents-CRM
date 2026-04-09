@@ -150,7 +150,17 @@ class TestEscalationDisabled(unittest.IsolatedAsyncioTestCase):
             dynamodb=dynamodb,
             channel_sender=None,
         )
-        svc.agent_chain.generate_response = AsyncMock(return_value="Hello")
+        # generate_response now returns a dict (graph result contract)
+        svc.agent_chain.generate_response = AsyncMock(
+            return_value={
+                "response": "Hello",
+                "escalate": False,
+                "rag_context_used": False,
+                "rag_media_url": None,
+                "rag_media_type": None,
+                "pending_timer": None,
+            }
+        )
 
         result = await svc.process_message(
             "hi",

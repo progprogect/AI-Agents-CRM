@@ -11,6 +11,9 @@ langchain-openai>=1.0.0
 langchain-google-genai>=2.0.0
 openai>=2.20.0,<3.0.0
 
+# LangGraph checkpoint persistence (PostgreSQL backend for workflow state)
+langgraph-checkpoint-postgres>=3.0.0
+
 # PostgreSQL
 asyncpg>=0.29.0
 sqlalchemy[asyncio]>=2.0.0

@@ -326,6 +326,77 @@ class MonitoringConfig(BaseModel):
     kpi_targets_mvp: dict[str, float] = Field(default_factory=dict)
 
 
+# ---------------------------------------------------------------------------
+# Workflow configuration
+# ---------------------------------------------------------------------------
+
+class WorkflowTimerTrigger(BaseModel):
+    """Timer-based trigger attached to a workflow step."""
+
+    delay_seconds: int = Field(
+        ..., ge=1, description="Seconds to wait before sending the trigger message"
+    )
+    message_template: str = Field(
+        ..., description="Message text; supports {collected.*} variable substitution"
+    )
+
+
+class WorkflowTransition(BaseModel):
+    """Condition-based transition from one workflow step to another."""
+
+    condition: str = Field(
+        ..., description="Natural-language condition evaluated by the LLM transition evaluator"
+    )
+    next_step_id: str = Field(..., description="Step to transition to when condition is met")
+    is_forced: bool = Field(
+        default=False,
+        description="If True, the agent must stay on the current step until this condition is satisfied",
+    )
+
+
+class WorkflowStep(BaseModel):
+    """A single step in a conversation workflow."""
+
+    id: str = Field(..., description="Unique step identifier within the workflow")
+    name: str = Field(..., description="Human-readable step name")
+    instructions: str = Field(
+        ..., description="LLM instructions for this step (appended to base system prompt)"
+    )
+    collect: list[str] = Field(
+        default_factory=list,
+        description="Names of variables to collect from the user on this step",
+    )
+    required: bool = Field(
+        default=False,
+        description="If True, the step must be completed before the workflow can advance",
+    )
+    transitions: list[WorkflowTransition] = Field(
+        default_factory=list,
+        description="Ordered list of transitions to evaluate after the LLM responds",
+    )
+    timer_trigger: Optional[WorkflowTimerTrigger] = Field(
+        default=None,
+        description="Optional timer-based follow-up message scheduled after entering this step",
+    )
+
+
+class WorkflowConfig(BaseModel):
+    """Conversation workflow definition for an agent."""
+
+    enabled: bool = Field(
+        default=False,
+        description="If False, the workflow engine is bypassed and the agent responds as a single-step chat",
+    )
+    start_step_id: str = Field(
+        default="default",
+        description="ID of the first step to use when a conversation starts",
+    )
+    steps: list[WorkflowStep] = Field(
+        default_factory=list,
+        description="Ordered list of workflow steps",
+    )
+
+
 class AgentConfig(BaseModel):
     """Complete agent configuration."""
 
@@ -350,6 +421,7 @@ class AgentConfig(BaseModel):
     prompts: PromptsConfig = Field(default_factory=PromptsConfig)
     rag: RAGConfig = Field(default_factory=RAGConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
+    workflow: WorkflowConfig = Field(default_factory=WorkflowConfig)
 
     @model_validator(mode="after")
     def validate_config(self) -> "AgentConfig":
@@ -435,6 +507,8 @@ class AgentConfig(BaseModel):
                 config_data[key] = PromptsConfig(**prompts_data)
             elif key == "rag" and isinstance(value, dict):
                 config_data[key] = RAGConfig(**value)
+            elif key == "workflow" and isinstance(value, dict):
+                config_data[key] = WorkflowConfig(**value)
             elif key == "monitoring" and isinstance(value, dict):
                 config_data[key] = MonitoringConfig(**value)
             else:

@@ -14,6 +14,7 @@ import { RAGStep } from "./steps/RAGStep";
 import { EscalationStep } from "./steps/EscalationStep";
 import { LLMStep } from "./steps/LLMStep";
 import { ReviewStep, type AgentWizardSuccessResult } from "./steps/ReviewStep";
+import { WorkflowStep } from "./steps/WorkflowStep";
 
 interface AgentWizardProps {
   onSuccess: (result?: AgentWizardSuccessResult) => void;
@@ -33,7 +34,8 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
       { number: 4, title: t("stepRAG") },
       { number: 5, title: t("stepEscalation") },
       { number: 6, title: t("stepLLM") },
-      { number: 7, title: t("stepReview") },
+      { number: 7, title: "Workflow" },
+      { number: 8, title: t("stepReview") },
     ],
     [t]
   );
@@ -146,6 +148,14 @@ export const AgentWizard: React.FC<AgentWizardProps> = ({
           />
         );
       case 7:
+        return (
+          <WorkflowStep
+            config={state.config}
+            errors={state.errors}
+            onUpdate={updateConfig}
+          />
+        );
+      case 8:
         return (
           <ReviewStep
             config={state.config}
