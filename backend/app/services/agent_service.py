@@ -86,6 +86,7 @@ class AgentService:
         conversation_id: str,
         conversation_history: Optional[list[dict]] = None,
         is_reply_stale: Optional[Callable[[], Awaitable[bool]]] = None,
+        user_media_url: Optional[str] = None,
     ) -> dict:
         """Process a user message through the LangGraph workflow and return result dict.
 
@@ -97,6 +98,10 @@ class AgentService:
         (when the LangGraph checkpoint for this conversation is empty).  On
         subsequent turns the checkpointer provides the full history, so passing
         history from PostgreSQL would cause duplicates.
+
+        user_media_url: public URL of an image sent by the user.  When provided
+        the image is passed natively to the LLM as a multimodal message
+        (image_url content block) instead of a pre-converted text description.
         """
         from langchain_core.messages import AIMessage as _AIMessage, HumanMessage as _HumanMessage
 
@@ -131,6 +136,7 @@ class AgentService:
                 rag_service=self.rag_service,
                 is_reply_stale=is_reply_stale,
                 seed_messages=seed_messages,
+                user_media_url=user_media_url,
             )
         except Exception as exc:
             logger.error(

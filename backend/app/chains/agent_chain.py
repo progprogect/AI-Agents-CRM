@@ -83,6 +83,11 @@ class WorkflowState(TypedDict):
     step_system_prompt: str
     """Scratch field: assembled system prompt for the current step."""
 
+    user_media_url: Optional[str]
+    """Public URL of an image uploaded by the user in this turn (web chat only).
+    Passed directly to the LLM as a multimodal image_url block.
+    Not persisted across turns — overwritten to None on subsequent turns."""
+
     agent_id: str
     conversation_id: str
 
@@ -393,7 +398,8 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         # ---- Node: rag_retrieval ----
         async def node_rag_retrieval(state: WorkflowState) -> dict:
             rag_svc = _get_service("rag_service")
-            if rag_svc is None or not agent_config.rag.enabled:
+            # Skip RAG when query is empty (e.g. image-only message with no caption).
+            if rag_svc is None or not agent_config.rag.enabled or not (state["user_message"] or "").strip():
                 return {"rag_context": None, "rag_media_list": []}
             try:
                 context, media_list = await rag_svc.get_context_and_media(
@@ -450,7 +456,19 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             msgs: list[BaseMessage] = [SystemMessage(content=system_text)]
             for m in (state.get("messages") or []):
                 msgs.append(m)
-            msgs.append(HumanMessage(content=input_text))
+
+            # If the user attached an image, send it natively to the LLM as
+            # a multimodal message (image_url block).  gpt-4o / gpt-4o-mini
+            # and Gemini Pro Vision support this format out of the box.
+            user_media_url = state.get("user_media_url")
+            if user_media_url:
+                human_content: Any = [
+                    {"type": "text", "text": input_text},
+                    {"type": "image_url", "image_url": {"url": user_media_url}},
+                ]
+            else:
+                human_content = input_text
+            msgs.append(HumanMessage(content=human_content))
 
             try:
                 ai_msg: AIMessage = await llm.ainvoke(msgs)
@@ -664,6 +682,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         is_reply_stale: Optional[Callable[[], Awaitable[bool]]] = None,
         # seed_messages: provided only for the very first turn (empty checkpoint)
         seed_messages: Optional[list[BaseMessage]] = None,
+        user_media_url: Optional[str] = None,
     ) -> dict:
         """Invoke the workflow graph and return the result dict.
 
@@ -671,6 +690,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         be passed to pre-populate state["messages"] so the LLM has context.
         On subsequent turns the checkpointer already holds the full history —
         seed_messages should be None to avoid duplication.
+
+        user_media_url: public URL of an image uploaded by the user.  When
+        provided the LLM receives the image natively as a multimodal message
+        (image_url block) rather than a text description.
         """
         llm = await self.llm_factory.get_chat_model(self.agent_config)
         graph = self._get_compiled_graph()
@@ -722,6 +745,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 "result": None,
                 "llm_response": "",
                 "step_system_prompt": "",
+                "user_media_url": user_media_url,
                 # Seed prior history from PostgreSQL so the LLM has context
                 # on the very first graph invocation.
                 "messages": seed_messages or [],
@@ -737,6 +761,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 "step_system_prompt": "",
                 "rag_context": None,
                 "rag_media_list": [],
+                "user_media_url": user_media_url,
             }
 
         logger.debug(

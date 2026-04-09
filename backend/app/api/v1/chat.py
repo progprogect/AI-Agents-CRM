@@ -17,7 +17,6 @@ from app.services.agent_reply_coordinator import notify_user_message_saved
 from app.services.agent_service import create_agent_service
 from app.services.channel_sender import get_channel_sender
 from app.services.conversation_service import build_conversation_history_for_agent
-from app.services.web_chat_user_media import enrich_web_chat_user_message_for_agent
 from app.services.channel_binding_service import ChannelBindingService
 from app.services.instagram_service import InstagramService
 from app.services.telegram_service import TelegramService
@@ -236,28 +235,11 @@ async def send_message(
         msg_metadata["media_filename"] = request.media_filename
 
     agent_user_message = content_stripped
-    agent_data_cached: dict | None = None
-
-    human_handling = status_value in [
-        ConversationStatus.NEEDS_HUMAN.value,
-        ConversationStatus.HUMAN_ACTIVE.value,
-    ]
-    if (
-        not human_handling
-        and request.media_type == "image"
-        and request.media_url
-    ):
-        agent_data_cached = await deps.dynamodb.get_agent(conversation.agent_id)
-        if agent_data_cached and agent_data_cached.get("config"):
-            enriched, vision_meta = await enrich_web_chat_user_message_for_agent(
-                content_stripped,
-                request.media_url,
-                request.media_type,
-                conversation.agent_id,
-                agent_data_cached["config"],
-            )
-            agent_user_message = enriched
-            msg_metadata.update(vision_meta)
+    # Pass the image URL natively to the LLM (multimodal) rather than
+    # converting it to a text description first.
+    user_media_url_for_agent: Optional[str] = (
+        request.media_url if request.media_type == "image" else None
+    )
 
     # Create user message
     message_id = str(uuid.uuid4())
@@ -292,7 +274,7 @@ async def send_message(
         )
 
     # Get agent configuration
-    agent_data = agent_data_cached or await deps.dynamodb.get_agent(conversation.agent_id)
+    agent_data = await deps.dynamodb.get_agent(conversation.agent_id)
     if not agent_data or "config" not in agent_data:
         raise HTTPException(status_code=404, detail="Agent not found or invalid configuration")
 
@@ -331,7 +313,10 @@ async def send_message(
     agent_service = create_agent_service(agent_config, deps.dynamodb, channel_sender)
 
     settings = get_settings()
-    if settings.agent_reply_debounce_seconds > 0:
+    # Debounce is skipped for image messages — the media URL cannot be stored
+    # in Redis, and image uploads are discrete single-turn actions that do not
+    # benefit from batching.
+    if settings.agent_reply_debounce_seconds > 0 and not user_media_url_for_agent:
         redis_client = get_redis_client()
         if await redis_client.ping():
             mod_early = await agent_service.run_pre_moderation_guard(
@@ -359,11 +344,14 @@ async def send_message(
                     timestamp=to_utc_iso_string(user_message.timestamp),
                 )
 
-    # Process message through agent service
+    # Process message through agent service.
+    # If the user attached an image, pass the URL natively — the LLM receives
+    # it as a multimodal image_url content block.
     result = await agent_service.process_message(
         user_message=agent_user_message,
         conversation_id=conversation_id,
         conversation_history=conversation_history,
+        user_media_url=user_media_url_for_agent,
     )
 
     # Handle escalation
