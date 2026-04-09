@@ -1,15 +1,14 @@
-"""Dependency injection for FastAPI."""
+"""Dependency injection for FastAPI.
 
-from typing import Union
+Storage backend: PostgreSQL (primary) + Redis (cache / debounce).
+DynamoDB is NOT supported — see storage/dynamodb.py for the historical reference.
+"""
 
 from fastapi import Depends
 
 from app.config import Settings, get_settings
-from app.storage.dynamodb import DynamoDBClient, get_dynamodb_client
-from app.storage.dynamodb_cache import DynamoDBCacheClient, get_dynamodb_cache_client
 from app.storage.postgres import PostgreSQLClient, get_postgres_client
 from app.storage.postgres_cache import PostgresCacheClient, get_postgres_cache_client
-from app.storage.secrets import SecretsManager, get_secrets_manager
 from app.storage.postgres_secrets import PostgresSecretsManager, get_postgres_secrets_manager
 from app.services.llm_factory import LLMFactory, get_llm_factory
 from app.services.moderation_service import ModerationService, get_moderation_service
@@ -20,33 +19,29 @@ def get_config() -> Settings:
     return get_settings()
 
 
-def _use_postgres() -> bool:
-    return get_settings().database_backend == "postgres"
+# Storage dependencies — PostgreSQL only
+
+def get_dynamodb() -> PostgreSQLClient:
+    """Get the PostgreSQL database client.
+
+    Named get_dynamodb() for backward compatibility with existing call sites,
+    but always returns the PostgreSQL client.  DynamoDB is not supported.
+    """
+    return get_postgres_client()
 
 
-# Storage dependencies
-def get_dynamodb() -> Union[DynamoDBClient, PostgreSQLClient]:
-    """Get database client (PostgreSQL or DynamoDB based on config)."""
-    if _use_postgres():
-        return get_postgres_client()
-    return get_dynamodb_client()
+def get_cache() -> PostgresCacheClient:
+    """Get the PostgreSQL-backed cache client."""
+    return get_postgres_cache_client()
 
 
-def get_cache() -> Union[DynamoDBCacheClient, PostgresCacheClient]:
-    """Get cache client."""
-    if _use_postgres():
-        return get_postgres_cache_client()
-    return get_dynamodb_cache_client()
-
-
-def get_secrets() -> Union[SecretsManager, PostgresSecretsManager]:
-    """Get secrets manager."""
-    if _use_postgres():
-        return get_postgres_secrets_manager()
-    return get_secrets_manager()
+def get_secrets() -> PostgresSecretsManager:
+    """Get the PostgreSQL-backed secrets manager."""
+    return get_postgres_secrets_manager()
 
 
 # Service dependencies
+
 def get_llm_factory_dep() -> LLMFactory:
     """Get LLM factory."""
     return get_llm_factory()
@@ -64,10 +59,9 @@ class CommonDependencies:
     def __init__(
         self,
         config: Settings = Depends(get_config),
-        dynamodb: Union[DynamoDBClient, PostgreSQLClient] = Depends(get_dynamodb),
-        cache: Union[DynamoDBCacheClient, PostgresCacheClient] = Depends(get_cache),
+        dynamodb: PostgreSQLClient = Depends(get_dynamodb),
+        cache: PostgresCacheClient = Depends(get_cache),
     ):
         self.config = config
         self.dynamodb = dynamodb
         self.cache = cache
-

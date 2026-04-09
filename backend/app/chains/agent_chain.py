@@ -1,18 +1,21 @@
-"""Main LangChain / LangGraph agent chain.
+"""Main LangGraph agent chain.
 
-When workflow.enabled=False (default), the graph runs as a simple single-step
-conversation identical to the previous create_agent behaviour.
+Storage stack: PostgreSQL (primary) + Redis (cache).
+DynamoDB is NOT supported — see backend/docs/storage_stack.md.
 
-When workflow.enabled=True, the StateGraph drives a configurable multi-step
-scenario with named steps, conditional transitions, forced steps, and
-timer-based follow-ups.
-
-IMPORTANT: Services (ModerationService, EscalationService, RAGService) and
-callbacks (is_reply_stale) are intentionally NOT stored in WorkflowState.
-LangGraph's PostgresSaver serialises the full state to msgpack; Python service
-objects are not serialisable.  Instead, these are captured via per-call
-closures in _build_call_graph() and are available to each node function
-without touching the persisted state.
+Architecture:
+- The compiled StateGraph is built once per (agent_id, workflow_config_hash) and
+  cached in _graph_cache.  Only serialisable data goes into WorkflowState.
+- Per-request dependencies (services, LLM, stale-callback) are passed through
+  RunnableConfig.configurable so they never enter the persisted checkpoint.
+- LangGraph's AsyncPostgresSaver stores state keyed by thread_id = conversation_id.
+  On every ainvoke the checkpointer loads the stored state and merges the input:
+    * messages field uses add_messages reducer → history accumulates correctly.
+    * scalar fields (current_step_id, step_history, collected …) without a reducer
+      are overwritten by the input value.  Therefore workflow state fields must NOT
+      be present in init_state on subsequent turns — only user_message is passed.
+- First call detection: graph.aget_state() returns None values when no checkpoint
+  exists; the entry node initialises workflow defaults from agent_config.
 """
 
 from __future__ import annotations
@@ -29,60 +32,63 @@ from langchain_core.messages import AIMessage, AnyMessage, BaseMessage, HumanMes
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.utils.config import get_config as lg_get_config
 from typing_extensions import TypedDict
 
-from app.config import get_settings
 from app.models.agent_config import AgentConfig, WorkflowConfig, WorkflowStep
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# WorkflowState  — only serialisable fields go here
+# WorkflowState — only msgpack-serialisable fields
 # ---------------------------------------------------------------------------
 
 class WorkflowState(TypedDict):
-    """Persisted conversation state.  All fields must be msgpack-serialisable."""
+    """Persisted conversation state.  All fields must be msgpack-serialisable.
+
+    Services, LLM instances, and callbacks are intentionally absent — they are
+    provided at runtime via RunnableConfig.configurable.
+    """
 
     messages: Annotated[list[AnyMessage], add_messages]
-    """Full conversation history (managed by LangGraph add_messages reducer)."""
+    """Full conversation history (accumulated by add_messages reducer)."""
 
     user_message: str
-    """Raw text of the current user turn (without RAG context wrapping)."""
+    """Raw text of the current user turn (plain, without RAG wrapping)."""
 
     current_step_id: str
-    """Identifier of the active workflow step."""
+    """Active workflow step id (loaded from checkpoint on subsequent turns)."""
 
     step_history: list[str]
-    """Ordered list of step ids visited so far (oldest first)."""
+    """Ordered list of visited step ids."""
 
     collected: dict[str, str]
-    """Variables collected from the user during the conversation."""
+    """Variables collected from the user during the workflow."""
 
     pending_timer: Optional[dict]
-    """Scheduled timer trigger: {delay_seconds, message_template, step_id, fire_at_ms}."""
+    """Scheduled timer: {delay_seconds, message_template, step_id, fire_at_ms}."""
 
     rag_context: Optional[str]
-    """Retrieved context text — persisted so nodes downstream can read it."""
+    """Retrieved RAG context text for the current turn."""
 
     rag_media_list: list
-    """Media attachments returned by RAG retrieval."""
+    """Media attachments from RAG retrieval."""
 
     result: Optional[dict]
-    """Final output dict — matches the contract expected by AgentService.process_message."""
+    """Final output dict returned to AgentService.process_message."""
 
-    # Transient per-turn scratch fields (persisted between nodes within one turn,
-    # overwritten on every new turn so safe to checkpoint as plain strings).
     llm_response: str
+    """Scratch field: LLM text output for the current turn."""
+
     step_system_prompt: str
+    """Scratch field: assembled system prompt for the current step."""
 
     agent_id: str
     conversation_id: str
 
 
 # ---------------------------------------------------------------------------
-# Graph structure cache (keyed by agent_id + sha256 of workflow config)
-# NOTE: we cache the *compiled graph* built without per-call closures.
-# Per-call services are injected via closures in _build_call_graph().
+# Graph cache — keyed by (agent_id, sha256[:12] of workflow config)
 # ---------------------------------------------------------------------------
 
 _graph_cache: dict[str, Any] = {}
@@ -118,13 +124,21 @@ def _normalise_llm_text(content: Any) -> str:
 
 
 def _clean_response(text: str) -> str:
-    text = re.sub(
+    return re.sub(
         r"^\[(?:SAFETY_HANDLER|THINKING|INTERNAL|SYSTEM|TOOL_USE)\][^\n]*\n?",
         "",
         text,
         flags=re.IGNORECASE,
     ).strip()
-    return text
+
+
+def _get_service(key: str) -> Any:
+    """Read a per-request dependency from RunnableConfig.configurable."""
+    try:
+        cfg = lg_get_config()
+        return cfg.get("configurable", {}).get(key)
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -132,7 +146,7 @@ def _clean_response(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 class AgentChain:
-    """Builds and caches a LangGraph StateGraph for an agent."""
+    """Builds, caches, and invokes the LangGraph agent StateGraph."""
 
     ATTACH_MEDIA_MARKER = ATTACH_MEDIA_MARKER
 
@@ -153,7 +167,6 @@ class AgentChain:
             company_display_name=self.agent_config.profile.company_display_name,
             specialty=self.agent_config.profile.specialty,
         )
-
         hard_rules = prompts.get("hard_rules", "")
         goal = prompts.get("goal", "")
 
@@ -259,42 +272,39 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         return "\n\n".join(parts)
 
     @staticmethod
-    def _build_step_system_prompt(base_prompt: str, step: WorkflowStep, collected: dict[str, str]) -> str:
+    def _build_step_system_prompt(
+        base_prompt: str, step: WorkflowStep, collected: dict[str, str]
+    ) -> str:
         lines = [base_prompt, f"\n--- Current workflow step: {step.name} ---"]
         lines.append(step.instructions)
         if step.collect:
             missing = [v for v in step.collect if v not in collected]
             if missing:
-                lines.append(f"\nPlease collect the following information from the user: {', '.join(missing)}")
+                lines.append(
+                    f"\nPlease collect the following information from the user: {', '.join(missing)}"
+                )
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # Per-call graph construction
-    # All service objects are captured in closures — they never touch state.
+    # Graph construction and caching
     # ------------------------------------------------------------------
 
-    def _build_call_graph(
-        self,
-        *,
-        moderation_service: Any,
-        escalation_service: Any,
-        rag_service: Any,
-        llm: Any,
-        is_reply_stale: Optional[Callable[[], Awaitable[bool]]],
-    ) -> Any:
-        """Build a compiled graph with services captured in node closures.
+    def _build_graph(self) -> Any:
+        """Build and compile the StateGraph.
 
-        This graph is NOT cached because the closures hold per-request
-        objects (services, llm instance, stale callback).
+        Cached by (agent_id, workflow_hash).  Services are NOT captured in
+        closures — nodes read them from RunnableConfig.configurable via
+        _get_service().
         """
         agent_config = self.agent_config
         agent_chain_self = self
 
         # ---- Node: pre_moderation ----
         async def node_pre_moderation(state: WorkflowState) -> dict:
-            if moderation_service is None or not agent_config.moderation.enabled:
+            mod = _get_service("moderation_service")
+            if mod is None or not agent_config.moderation.enabled:
                 return {}
-            flagged, mod_result = await moderation_service.check_pre_moderation(
+            flagged, mod_result = await mod.check_pre_moderation(
                 state["user_message"], agent_config
             )
             if flagged:
@@ -310,9 +320,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         # ---- Node: escalation_node ----
         async def node_escalation(state: WorkflowState) -> dict:
-            if escalation_service is None or not agent_config.escalation.enabled:
+            esc = _get_service("escalation_service")
+            if esc is None or not agent_config.escalation.enabled:
                 return {}
-            decision = await escalation_service.detect_escalation(
+            decision = await esc.detect_escalation(
                 message=state["user_message"],
                 conversation_context={"conversation_id": state["conversation_id"]},
                 agent_id=state["agent_id"],
@@ -342,11 +353,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
             current = state.get("current_step_id") or wf.start_step_id
             step_map = {s.id: s for s in wf.steps}
-
             if current not in step_map:
                 current = wf.start_step_id
 
-            history = state.get("step_history", [])
+            history = state.get("step_history") or []
             if history:
                 last_step = step_map.get(history[-1])
                 if last_step:
@@ -363,32 +373,30 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                             )
                             current = last_step.id
                             break
-
             return {"current_step_id": current}
 
         # ---- Node: step_executor ----
         async def node_step_executor(state: WorkflowState) -> dict:
             base_prompt = agent_chain_self._build_base_system_prompt()
             wf = agent_config.workflow
-            step_id = state.get("current_step_id", "default")
+            step_id = state.get("current_step_id") or "default"
             step_map = {s.id: s for s in (wf.steps or [])}
             step = step_map.get(step_id)
-
             if step is not None:
                 system_text = AgentChain._build_step_system_prompt(
-                    base_prompt, step, state.get("collected", {})
+                    base_prompt, step, state.get("collected") or {}
                 )
             else:
                 system_text = base_prompt
-
             return {"step_system_prompt": system_text}
 
         # ---- Node: rag_retrieval ----
         async def node_rag_retrieval(state: WorkflowState) -> dict:
-            if rag_service is None or not agent_config.rag.enabled:
+            rag_svc = _get_service("rag_service")
+            if rag_svc is None or not agent_config.rag.enabled:
                 return {"rag_context": None, "rag_media_list": []}
             try:
-                context, media_list = await rag_service.get_context_and_media(
+                context, media_list = await rag_svc.get_context_and_media(
                     query=state["user_message"],
                     agent_id=state["agent_id"],
                     agent_config=agent_config,
@@ -400,12 +408,20 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 logger.warning(
                     "RAG retrieval error: %s",
                     exc,
-                    extra={"conversation_id": state["conversation_id"], "agent_id": state["agent_id"]},
+                    extra={
+                        "conversation_id": state["conversation_id"],
+                        "agent_id": state["agent_id"],
+                    },
                 )
                 return {"rag_context": None, "rag_media_list": []}
 
         # ---- Node: llm_generate ----
         async def node_llm_generate(state: WorkflowState) -> dict:
+            llm = _get_service("llm")
+            if llm is None:
+                from app.services.llm_factory import get_llm_factory
+                llm = await get_llm_factory().get_chat_model(agent_config)
+
             system_text: str = state.get("step_system_prompt") or ""
             rag_context = state.get("rag_context")
             rag_media_list = state.get("rag_media_list") or []
@@ -428,6 +444,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         "greetings, simple questions, or casual conversation."
                     )
 
+            # History comes from checkpoint (state["messages"]); we do NOT
+            # inject duplicate history from PostgreSQL — checkpointer is the
+            # single source of truth for conversation history.
             msgs: list[BaseMessage] = [SystemMessage(content=system_text)]
             for m in (state.get("messages") or []):
                 msgs.append(m)
@@ -438,28 +457,29 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 response_text = _clean_response(_normalise_llm_text(ai_msg.content))
                 if not response_text:
                     response_text = "I apologize, but I couldn't generate a response. Please try again."
-                updated_ai = AIMessage(content=response_text)
-                return {"messages": [updated_ai], "llm_response": response_text}
+                return {"messages": [AIMessage(content=response_text)], "llm_response": response_text}
             except Exception as exc:
                 logger.error(
                     "LLM generation error: %s",
                     exc,
                     exc_info=True,
-                    extra={"conversation_id": state["conversation_id"], "agent_id": state["agent_id"]},
+                    extra={
+                        "conversation_id": state["conversation_id"],
+                        "agent_id": state["agent_id"],
+                    },
                 )
                 err_msg = f"I apologize, but I encountered an error: {exc}"
                 return {"messages": [AIMessage(content=err_msg)], "llm_response": err_msg}
 
         # ---- Node: post_moderation ----
         async def node_post_moderation(state: WorkflowState) -> dict:
-            if moderation_service is None or not agent_config.moderation.enabled:
+            mod = _get_service("moderation_service")
+            if mod is None or not agent_config.moderation.enabled:
                 return {}
             response_text = state.get("llm_response", "")
             if not response_text:
                 return {}
-            flagged, mod_result = await moderation_service.check_post_moderation(
-                response_text, agent_config
-            )
+            flagged, mod_result = await mod.check_post_moderation(response_text, agent_config)
             if flagged:
                 return {
                     "result": {
@@ -476,12 +496,16 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             wf = agent_config.workflow
             if not wf.enabled or not wf.steps:
                 return {}
-
-            step_id = state.get("current_step_id", wf.start_step_id)
+            step_id = state.get("current_step_id") or wf.start_step_id
             step_map = {s.id: s for s in wf.steps}
             step = step_map.get(step_id)
             if step is None or not step.transitions:
                 return {}
+
+            llm = _get_service("llm")
+            if llm is None:
+                from app.services.llm_factory import get_llm_factory
+                llm = await get_llm_factory().get_chat_model(agent_config)
 
             conversation_summary = "\n".join(
                 f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
@@ -489,7 +513,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             )
 
             new_step_id = step_id
-            new_collected = dict(state.get("collected", {}))
             timer_to_schedule = state.get("pending_timer")
 
             for transition in step.transitions:
@@ -518,7 +541,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     new_step_id = step_id
                     break
 
-            history = list(state.get("step_history", []))
+            history = list(state.get("step_history") or [])
             if not history or history[-1] != new_step_id:
                 history.append(new_step_id)
 
@@ -539,7 +562,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             return {
                 "current_step_id": new_step_id,
                 "step_history": history,
-                "collected": new_collected,
                 "pending_timer": timer_to_schedule,
             }
 
@@ -548,7 +570,8 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             if state.get("result"):
                 return {}
 
-            if is_reply_stale is not None and await is_reply_stale():
+            is_stale = _get_service("is_reply_stale")
+            if is_stale is not None and await is_stale():
                 return {
                     "result": {
                         "response": None,
@@ -590,7 +613,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         # ---- Assemble ----
         g = StateGraph(WorkflowState)
-
         g.add_node("pre_moderation", node_pre_moderation)
         g.add_node("escalation", node_escalation)
         g.add_node("workflow_router", node_workflow_router)
@@ -612,7 +634,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         g.add_edge("transition_evaluator", "output_collector")
         g.add_edge("output_collector", END)
 
-        # Attach checkpointer for persistent workflow state (step progress, collected vars)
         try:
             from app.storage.postgres_checkpointer import get_checkpointer
             checkpointer = get_checkpointer()
@@ -622,6 +643,13 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         return compiled
 
+    def _get_compiled_graph(self) -> Any:
+        """Return cached compiled graph; build on first call."""
+        key = _graph_cache_key(self.agent_config.agent_id, self.agent_config.workflow)
+        if key not in _graph_cache:
+            _graph_cache[key] = self._build_graph()
+        return _graph_cache[key]
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -629,75 +657,97 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
     async def generate_response(
         self,
         user_message: str,
-        conversation_history: Optional[list[dict]] = None,
-        rag_context: Optional[str] = None,
-        rag_media_available: bool = False,
         conversation_id: Optional[str] = None,
         moderation_service: Any = None,
         escalation_service: Any = None,
         rag_service: Any = None,
         is_reply_stale: Optional[Callable[[], Awaitable[bool]]] = None,
+        # seed_messages: provided only for the very first turn (empty checkpoint)
+        seed_messages: Optional[list[BaseMessage]] = None,
     ) -> dict:
-        """Invoke the workflow graph and return the result dict."""
+        """Invoke the workflow graph and return the result dict.
+
+        On the first turn for a conversation (empty checkpoint) seed_messages may
+        be passed to pre-populate state["messages"] so the LLM has context.
+        On subsequent turns the checkpointer already holds the full history —
+        seed_messages should be None to avoid duplication.
+        """
         llm = await self.llm_factory.get_chat_model(self.agent_config)
-
-        # Build a per-call graph with services captured in closures
-        graph = self._build_call_graph(
-            moderation_service=moderation_service,
-            escalation_service=escalation_service,
-            rag_service=rag_service,
-            llm=llm,
-            is_reply_stale=is_reply_stale,
-        )
-
-        messages_lc: list[BaseMessage] = []
-        if conversation_history:
-            for msg in conversation_history[-50:]:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                role_lower = role.lower() if isinstance(role, str) else str(role).lower()
-                if role_lower == "user":
-                    messages_lc.append(HumanMessage(content=content))
-                elif role_lower == "agent":
-                    messages_lc.append(AIMessage(content=content))
+        graph = self._get_compiled_graph()
 
         wf = self.agent_config.workflow
-        initial_step = wf.start_step_id if wf.enabled else "default"
-
-        init_state: dict = {
-            "messages": messages_lc,
-            "user_message": user_message,
-            "current_step_id": initial_step,
-            "step_history": [],
-            "collected": {},
-            "pending_timer": None,
-            "rag_context": None,
-            "rag_media_list": [],
-            "result": None,
-            "llm_response": "",
-            "step_system_prompt": "",
-            "agent_id": self.agent_config.agent_id,
-            "conversation_id": conversation_id or "",
-        }
-
-        meta: dict[str, str] = {"agent_id": self.agent_config.agent_id}
-        if conversation_id:
-            meta["conversation_id"] = conversation_id
-
+        thread_id = conversation_id or self.agent_config.agent_id
         rc = RunnableConfig(
             tags=["agent_chat"],
-            metadata=meta,
-            configurable={"thread_id": conversation_id or self.agent_config.agent_id},
+            metadata={
+                "agent_id": self.agent_config.agent_id,
+                **({"conversation_id": conversation_id} if conversation_id else {}),
+            },
+            configurable={
+                "thread_id": thread_id,
+                # Per-request dependencies — not serialised, never go into checkpoint
+                "moderation_service": moderation_service,
+                "escalation_service": escalation_service,
+                "rag_service": rag_service,
+                "llm": llm,
+                "is_reply_stale": is_reply_stale,
+            },
         )
 
+        # Check whether a checkpoint already exists for this thread.
+        # If not (first turn), we need to supply workflow defaults in init_state.
+        existing_state = None
+        try:
+            existing_state = await graph.aget_state(rc)
+        except Exception:
+            pass
+
+        is_first_turn = (
+            existing_state is None
+            or not existing_state.values
+            or not existing_state.values.get("conversation_id")
+        )
+
+        if is_first_turn:
+            init_state: dict = {
+                "user_message": user_message,
+                "agent_id": self.agent_config.agent_id,
+                "conversation_id": conversation_id or "",
+                "current_step_id": wf.start_step_id if wf.enabled else "default",
+                "step_history": [],
+                "collected": {},
+                "pending_timer": None,
+                "rag_context": None,
+                "rag_media_list": [],
+                "result": None,
+                "llm_response": "",
+                "step_system_prompt": "",
+                # Seed prior history from PostgreSQL so the LLM has context
+                # on the very first graph invocation.
+                "messages": seed_messages or [],
+            }
+        else:
+            # Subsequent turns: only update the current user message.
+            # Workflow state (current_step_id, step_history, collected …) is
+            # loaded from the checkpoint and must NOT be overwritten here.
+            init_state = {
+                "user_message": user_message,
+                "result": None,
+                "llm_response": "",
+                "step_system_prompt": "",
+                "rag_context": None,
+                "rag_media_list": [],
+            }
+
         logger.debug(
-            "Invoking agent graph",
+            "Invoking agent graph (%s turn)",
+            "first" if is_first_turn else "subsequent",
             extra={
                 "agent_id": self.agent_config.agent_id,
                 "conversation_id": conversation_id,
                 "workflow_enabled": wf.enabled,
-                "step_id": initial_step,
-                "history_length": len(messages_lc),
+                "thread_id": thread_id,
+                "seed_messages": len(seed_messages) if seed_messages else 0,
             },
         )
 
@@ -716,7 +766,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 "Agent graph invocation failed: %s",
                 exc,
                 exc_info=True,
-                extra={"agent_id": self.agent_config.agent_id, "conversation_id": conversation_id},
+                extra={
+                    "agent_id": self.agent_config.agent_id,
+                    "conversation_id": conversation_id,
+                },
             )
             return {
                 "response": f"I apologize, but I encountered an error: {exc}",

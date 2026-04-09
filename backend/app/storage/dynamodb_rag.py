@@ -1,4 +1,9 @@
-"""DynamoDB-based RAG client (replacement for OpenSearch)."""
+"""DynamoDB-based RAG client (replacement for OpenSearch).
+
+NOT SUPPORTED — this backend is not used in production.
+The project uses PostgreSQL rag_chunks table (storage/postgres_rag.py) for RAG.
+This file is kept for reference only and should not be imported in new code.
+"""
 
 import asyncio
 import json

@@ -1,4 +1,9 @@
-"""DynamoDB client wrapper."""
+"""DynamoDB client wrapper.
+
+NOT SUPPORTED — this backend is not used in production.
+The project uses PostgreSQL (storage/postgres.py) as its primary storage.
+This file is kept for reference only and should not be imported in new code.
+"""
 
 import asyncio
 import logging

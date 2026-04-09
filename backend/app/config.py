@@ -62,10 +62,6 @@ class Settings(BaseSettings):
         description="PostgreSQL public URL for migrations",
         alias="DATABASE_PUBLIC_URL",
     )
-    database_backend: str = Field(
-        default="postgres",
-        description="Storage backend: postgres | dynamodb",
-    )
     secret_encryption_key: Optional[str] = Field(
         default=None,
         description="Fernet key for encrypting channel/notification tokens (32 bytes base64)",
@@ -75,39 +71,6 @@ class Settings(BaseSettings):
     def get_database_url(self) -> Optional[str]:
         """Get database URL (DATABASE_URL or DATABASE_PUBLIC_URL fallback)."""
         return self.database_url or self.database_public_url
-
-    # AWS (optional, for dynamodb backend)
-    aws_region: str = Field(default="us-east-1", description="AWS region")
-    aws_access_key_id: Optional[str] = Field(default=None, description="AWS access key")
-    aws_secret_access_key: Optional[str] = Field(
-        default=None, description="AWS secret key"
-    )
-
-    # DynamoDB
-    dynamodb_table_conversations: str = Field(
-        default="doctor-agent-conversations", description="Conversations table name"
-    )
-    dynamodb_table_messages: str = Field(
-        default="doctor-agent-messages", description="Messages table name"
-    )
-    dynamodb_table_agents: str = Field(
-        default="doctor-agent-agents", description="Agents table name"
-    )
-    dynamodb_table_audit_logs: str = Field(
-        default="doctor-agent-audit-logs", description="Audit logs table name"
-    )
-    dynamodb_table_channel_bindings: str = Field(
-        default="doctor-agent-channel-bindings", description="Channel bindings table name"
-    )
-    dynamodb_table_instagram_profiles: str = Field(
-        default="doctor-agent-instagram-profiles", description="Instagram user profiles table name"
-    )
-    dynamodb_table_notification_configs: str = Field(
-        default="doctor-agent-notification-configs", description="Notification configs table name"
-    )
-    dynamodb_endpoint_url: Optional[str] = Field(
-        default=None, description="DynamoDB endpoint URL (for local development)"
-    )
 
     # OpenSearch
     opensearch_endpoint: Optional[str] = Field(

@@ -93,7 +93,14 @@ class AgentService:
         The dict contract is unchanged from the previous implementation so all
         callers (chat.py, websocket.py, agent_reply_coordinator.py, channel services)
         continue to work without modification.
+
+        conversation_history is used only as a seed on the very first turn
+        (when the LangGraph checkpoint for this conversation is empty).  On
+        subsequent turns the checkpointer provides the full history, so passing
+        history from PostgreSQL would cause duplicates.
         """
+        from langchain_core.messages import AIMessage as _AIMessage, HumanMessage as _HumanMessage
+
         # Fast-path: stale check before doing any work
         if is_reply_stale and await is_reply_stale():
             return {
@@ -103,16 +110,28 @@ class AgentService:
                 "agent_message_id": None,
             }
 
+        # Build seed messages from conversation_history (used only on first turn).
+        seed_messages = []
+        if conversation_history:
+            for msg in conversation_history[-50:]:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                role_lower = role.lower() if isinstance(role, str) else str(role).lower()
+                if role_lower == "user":
+                    seed_messages.append(_HumanMessage(content=content))
+                elif role_lower == "agent":
+                    seed_messages.append(_AIMessage(content=content))
+
         # Invoke the LangGraph graph — it handles pre-mod, escalation, RAG, LLM, post-mod, transitions
         try:
             graph_result = await self.agent_chain.generate_response(
                 user_message=user_message,
-                conversation_history=conversation_history,
                 conversation_id=conversation_id,
                 moderation_service=self.moderation_service,
                 escalation_service=self.escalation_service,
                 rag_service=self.rag_service,
                 is_reply_stale=is_reply_stale,
+                seed_messages=seed_messages,
             )
         except Exception as exc:
             logger.error(

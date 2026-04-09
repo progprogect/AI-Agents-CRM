@@ -1,4 +1,9 @@
-"""DynamoDB-based cache client (replacement for Redis)."""
+"""DynamoDB-based cache client (replacement for Redis).
+
+NOT SUPPORTED — this backend is not used in production.
+The project uses Redis (storage/redis.py) as its cache layer.
+This file is kept for reference only and should not be imported in new code.
+"""
 
 import asyncio
 import json

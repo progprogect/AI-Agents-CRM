@@ -17,12 +17,12 @@ AI-powered assistant platform for customer conversations and CRM workflows. Buil
 ### Backend
 - **FastAPI**: REST API and WebSocket server
 - **OpenAI API**: LLM generation (`gpt-4o-mini`), embeddings (`text-embedding-3-small`), moderation
-- **AWS Services**:
-  - DynamoDB: Message and conversation storage with TTL
-  - OpenSearch: Vector database for RAG documents
-  - ElastiCache (Redis): Session management and caching
-  - Secrets Manager: Secure API key storage
+- **Storage (PostgreSQL + Redis):**
+  - PostgreSQL: primary storage for conversations, messages, agents, RAG chunks, audit logs
+  - Redis: debounce queue, timer triggers, cache
 - **LangChain** (`create_agent`, LangGraph via `langchain` package): LLM orchestration and tools; см. `backend/docs/architecture_langchain.md`
+
+> **Note:** DynamoDB and AWS-native services are **not supported**. The project runs exclusively on PostgreSQL + Redis (e.g. Railway, Render, or any Postgres/Redis provider).
 
 ### Frontend
 - **Next.js 14**: React framework with App Router
@@ -34,7 +34,8 @@ AI-powered assistant platform for customer conversations and CRM workflows. Buil
 
 - Python 3.11+
 - Node.js 18+
-- AWS Account (for production)
+- PostgreSQL (Railway, Supabase, or self-hosted)
+- Redis (Railway, Upstash, or self-hosted)
 - OpenAI API Key
 
 ## Installation

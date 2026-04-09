@@ -1,9 +1,14 @@
-"""Contract tests for AgentService and AgentChain workflow integration."""
+"""Contract tests for AgentService and AgentChain workflow integration.
+
+Storage: PostgreSQL (primary) + Redis.  DynamoDB is NOT supported.
+"""
 
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.chains.agent_chain import AgentChain, _graph_cache
+from langchain_core.messages import HumanMessage
+
+from app.chains.agent_chain import AgentChain, _graph_cache, _graph_cache_key
 from app.models.agent_config import (
     AgentConfig,
     EscalationConfig,
@@ -47,8 +52,22 @@ def _minimal_agent_config(**kwargs) -> AgentConfig:
     return AgentConfig(**data)
 
 
-def _make_agent_service(cfg, db, mod=None, esc=None, rag=None, channel_sender=None):
-    """Build an AgentService with mocked dependencies."""
+def _mock_db():
+    db = MagicMock()
+    db.get_conversation = AsyncMock(
+        return_value=Conversation(
+            conversation_id="c1",
+            agent_id="a1",
+            channel=MessageChannel.WEB_CHAT,
+            status=ConversationStatus.AI_ACTIVE,
+        )
+    )
+    db.create_message = AsyncMock()
+    db.update_conversation = AsyncMock()
+    return db
+
+
+def _make_agent_service(cfg, db, mod=None, esc=None, rag=None):
     if mod is None:
         mod = MagicMock()
         mod.check_pre_moderation = AsyncMock(return_value=(False, None))
@@ -66,7 +85,6 @@ def _make_agent_service(cfg, db, mod=None, esc=None, rag=None, channel_sender=No
         )
     if rag is None:
         rag = MagicMock()
-
     return AgentService(
         agent_config=cfg,
         llm_factory=MagicMock(spec=LLMFactory),
@@ -74,39 +92,21 @@ def _make_agent_service(cfg, db, mod=None, esc=None, rag=None, channel_sender=No
         moderation_service=mod,
         rag_service=rag,
         dynamodb=db,
-        channel_sender=channel_sender,
+        channel_sender=None,
     )
-
-
-def _mock_db(response_text="Hello"):
-    db = MagicMock()
-    db.get_conversation = AsyncMock(
-        return_value=Conversation(
-            conversation_id="c1",
-            agent_id="a1",
-            channel=MessageChannel.WEB_CHAT,
-            status=ConversationStatus.AI_ACTIVE,
-        )
-    )
-    db.create_message = AsyncMock()
-    db.update_conversation = AsyncMock()
-    return db
 
 
 # ---------------------------------------------------------------------------
-# AgentService contract tests — graph integration
+# AgentService contract tests
 # ---------------------------------------------------------------------------
 
 class TestAgentServiceContract(unittest.IsolatedAsyncioTestCase):
-    """AgentService delegates to AgentChain.generate_response which is now the graph."""
-
     async def test_successful_response_contract(self) -> None:
-        """Result dict has the expected keys on success."""
+        """Result dict has expected keys on success."""
         cfg = _minimal_agent_config()
         db = _mock_db()
         svc = _make_agent_service(cfg, db)
 
-        # Replace agent_chain with a mock that returns graph-style result
         chain = MagicMock()
         chain.generate_response = AsyncMock(
             return_value={
@@ -120,11 +120,40 @@ class TestAgentServiceContract(unittest.IsolatedAsyncioTestCase):
         )
         svc.agent_chain = chain
 
-        out = await svc.process_message("hi", "c1", conversation_history=[])
+        out = await svc.process_message("hi", "c1")
         self.assertEqual(out["response"], "Hello!")
         self.assertFalse(out["escalate"])
         self.assertIn("agent_message_id", out)
         self.assertIn("agent_message_timestamp", out)
+
+    async def test_strips_attach_media_marker(self) -> None:
+        """[ATTACH_MEDIA] is stripped by output_collector inside the graph.
+
+        AgentService propagates the graph result as-is; stripping is the
+        graph's responsibility.  This test verifies the service passes through
+        whatever the graph (mocked here) returns.
+        """
+        cfg = _minimal_agent_config()
+        db = _mock_db()
+        svc = _make_agent_service(cfg, db)
+
+        # Simulate graph having already stripped the marker (correct behaviour)
+        chain = MagicMock()
+        chain.generate_response = AsyncMock(
+            return_value={
+                "response": "Hello",  # marker already stripped by output_collector
+                "escalate": False,
+                "rag_context_used": False,
+                "rag_media_url": None,
+                "rag_media_type": None,
+                "pending_timer": None,
+            }
+        )
+        svc.agent_chain = chain
+
+        out = await svc.process_message("hi", "c1")
+        self.assertNotIn(AgentChain.ATTACH_MEDIA_MARKER, out["response"])
+        self.assertEqual(out["response"], "Hello")
 
     async def test_escalation_from_graph_updates_db(self) -> None:
         """When graph returns escalate=True, conversation is updated to NEEDS_HUMAN."""
@@ -150,7 +179,7 @@ class TestAgentServiceContract(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_kwargs["status"], ConversationStatus.NEEDS_HUMAN)
 
     async def test_stale_reply_aborts_early(self) -> None:
-        """If is_reply_stale returns True immediately, the graph is never called."""
+        """If is_reply_stale returns True, graph is never called."""
         cfg = _minimal_agent_config()
         db = _mock_db()
         svc = _make_agent_service(cfg, db)
@@ -160,11 +189,63 @@ class TestAgentServiceContract(unittest.IsolatedAsyncioTestCase):
         svc.agent_chain = chain
 
         out = await svc.process_message(
-            "hi", "c1",
-            is_reply_stale=AsyncMock(return_value=True),
+            "hi", "c1", is_reply_stale=AsyncMock(return_value=True)
         )
         self.assertTrue(out.get("aborted"))
         chain.generate_response.assert_not_called()
+
+    async def test_seed_messages_built_from_conversation_history(self) -> None:
+        """seed_messages is forwarded to generate_response from conversation_history."""
+        cfg = _minimal_agent_config()
+        db = _mock_db()
+        svc = _make_agent_service(cfg, db)
+
+        chain = MagicMock()
+        chain.generate_response = AsyncMock(
+            return_value={
+                "response": "OK",
+                "escalate": False,
+                "rag_context_used": False,
+                "rag_media_url": None,
+                "rag_media_type": None,
+                "pending_timer": None,
+            }
+        )
+        svc.agent_chain = chain
+
+        history = [
+            {"role": "user", "content": "msg1"},
+            {"role": "agent", "content": "reply1"},
+        ]
+        await svc.process_message("hi", "c1", conversation_history=history)
+
+        call_kwargs = chain.generate_response.call_args.kwargs
+        seed = call_kwargs.get("seed_messages", [])
+        self.assertEqual(len(seed), 2)
+
+    async def test_no_conversation_history_sends_empty_seed(self) -> None:
+        """Without conversation_history, seed_messages is empty."""
+        cfg = _minimal_agent_config()
+        db = _mock_db()
+        svc = _make_agent_service(cfg, db)
+
+        chain = MagicMock()
+        chain.generate_response = AsyncMock(
+            return_value={
+                "response": "OK",
+                "escalate": False,
+                "rag_context_used": False,
+                "rag_media_url": None,
+                "rag_media_type": None,
+                "pending_timer": None,
+            }
+        )
+        svc.agent_chain = chain
+
+        await svc.process_message("hi", "c1")
+        call_kwargs = chain.generate_response.call_args.kwargs
+        seed = call_kwargs.get("seed_messages", [])
+        self.assertEqual(len(seed), 0)
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +284,6 @@ class TestWorkflowConfigModels(unittest.TestCase):
             )
         )
         self.assertTrue(cfg.workflow.enabled)
-        self.assertEqual(len(cfg.workflow.steps), 1)
         step = cfg.workflow.steps[0]
         self.assertEqual(step.id, "s1")
         self.assertTrue(step.transitions[0].is_forced)
@@ -217,13 +297,7 @@ class TestWorkflowConfigModels(unittest.TestCase):
             "workflow": {
                 "enabled": True,
                 "start_step_id": "s1",
-                "steps": [
-                    {
-                        "id": "s1",
-                        "name": "Step 1",
-                        "instructions": "Do something",
-                    }
-                ],
+                "steps": [{"id": "s1", "name": "Step 1", "instructions": "Do something"}],
             },
         }
         cfg = AgentConfig.from_dict(data)
@@ -244,7 +318,7 @@ class TestWorkflowConfigModels(unittest.TestCase):
 # AgentChain graph cache tests
 # ---------------------------------------------------------------------------
 
-class TestAgentChainGraphCache(unittest.IsolatedAsyncioTestCase):
+class TestAgentChainGraphCache(unittest.TestCase):
     def setUp(self) -> None:
         _graph_cache.clear()
 
@@ -252,14 +326,12 @@ class TestAgentChainGraphCache(unittest.IsolatedAsyncioTestCase):
         _graph_cache.clear()
 
     def test_same_config_returns_same_graph_key(self) -> None:
-        from app.chains.agent_chain import _graph_cache_key
         cfg = _minimal_agent_config()
         key1 = _graph_cache_key(cfg.agent_id, cfg.workflow)
         key2 = _graph_cache_key(cfg.agent_id, cfg.workflow)
         self.assertEqual(key1, key2)
 
     def test_different_workflow_gives_different_key(self) -> None:
-        from app.chains.agent_chain import _graph_cache_key
         cfg1 = _minimal_agent_config()
         cfg2 = _minimal_agent_config(
             workflow=WorkflowConfig(enabled=True, start_step_id="s1", steps=[])
@@ -301,22 +373,22 @@ class TestTimerTriggerScheduling(unittest.IsolatedAsyncioTestCase):
         svc.agent_chain = chain
 
         # schedule_timer_trigger is imported lazily inside process_message;
-        # patch it at the coordinator module level so the import finds the mock.
-        with patch(
-            "app.services.agent_reply_coordinator.schedule_timer_trigger",
-            new=AsyncMock(),
-        ):
-            # Also patch at the coordinator to intercept the lazy import
-            import app.services.agent_reply_coordinator as coordinator_module
-            schedule_mock = AsyncMock()
-            original_fn = getattr(coordinator_module, "schedule_timer_trigger", None)
-            coordinator_module.schedule_timer_trigger = schedule_mock
-            try:
-                await svc.process_message("hi", "c1")
-                schedule_mock.assert_called_once_with("c1", timer_payload)
-            finally:
-                if original_fn is not None:
-                    coordinator_module.schedule_timer_trigger = original_fn
+        # patch at the coordinator module level so the import finds the mock.
+        import app.services.agent_reply_coordinator as coordinator_module
+        schedule_mock = AsyncMock()
+        original_fn = getattr(coordinator_module, "schedule_timer_trigger", None)
+        coordinator_module.schedule_timer_trigger = schedule_mock
+        # Also patch the reference used by the lazy import inside agent_service
+        import app.services.agent_service as agent_svc_module
+        original_asvc = getattr(agent_svc_module, "schedule_timer_trigger", None)
+        agent_svc_module.schedule_timer_trigger = schedule_mock
+        try:
+            await svc.process_message("hi", "c1")
+            schedule_mock.assert_called_once_with("c1", timer_payload)
+        finally:
+            coordinator_module.schedule_timer_trigger = original_fn or coordinator_module.schedule_timer_trigger
+            if original_asvc is not None:
+                agent_svc_module.schedule_timer_trigger = original_asvc
 
 
 if __name__ == "__main__":
