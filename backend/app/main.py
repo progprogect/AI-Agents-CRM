@@ -49,25 +49,23 @@ async def lifespan(app: FastAPI):
             "app_name": settings.app_name,
             "version": settings.app_version,
             "environment": settings.environment,
-            "database_backend": settings.database_backend,
         },
     )
-    # Initialize PostgreSQL pool when using postgres backend
-    if settings.database_backend == "postgres":
-        from app.storage.postgres import get_pool
-        await get_pool()
-        logger.info("PostgreSQL connection pool initialized")
+    # Initialize PostgreSQL pool
+    from app.storage.postgres import get_pool
+    await get_pool()
+    logger.info("PostgreSQL connection pool initialized")
 
-        # Initialize LangGraph checkpointer (workflow state persistence)
-        db_url = settings.get_database_url()
-        if db_url:
-            from app.storage.postgres_checkpointer import init_checkpointer
-            await init_checkpointer(db_url)
-        else:
-            logger.warning(
-                "DATABASE_URL not set — LangGraph checkpointer not initialised; "
-                "workflow state will be in-memory only"
-            )
+    # Initialize LangGraph checkpointer (workflow state persistence)
+    db_url = settings.get_database_url()
+    if db_url:
+        from app.storage.postgres_checkpointer import init_checkpointer
+        await init_checkpointer(db_url)
+    else:
+        logger.warning(
+            "DATABASE_URL not set — LangGraph checkpointer not initialised; "
+            "workflow state will be in-memory only"
+        )
     # Clear all caches on startup to ensure fresh state
     from app.storage.resolver import get_secrets_manager
     from app.utils.openai_client import get_llm_factory
@@ -95,12 +93,11 @@ async def lifespan(app: FastAPI):
         debounce_shutdown.set()
     if debounce_task is not None:
         await debounce_task
-    if settings.database_backend == "postgres":
-        from app.storage.postgres_checkpointer import close_checkpointer
-        await close_checkpointer()
-        from app.storage.postgres import close_pool
-        await close_pool()
-        logger.info("PostgreSQL connection pool closed")
+    from app.storage.postgres_checkpointer import close_checkpointer
+    await close_checkpointer()
+    from app.storage.postgres import close_pool
+    await close_pool()
+    logger.info("PostgreSQL connection pool closed")
     logger.info("Application shutting down")
 
 
