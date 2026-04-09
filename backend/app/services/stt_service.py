@@ -113,8 +113,6 @@ async def _call_openai_transcription(
     language: Optional[str],
 ) -> str:
     """Send audio bytes to OpenAI Transcription API and return transcript."""
-    from app.utils.openai_client import LLMFactory
-
     api_key = await _get_openai_api_key()
 
     # Determine content-type from filename extension
@@ -156,18 +154,10 @@ async def _call_openai_transcription(
 
 
 async def _get_openai_api_key() -> str:
-    """Retrieve the OpenAI API key from the project secrets manager."""
+    """Retrieve the OpenAI API key using the same mechanism as the rest of the project."""
     try:
         from app.storage.resolver import get_secrets_manager
         sm = get_secrets_manager()
-        key = await sm.get_secret("OPENAI_API_KEY")
-        if key:
-            return key
-    except Exception:
-        pass
-    # Fallback to environment variable
-    import os
-    key = os.getenv("OPENAI_API_KEY", "")
-    if not key:
-        raise STTError("OPENAI_API_KEY not found in secrets or environment")
-    return key
+        return await sm.get_openai_api_key()
+    except Exception as exc:
+        raise STTError(f"Failed to retrieve OpenAI API key: {exc}") from exc
