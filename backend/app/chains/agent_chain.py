@@ -6,6 +6,13 @@ conversation identical to the previous create_agent behaviour.
 When workflow.enabled=True, the StateGraph drives a configurable multi-step
 scenario with named steps, conditional transitions, forced steps, and
 timer-based follow-ups.
+
+IMPORTANT: Services (ModerationService, EscalationService, RAGService) and
+callbacks (is_reply_stale) are intentionally NOT stored in WorkflowState.
+LangGraph's PostgresSaver serialises the full state to msgpack; Python service
+objects are not serialisable.  Instead, these are captured via per-call
+closures in _build_call_graph() and are available to each node function
+without touching the persisted state.
 """
 
 from __future__ import annotations
@@ -30,11 +37,11 @@ from app.models.agent_config import AgentConfig, WorkflowConfig, WorkflowStep
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# WorkflowState
+# WorkflowState  — only serialisable fields go here
 # ---------------------------------------------------------------------------
 
 class WorkflowState(TypedDict):
-    """Shared state passed between all nodes in the LangGraph agent graph."""
+    """Persisted conversation state.  All fields must be msgpack-serialisable."""
 
     messages: Annotated[list[AnyMessage], add_messages]
     """Full conversation history (managed by LangGraph add_messages reducer)."""
@@ -55,7 +62,7 @@ class WorkflowState(TypedDict):
     """Scheduled timer trigger: {delay_seconds, message_template, step_id, fire_at_ms}."""
 
     rag_context: Optional[str]
-    """Retrieved context text to inject into the LLM prompt."""
+    """Retrieved context text — persisted so nodes downstream can read it."""
 
     rag_media_list: list
     """Media attachments returned by RAG retrieval."""
@@ -63,20 +70,19 @@ class WorkflowState(TypedDict):
     result: Optional[dict]
     """Final output dict — matches the contract expected by AgentService.process_message."""
 
+    # Transient per-turn scratch fields (persisted between nodes within one turn,
+    # overwritten on every new turn so safe to checkpoint as plain strings).
+    llm_response: str
+    step_system_prompt: str
+
     agent_id: str
     conversation_id: str
 
-    # Transient inputs provided per-call (not persisted between turns):
-    _moderation_service: Any
-    _escalation_service: Any
-    _rag_service: Any
-    _llm: Any
-    _agent_config: Any
-    _is_reply_stale: Any
-
 
 # ---------------------------------------------------------------------------
-# Graph cache (keyed by agent_id + sha256 of workflow config)
+# Graph structure cache (keyed by agent_id + sha256 of workflow config)
+# NOTE: we cache the *compiled graph* built without per-call closures.
+# Per-call services are injected via closures in _build_call_graph().
 # ---------------------------------------------------------------------------
 
 _graph_cache: dict[str, Any] = {}
@@ -96,7 +102,6 @@ ATTACH_MEDIA_MARKER = "[ATTACH_MEDIA]"
 
 
 def _normalise_llm_text(content: Any) -> str:
-    """Normalise LLM AIMessage.content (str or list of blocks) to plain string."""
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
@@ -112,19 +117,7 @@ def _normalise_llm_text(content: Any) -> str:
     return str(content).strip()
 
 
-def _extract_final_ai_text(messages: list[BaseMessage]) -> str:
-    """Return text of the last AIMessage that has no pending tool_calls."""
-    for msg in reversed(messages):
-        if not isinstance(msg, AIMessage):
-            continue
-        if getattr(msg, "tool_calls", None):
-            continue
-        return _normalise_llm_text(msg.content)
-    return ""
-
-
 def _clean_response(text: str) -> str:
-    """Strip internal safety markers that may leak from some providers."""
     text = re.sub(
         r"^\[(?:SAFETY_HANDLER|THINKING|INTERNAL|SYSTEM|TOOL_USE)\][^\n]*\n?",
         "",
@@ -141,7 +134,6 @@ def _clean_response(text: str) -> str:
 class AgentChain:
     """Builds and caches a LangGraph StateGraph for an agent."""
 
-    # Expose marker so AgentService can import it from one place.
     ATTACH_MEDIA_MARKER = ATTACH_MEDIA_MARKER
 
     def __init__(self, agent_config: AgentConfig, llm_factory: Any) -> None:
@@ -149,11 +141,10 @@ class AgentChain:
         self.llm_factory = llm_factory
 
     # ------------------------------------------------------------------
-    # System-prompt construction (unchanged from previous version)
+    # System-prompt construction
     # ------------------------------------------------------------------
 
     def _build_base_system_prompt(self) -> str:
-        """Build the base system prompt from agent config (persona, style, RAG policy …)."""
         prompts = self.agent_config.prompts.system
 
         persona = prompts.get("persona", "").format(
@@ -269,7 +260,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
     @staticmethod
     def _build_step_system_prompt(base_prompt: str, step: WorkflowStep, collected: dict[str, str]) -> str:
-        """Extend base prompt with step-specific instructions."""
         lines = [base_prompt, f"\n--- Current workflow step: {step.name} ---"]
         lines.append(step.instructions)
         if step.collect:
@@ -279,25 +269,34 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # Graph construction
+    # Per-call graph construction
+    # All service objects are captured in closures — they never touch state.
     # ------------------------------------------------------------------
 
-    def _build_graph(self) -> Any:
-        """Build and compile the StateGraph. Called once per agent+workflow combination."""
-        from langgraph.graph import StateGraph as SG
+    def _build_call_graph(
+        self,
+        *,
+        moderation_service: Any,
+        escalation_service: Any,
+        rag_service: Any,
+        llm: Any,
+        is_reply_stale: Optional[Callable[[], Awaitable[bool]]],
+    ) -> Any:
+        """Build a compiled graph with services captured in node closures.
 
+        This graph is NOT cached because the closures hold per-request
+        objects (services, llm instance, stale callback).
+        """
         agent_config = self.agent_config
-        llm_factory = self.llm_factory
+        agent_chain_self = self
 
         # ---- Node: pre_moderation ----
         async def node_pre_moderation(state: WorkflowState) -> dict:
-            mod = state.get("_moderation_service")
-            if mod is None:
+            if moderation_service is None or not agent_config.moderation.enabled:
                 return {}
-            cfg: AgentConfig = state["_agent_config"]
-            if not cfg.moderation.enabled:
-                return {}
-            flagged, mod_result = await mod.check_pre_moderation(state["user_message"], cfg)
+            flagged, mod_result = await moderation_service.check_pre_moderation(
+                state["user_message"], agent_config
+            )
             if flagged:
                 return {
                     "result": {
@@ -311,17 +310,13 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         # ---- Node: escalation_node ----
         async def node_escalation(state: WorkflowState) -> dict:
-            esc = state.get("_escalation_service")
-            if esc is None:
+            if escalation_service is None or not agent_config.escalation.enabled:
                 return {}
-            cfg: AgentConfig = state["_agent_config"]
-            if not cfg.escalation.enabled:
-                return {}
-            decision = await esc.detect_escalation(
+            decision = await escalation_service.detect_escalation(
                 message=state["user_message"],
                 conversation_context={"conversation_id": state["conversation_id"]},
                 agent_id=state["agent_id"],
-                agent_config=cfg,
+                agent_config=agent_config,
             )
             if decision.needs_escalation:
                 esc_type = getattr(decision.escalation_type, "value", decision.escalation_type)
@@ -341,27 +336,22 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         # ---- Node: workflow_router ----
         async def node_workflow_router(state: WorkflowState) -> dict:
-            """Determine the active workflow step, respecting forced transitions."""
-            cfg: AgentConfig = state["_agent_config"]
-            wf = cfg.workflow
+            wf = agent_config.workflow
             if not wf.enabled or not wf.steps:
                 return {"current_step_id": "default"}
 
             current = state.get("current_step_id") or wf.start_step_id
             step_map = {s.id: s for s in wf.steps}
 
-            # If current_step_id is unknown, fall back to start
             if current not in step_map:
                 current = wf.start_step_id
 
-            # Check if any forced transitions in history block backward navigation
             history = state.get("step_history", [])
             if history:
                 last_step = step_map.get(history[-1])
                 if last_step:
                     for tr in last_step.transitions:
                         if tr.is_forced and tr.next_step_id != current:
-                            # User tried to jump; keep them on last step
                             logger.info(
                                 "Forced transition blocks navigation from %s; staying on %s",
                                 current,
@@ -376,13 +366,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
             return {"current_step_id": current}
 
-        # ---- Node: step_executor (builds system prompt for this step) ----
+        # ---- Node: step_executor ----
         async def node_step_executor(state: WorkflowState) -> dict:
-            """Augment messages with the step-specific system prompt."""
-            # Re-use self (already closed over) to build prompts — no extra instances
-            base_prompt = self._build_base_system_prompt()
-
-            wf = self.agent_config.workflow
+            base_prompt = agent_chain_self._build_base_system_prompt()
+            wf = agent_config.workflow
             step_id = state.get("current_step_id", "default")
             step_map = {s.id: s for s in (wf.steps or [])}
             step = step_map.get(step_id)
@@ -394,21 +381,19 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             else:
                 system_text = base_prompt
 
-            return {"_step_system_prompt": system_text}
+            return {"step_system_prompt": system_text}
 
         # ---- Node: rag_retrieval ----
         async def node_rag_retrieval(state: WorkflowState) -> dict:
-            rag_svc = state.get("_rag_service")
-            cfg: AgentConfig = state["_agent_config"]
-            if rag_svc is None or not cfg.rag.enabled:
+            if rag_service is None or not agent_config.rag.enabled:
                 return {"rag_context": None, "rag_media_list": []}
             try:
-                context, media_list = await rag_svc.get_context_and_media(
+                context, media_list = await rag_service.get_context_and_media(
                     query=state["user_message"],
                     agent_id=state["agent_id"],
-                    agent_config=cfg,
-                    top_k=cfg.rag.retrieval.get("top_k", 6),
-                    score_threshold=cfg.rag.retrieval.get("score_threshold", 0.2),
+                    agent_config=agent_config,
+                    top_k=agent_config.rag.retrieval.get("top_k", 6),
+                    score_threshold=agent_config.rag.retrieval.get("score_threshold", 0.2),
                 )
                 return {"rag_context": context, "rag_media_list": media_list or []}
             except Exception as exc:
@@ -421,17 +406,11 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         # ---- Node: llm_generate ----
         async def node_llm_generate(state: WorkflowState) -> dict:
-            llm = state.get("_llm")
-            if llm is None:
-                cfg: AgentConfig = state["_agent_config"]
-                llm = await llm_factory.get_chat_model(cfg)
-
-            system_text: str = state.get("_step_system_prompt") or ""
+            system_text: str = state.get("step_system_prompt") or ""
             rag_context = state.get("rag_context")
             rag_media_list = state.get("rag_media_list") or []
             user_message = state["user_message"]
 
-            # Build the input text with optional RAG wrapping
             input_text = user_message
             if rag_context:
                 input_text = (
@@ -449,12 +428,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         "greetings, simple questions, or casual conversation."
                     )
 
-            # Build messages to send: system + history + current user turn
             msgs: list[BaseMessage] = [SystemMessage(content=system_text)]
-            # Add prior conversation (from state.messages, excluding the current HumanMessage if appended)
             for m in (state.get("messages") or []):
                 msgs.append(m)
-            # Current user turn
             msgs.append(HumanMessage(content=input_text))
 
             try:
@@ -463,7 +439,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 if not response_text:
                     response_text = "I apologize, but I couldn't generate a response. Please try again."
                 updated_ai = AIMessage(content=response_text)
-                return {"messages": [updated_ai], "_llm_response": response_text}
+                return {"messages": [updated_ai], "llm_response": response_text}
             except Exception as exc:
                 logger.error(
                     "LLM generation error: %s",
@@ -472,18 +448,18 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     extra={"conversation_id": state["conversation_id"], "agent_id": state["agent_id"]},
                 )
                 err_msg = f"I apologize, but I encountered an error: {exc}"
-                return {"messages": [AIMessage(content=err_msg)], "_llm_response": err_msg}
+                return {"messages": [AIMessage(content=err_msg)], "llm_response": err_msg}
 
         # ---- Node: post_moderation ----
         async def node_post_moderation(state: WorkflowState) -> dict:
-            mod = state.get("_moderation_service")
-            cfg: AgentConfig = state["_agent_config"]
-            if mod is None or not cfg.moderation.enabled:
+            if moderation_service is None or not agent_config.moderation.enabled:
                 return {}
-            response_text = state.get("_llm_response", "")
+            response_text = state.get("llm_response", "")
             if not response_text:
                 return {}
-            flagged, mod_result = await mod.check_post_moderation(response_text, cfg)
+            flagged, mod_result = await moderation_service.check_post_moderation(
+                response_text, agent_config
+            )
             if flagged:
                 return {
                     "result": {
@@ -497,9 +473,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         # ---- Node: transition_evaluator ----
         async def node_transition_evaluator(state: WorkflowState) -> dict:
-            """LLM-based evaluation of workflow step transitions."""
-            cfg: AgentConfig = state["_agent_config"]
-            wf = cfg.workflow
+            wf = agent_config.workflow
             if not wf.enabled or not wf.steps:
                 return {}
 
@@ -508,10 +482,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             step = step_map.get(step_id)
             if step is None or not step.transitions:
                 return {}
-
-            llm = state.get("_llm")
-            if llm is None:
-                llm = await llm_factory.get_chat_model(cfg)
 
             conversation_summary = "\n".join(
                 f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
@@ -537,14 +507,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     answer = "NO"
 
                 if answer.startswith("YES"):
-                    if transition.is_forced or not step.required:
-                        new_step_id = transition.next_step_id
-                        break
-                    # Required step — only advance if condition actually met
                     new_step_id = transition.next_step_id
                     break
                 elif transition.is_forced:
-                    # Forced condition not yet met — stay on step, do not evaluate further
                     logger.debug(
                         "Forced transition condition not met for step %s; staying",
                         step_id,
@@ -553,12 +518,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     new_step_id = step_id
                     break
 
-            # Update step history
             history = list(state.get("step_history", []))
             if not history or history[-1] != new_step_id:
                 history.append(new_step_id)
 
-            # Schedule timer trigger if the newly entered step has one
             if new_step_id != step_id:
                 new_step = step_map.get(new_step_id)
                 if new_step and new_step.timer_trigger:
@@ -582,14 +545,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         # ---- Node: output_collector ----
         async def node_output_collector(state: WorkflowState) -> dict:
-            """Finalise the result dict that AgentService.process_message will return."""
-            # If a result was already set (by moderation / escalation), propagate it
             if state.get("result"):
                 return {}
 
-            # Check staleness before committing
-            is_stale_fn = state.get("_is_reply_stale")
-            if is_stale_fn is not None and await is_stale_fn():
+            if is_reply_stale is not None and await is_reply_stale():
                 return {
                     "result": {
                         "response": None,
@@ -599,11 +558,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     }
                 }
 
-            response_text = state.get("_llm_response", "")
+            response_text = state.get("llm_response", "")
             rag_media_list = state.get("rag_media_list") or []
             rag_context = state.get("rag_context")
 
-            # Resolve media attachment: only if LLM included the marker
             rag_media_attachment = None
             if rag_media_list and ATTACH_MEDIA_MARKER in response_text:
                 rag_media_attachment = rag_media_list[0]
@@ -620,7 +578,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 }
             }
 
-        # ---- Routing functions ----
+        # ---- Routing ----
         def _route_pre_mod(state: WorkflowState) -> str:
             return "escalation" if not state.get("result") else "output_collector"
 
@@ -630,8 +588,8 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         def _route_post_mod(state: WorkflowState) -> str:
             return "transition_evaluator" if not state.get("result") else "output_collector"
 
-        # ---- Build graph ----
-        g = SG(WorkflowState)
+        # ---- Assemble ----
+        g = StateGraph(WorkflowState)
 
         g.add_node("pre_moderation", node_pre_moderation)
         g.add_node("escalation", node_escalation)
@@ -644,7 +602,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         g.add_node("output_collector", node_output_collector)
 
         g.set_entry_point("pre_moderation")
-
         g.add_conditional_edges("pre_moderation", _route_pre_mod)
         g.add_conditional_edges("escalation", _route_escalation)
         g.add_edge("workflow_router", "step_executor")
@@ -655,26 +612,18 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         g.add_edge("transition_evaluator", "output_collector")
         g.add_edge("output_collector", END)
 
-        # Attach checkpointer if available
+        # Attach checkpointer for persistent workflow state (step progress, collected vars)
         try:
             from app.storage.postgres_checkpointer import get_checkpointer
             checkpointer = get_checkpointer()
             compiled = g.compile(checkpointer=checkpointer)
         except Exception:
-            # Fallback: compile without checkpointer (in-memory, no persistence)
             compiled = g.compile()
 
         return compiled
 
-    def _get_compiled_graph(self) -> Any:
-        """Return cached compiled graph; build on first call."""
-        key = _graph_cache_key(self.agent_config.agent_id, self.agent_config.workflow)
-        if key not in _graph_cache:
-            _graph_cache[key] = self._build_graph()
-        return _graph_cache[key]
-
     # ------------------------------------------------------------------
-    # Public API — same signature as before so AgentService is unchanged
+    # Public API
     # ------------------------------------------------------------------
 
     async def generate_response(
@@ -684,16 +633,23 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         rag_context: Optional[str] = None,
         rag_media_available: bool = False,
         conversation_id: Optional[str] = None,
-        # Extra dependencies injected by AgentService:
         moderation_service: Any = None,
         escalation_service: Any = None,
         rag_service: Any = None,
         is_reply_stale: Optional[Callable[[], Awaitable[bool]]] = None,
     ) -> dict:
         """Invoke the workflow graph and return the result dict."""
-        graph = self._get_compiled_graph()
+        llm = await self.llm_factory.get_chat_model(self.agent_config)
 
-        # Build LangChain message history for state initialisation
+        # Build a per-call graph with services captured in closures
+        graph = self._build_call_graph(
+            moderation_service=moderation_service,
+            escalation_service=escalation_service,
+            rag_service=rag_service,
+            llm=llm,
+            is_reply_stale=is_reply_stale,
+        )
+
         messages_lc: list[BaseMessage] = []
         if conversation_history:
             for msg in conversation_history[-50:]:
@@ -704,8 +660,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     messages_lc.append(HumanMessage(content=content))
                 elif role_lower == "agent":
                     messages_lc.append(AIMessage(content=content))
-
-        llm = await self.llm_factory.get_chat_model(self.agent_config)
 
         wf = self.agent_config.workflow
         initial_step = wf.start_step_id if wf.enabled else "default"
@@ -720,16 +674,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             "rag_context": None,
             "rag_media_list": [],
             "result": None,
+            "llm_response": "",
+            "step_system_prompt": "",
             "agent_id": self.agent_config.agent_id,
             "conversation_id": conversation_id or "",
-            "_moderation_service": moderation_service,
-            "_escalation_service": escalation_service,
-            "_rag_service": rag_service,
-            "_llm": llm,
-            "_agent_config": self.agent_config,
-            "_is_reply_stale": is_reply_stale,
-            "_step_system_prompt": "",
-            "_llm_response": "",
         }
 
         meta: dict[str, str] = {"agent_id": self.agent_config.agent_id}
