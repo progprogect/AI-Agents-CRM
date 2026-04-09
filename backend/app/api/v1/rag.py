@@ -36,12 +36,8 @@ MAX_FILE_SIZE = 50 * 1024 * 1024
 
 
 def _ensure_postgres() -> None:
-    """Ensure we're using PostgreSQL backend."""
-    if get_settings().database_backend != "postgres":
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="RAG folders and documents are only supported with PostgreSQL backend",
-        )
+    """No-op: PostgreSQL is always the backend. Kept for call-site compatibility."""
+    pass
 
 
 async def _ensure_agent_exists(deps: CommonDependencies, agent_id: str) -> dict | None:

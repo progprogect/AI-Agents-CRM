@@ -274,12 +274,9 @@ class LLMFactory:
 
 @lru_cache()
 def get_llm_factory() -> LLMFactory:
-    """Get cached LLM factory instance."""
+    """Get cached LLM factory instance (PostgreSQL secrets backend)."""
     settings = get_settings()
-    if settings.database_backend == "postgres":
-        secrets_manager = get_postgres_secrets_manager()
-    else:
-        secrets_manager = get_secrets_manager()
+    secrets_manager = get_postgres_secrets_manager()
     return LLMFactory(settings, secrets_manager)
 
 

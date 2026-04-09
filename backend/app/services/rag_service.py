@@ -409,11 +409,8 @@ class RAGService:
 
 @lru_cache()
 def get_rag_service() -> RAGService:
-    """Get cached RAG service instance."""
+    """Get cached RAG service instance (PostgreSQL backend only)."""
     llm_factory = get_llm_factory()
-    if get_settings().database_backend == "postgres":
-        rag_client = get_postgres_rag_client()
-    else:
-        rag_client = get_dynamodb_rag_client()
+    rag_client = get_postgres_rag_client()
     return RAGService(llm_factory, rag_client)
 
