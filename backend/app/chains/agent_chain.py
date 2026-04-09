@@ -267,7 +267,8 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 """)
         return "\n\n".join(parts)
 
-    def _build_step_system_prompt(self, base_prompt: str, step: WorkflowStep, collected: dict[str, str]) -> str:
+    @staticmethod
+    def _build_step_system_prompt(base_prompt: str, step: WorkflowStep, collected: dict[str, str]) -> str:
         """Extend base prompt with step-specific instructions."""
         lines = [base_prompt, f"\n--- Current workflow step: {step.name} ---"]
         lines.append(step.instructions)
@@ -378,16 +379,16 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         # ---- Node: step_executor (builds system prompt for this step) ----
         async def node_step_executor(state: WorkflowState) -> dict:
             """Augment messages with the step-specific system prompt."""
-            cfg: AgentConfig = state["_agent_config"]
-            base_prompt = AgentChain(cfg, llm_factory)._build_base_system_prompt()
+            # Re-use self (already closed over) to build prompts — no extra instances
+            base_prompt = self._build_base_system_prompt()
 
-            wf = cfg.workflow
+            wf = self.agent_config.workflow
             step_id = state.get("current_step_id", "default")
             step_map = {s.id: s for s in (wf.steps or [])}
             step = step_map.get(step_id)
 
             if step is not None:
-                system_text = AgentChain(cfg, llm_factory)._build_step_system_prompt(
+                system_text = AgentChain._build_step_system_prompt(
                     base_prompt, step, state.get("collected", {})
                 )
             else:
