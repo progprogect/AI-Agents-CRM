@@ -12,7 +12,10 @@ langchain-google-genai>=2.0.0
 openai>=2.20.0,<3.0.0
 
 # LangGraph checkpoint persistence (PostgreSQL backend for workflow state)
+# psycopg[binary] includes self-contained libpq — no system libpq required in Docker
 langgraph-checkpoint-postgres>=3.0.0
+psycopg[binary]>=3.1.0
+psycopg-pool>=3.1.0
 
 # PostgreSQL
 asyncpg>=0.29.0
