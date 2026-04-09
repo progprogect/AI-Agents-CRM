@@ -1,13 +1,26 @@
-"""AWS Secrets Manager client."""
+"""AWS Secrets Manager client.
+
+NOT SUPPORTED in production — this project uses PostgreSQL-based secrets
+(storage/postgres_secrets.py). This module is kept for historical reference only.
+boto3 / botocore are not installed; imports are deferred so that importing the
+SecretsManager class (used as a type annotation) does not fail at module load time.
+"""
 
 import json
 import logging
 from datetime import datetime
 from functools import lru_cache
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-import boto3
-from botocore.exceptions import ClientError
+# boto3 is not installed in production; import lazily to avoid ImportError at startup.
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+    _BOTO3_AVAILABLE = True
+except ImportError:
+    boto3 = None  # type: ignore[assignment]
+    ClientError = Exception  # type: ignore[assignment,misc]
+    _BOTO3_AVAILABLE = False
 
 from app.config import Settings, get_settings
 
