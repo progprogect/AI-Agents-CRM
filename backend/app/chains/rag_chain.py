@@ -6,7 +6,6 @@ from langchain_core.embeddings import Embeddings
 
 from app.models.agent_config import EmbeddingsConfig
 from app.services.llm_factory import LLMFactory
-from app.storage.dynamodb_rag import DynamoDBRAGClient
 from app.storage.postgres_rag import PostgresRAGClient
 
 
@@ -16,7 +15,7 @@ class RAGChain:
     def __init__(
         self,
         llm_factory: LLMFactory,
-        rag_client: DynamoDBRAGClient | PostgresRAGClient,
+        rag_client: PostgresRAGClient,
     ):
         """Initialize RAG chain."""
         self.llm_factory = llm_factory
@@ -39,7 +38,6 @@ class RAGChain:
         embeddings = await self._get_embeddings(embeddings_config)
         query_embedding = await embeddings.aembed_query(query)
 
-        # Search in DynamoDB
         results = await self.rag_client.search(
             index_name=index_name,
             query_embedding=query_embedding,

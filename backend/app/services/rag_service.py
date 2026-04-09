@@ -10,7 +10,6 @@ from app.chains.rag_chain import RAGChain
 from app.config import get_settings
 from app.models.agent_config import AgentConfig
 from app.services.llm_factory import LLMFactory, get_llm_factory
-from app.storage.dynamodb_rag import DynamoDBRAGClient, get_dynamodb_rag_client
 from app.storage.postgres_rag import PostgresRAGClient, get_postgres_rag_client
 from app.utils.llm_provider import get_rag_embeddings_config
 from app.utils.rag_context_budget import format_rag_context_with_budget
@@ -72,7 +71,7 @@ class RAGService:
     def __init__(
         self,
         llm_factory: LLMFactory,
-        rag_client: DynamoDBRAGClient | PostgresRAGClient,
+        rag_client: PostgresRAGClient,
     ):
         """Initialize RAG service."""
         self.llm_factory = llm_factory

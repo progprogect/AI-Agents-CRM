@@ -17,7 +17,6 @@ from app.models.conversation import Conversation, ConversationStatus, MarketingS
 from app.models.instagram_user_profile import InstagramUserProfile
 from app.models.message import Message, MessageChannel, MessageRole
 from app.services.channel_binding_service import ChannelBindingService
-from app.storage.dynamodb import DynamoDBClient
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,7 @@ class InstagramService:
     def __init__(
         self,
         channel_binding_service: ChannelBindingService,
-        dynamodb: DynamoDBClient,
+        dynamodb: Any,
         settings: Settings,
     ):
         """Initialize Instagram service."""

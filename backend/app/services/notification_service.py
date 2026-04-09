@@ -1,12 +1,11 @@
 """Notification service for sending escalation notifications."""
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from app.models.conversation import Conversation
 from app.models.notification_config import NotificationType
 from app.services.telegram_service import TelegramService
-from app.storage.dynamodb import DynamoDBClient
 from app.storage.secrets import SecretsManager
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,7 @@ class NotificationService:
 
     def __init__(
         self,
-        dynamodb: DynamoDBClient,
+        dynamodb: Any,
         secrets_manager: SecretsManager,
         telegram_service: TelegramService,
     ):

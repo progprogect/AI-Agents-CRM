@@ -12,7 +12,7 @@ responsible for:
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Optional
+from typing import Any, Optional
 
 from app.api.exceptions import MessageProcessingError
 from app.chains.agent_chain import AgentChain
@@ -24,7 +24,6 @@ from app.services.escalation_service import EscalationService, create_escalation
 from app.services.llm_factory import LLMFactory, get_llm_factory
 from app.services.moderation_service import ModerationService, get_moderation_service
 from app.services.rag_service import RAGService, get_rag_service
-from app.storage.dynamodb import DynamoDBClient
 from app.utils.datetime_utils import to_utc_iso_string, utc_now
 from app.utils.enum_helpers import get_enum_value
 
@@ -41,7 +40,7 @@ class AgentService:
         escalation_service: EscalationService,
         moderation_service: ModerationService,
         rag_service: RAGService,
-        dynamodb: DynamoDBClient,
+        dynamodb: Any,
         channel_sender: Optional[ChannelSender] = None,
     ):
         self.agent_config = agent_config
@@ -283,7 +282,7 @@ class AgentService:
 
 def create_agent_service(
     agent_config: AgentConfig,
-    dynamodb: DynamoDBClient,
+    dynamodb: Any,
     channel_sender: Optional[ChannelSender] = None,
 ) -> AgentService:
     """Create agent service instance."""

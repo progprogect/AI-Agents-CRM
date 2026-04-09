@@ -1,7 +1,6 @@
 """Debug endpoint for checking recent webhook events."""
 
 from fastapi import APIRouter
-from app.storage.dynamodb import DynamoDBClient
 from app.models.conversation import MessageChannel
 from app.config import get_settings
 from app.dependencies import CommonDependencies, Depends

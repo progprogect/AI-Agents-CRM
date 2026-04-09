@@ -1,12 +1,11 @@
 """Service for conversation management."""
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from app.models.conversation import Conversation, ConversationStatus
 from app.models.message import Message, MessageRole
 from app.services.agent_service import AgentService, create_agent_service
-from app.storage.dynamodb import DynamoDBClient
 from app.utils.datetime_utils import utc_now
 from app.utils.enum_helpers import get_enum_value
 
@@ -18,7 +17,7 @@ def _to_utc_aware(dt: datetime) -> datetime:
 
 
 async def build_conversation_history_for_agent(
-    dynamodb: DynamoDBClient,
+    dynamodb: Any,
     conversation_id: str,
     last_user_message_for_dedup: str,
     *,
@@ -59,7 +58,7 @@ async def build_conversation_history_for_agent(
 class ConversationService:
     """Service for managing conversations and processing messages."""
 
-    def __init__(self, dynamodb: DynamoDBClient):
+    def __init__(self, dynamodb: Any):
         """Initialize conversation service."""
         self.dynamodb = dynamodb
 

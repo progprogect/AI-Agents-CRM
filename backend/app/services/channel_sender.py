@@ -2,10 +2,8 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional
-
+from typing import TYPE_CHECKING, Any, Optional
 from app.models.message import MessageChannel
-from app.storage.dynamodb import DynamoDBClient
 
 if TYPE_CHECKING:
     from app.services.instagram_service import InstagramService
@@ -35,7 +33,7 @@ class ChannelSender(ABC):
 class WebChatSender(ChannelSender):
     """Sender for web chat channel (WebSocket)."""
 
-    def __init__(self, dynamodb: DynamoDBClient):
+    def __init__(self, dynamodb: Any):
         """Initialize web chat sender."""
         self.dynamodb = dynamodb
 
@@ -59,7 +57,7 @@ class InstagramSender(ChannelSender):
     def __init__(
         self,
         instagram_service: "InstagramService",
-        dynamodb: DynamoDBClient,
+        dynamodb: Any,
     ):
         """Initialize Instagram sender."""
         self.instagram_service = instagram_service
@@ -133,7 +131,7 @@ class TelegramSender(ChannelSender):
     def __init__(
         self,
         telegram_service: "TelegramService",
-        dynamodb: DynamoDBClient,
+        dynamodb: Any,
     ):
         """Initialize Telegram sender."""
         self.telegram_service = telegram_service
@@ -207,7 +205,7 @@ class WhatsAppSender(ChannelSender):
     def __init__(
         self,
         whatsapp_service: Optional["WhatsAppService"],
-        dynamodb: DynamoDBClient,
+        dynamodb: Any,
         twilio_service: Optional["TwilioWhatsAppService"] = None,
     ):
         self.whatsapp_service = whatsapp_service
@@ -339,7 +337,7 @@ class WhatsAppSender(ChannelSender):
 
 def get_channel_sender(
     channel: MessageChannel,
-    dynamodb: DynamoDBClient,
+    dynamodb: Any,
     instagram_service: Optional["InstagramService"] = None,
     telegram_service: Optional["TelegramService"] = None,
     whatsapp_service: Optional["WhatsAppService"] = None,

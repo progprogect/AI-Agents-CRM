@@ -12,7 +12,6 @@ from app.models.channel_binding import ChannelType
 from app.models.conversation import Conversation, ConversationStatus, MarketingStatus
 from app.models.message import Message, MessageChannel, MessageRole
 from app.services.channel_binding_service import ChannelBindingService
-from app.storage.dynamodb import DynamoDBClient
 from app.utils.datetime_utils import utc_now
 from app.utils.enum_helpers import get_enum_value
 
@@ -41,7 +40,7 @@ class TelegramService:
     def __init__(
         self,
         channel_binding_service: ChannelBindingService,
-        dynamodb: DynamoDBClient,
+        dynamodb: Any,
         settings: Settings,
     ):
         """Initialize Telegram service."""

@@ -1,7 +1,7 @@
 """FastAPI application entry point.
 
 This is the main entry point for the Agent API.
-Supports PostgreSQL or DynamoDB backend for storage, cache, and RAG.
+Storage: PostgreSQL (primary) + Redis (cache/queues).
 """
 
 import asyncio

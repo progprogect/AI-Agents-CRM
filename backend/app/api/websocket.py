@@ -5,7 +5,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
@@ -18,7 +18,6 @@ from app.services.agent_reply_coordinator import notify_user_message_saved
 from app.services.agent_service import create_agent_service
 from app.services.conversation_service import ConversationService
 from app.storage.redis import get_redis_client
-from app.storage.dynamodb import DynamoDBClient
 from app.utils.datetime_utils import to_utc_iso_string, utc_now
 from app.utils.enum_helpers import get_enum_value
 
@@ -224,7 +223,7 @@ async def _handle_message(
     conversation_id: str,
     message_data: dict,
     conversation_service: ConversationService,
-    dynamodb: DynamoDBClient,
+    dynamodb: Any,
 ) -> None:
     """Handle incoming message from client."""
     content = message_data.get("content", "").strip()

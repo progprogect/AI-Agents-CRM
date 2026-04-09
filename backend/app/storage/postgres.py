@@ -101,7 +101,7 @@ def _row_to_notification_config(row: asyncpg.Record) -> dict:
 
 
 class PostgreSQLClient:
-    """PostgreSQL client with DynamoDBClient-compatible API."""
+    """PostgreSQL storage client."""
 
     def __init__(self, settings: Settings):
         self.settings = settings

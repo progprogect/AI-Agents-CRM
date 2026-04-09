@@ -87,7 +87,7 @@ async def create_agent(
             validation_errors={"parse_error": str(e)},
         )
 
-    # Create agent in DynamoDB
+    # Create agent
     agent_data = await deps.dynamodb.create_agent(request.agent_id, request.config)
 
     # Index RAG documents if enabled

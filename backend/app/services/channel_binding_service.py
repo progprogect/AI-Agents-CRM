@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Any, Optional
 
 from app.models.channel_binding import ChannelBinding, ChannelType
-from app.storage.dynamodb import DynamoDBClient
 from app.storage.secrets import SecretsManager
 from app.utils.datetime_utils import utc_now
 
@@ -18,7 +17,7 @@ class ChannelBindingService:
 
     def __init__(
         self,
-        dynamodb: DynamoDBClient,
+        dynamodb: Any,
         secrets_manager: SecretsManager,
     ):
         """Initialize channel binding service."""
