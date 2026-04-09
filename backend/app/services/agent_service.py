@@ -126,6 +126,13 @@ class AgentService:
                 elif role_lower == "agent":
                     seed_messages.append(_AIMessage(content=content))
 
+        logger.info(
+            "[vision] process_message: user_media_url=%r conversation_id=%s",
+            user_media_url,
+            conversation_id,
+            extra={"conversation_id": conversation_id, "agent_id": self.agent_config.agent_id},
+        )
+
         # Invoke the LangGraph graph — it handles pre-mod, escalation, RAG, LLM, post-mod, transitions
         try:
             graph_result = await self.agent_chain.generate_response(

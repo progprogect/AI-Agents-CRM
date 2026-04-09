@@ -462,11 +462,25 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             # and Gemini Pro Vision support this format out of the box.
             user_media_url = state.get("user_media_url")
             if user_media_url:
+                logger.info(
+                    "[vision] node_llm_generate: building multimodal message url=%s conversation_id=%s",
+                    user_media_url,
+                    state.get("conversation_id"),
+                    extra={
+                        "conversation_id": state.get("conversation_id"),
+                        "agent_id": state.get("agent_id"),
+                    },
+                )
                 human_content: Any = [
                     {"type": "text", "text": input_text},
                     {"type": "image_url", "image_url": {"url": user_media_url}},
                 ]
             else:
+                logger.debug(
+                    "[vision] node_llm_generate: no image, text-only message conversation_id=%s",
+                    state.get("conversation_id"),
+                    extra={"conversation_id": state.get("conversation_id")},
+                )
                 human_content = input_text
             msgs.append(HumanMessage(content=human_content))
 

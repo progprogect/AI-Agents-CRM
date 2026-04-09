@@ -1,7 +1,10 @@
 """Chat API endpoints."""
 
+import logging
 import uuid
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field, model_validator
@@ -239,6 +242,13 @@ async def send_message(
     # converting it to a text description first.
     user_media_url_for_agent: Optional[str] = (
         request.media_url if request.media_type == "image" else None
+    )
+    logger.info(
+        "[vision] send_message: media_type=%r media_url=%r → user_media_url_for_agent=%r",
+        request.media_type,
+        request.media_url,
+        user_media_url_for_agent,
+        extra={"conversation_id": conversation_id},
     )
 
     # Create user message
