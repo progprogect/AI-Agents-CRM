@@ -119,11 +119,33 @@ class TelegramService:
                     media_url = await self._get_file_url(bot_token, file_id)
                     media_type = "video"
                 elif has_audio and bot_token:
+                    is_voice = bool(message_data.get("voice"))
                     audio = message_data.get("audio") or message_data.get("voice", {})
                     file_id = audio.get("file_id")
                     if file_id:
                         media_url = await self._get_file_url(bot_token, file_id)
                     media_type = "audio"
+
+                    # For voice messages (OGG Opus from Telegram): transcribe to text
+                    # so the agent can process the spoken content.
+                    # Regular audio files (music, podcasts) are not transcribed.
+                    if is_voice and media_url and not message_text:
+                        try:
+                            from app.services.stt_service import STTError, transcribe_from_url
+                            transcript = await transcribe_from_url(media_url, language="ru")
+                            if transcript:
+                                message_text = transcript
+                                logger.info(
+                                    "STT transcribed Telegram voice for chat_id=%s: %d chars",
+                                    chat_id,
+                                    len(transcript),
+                                )
+                        except Exception as exc:
+                            logger.warning(
+                                "STT failed for Telegram voice (chat_id=%s): %s",
+                                chat_id,
+                                exc,
+                            )
                 elif has_document and bot_token:
                     file_id = message_data["document"]["file_id"]
                     media_url = await self._get_file_url(bot_token, file_id)
@@ -190,7 +212,8 @@ class TelegramService:
             if status_value in [ConversationStatus.NEEDS_HUMAN.value, ConversationStatus.HUMAN_ACTIVE.value]:
                 return
 
-            # Only call agent when there is text
+            # Only call agent when there is text (voice messages are transcribed above,
+            # so message_text will be non-empty if STT succeeded).
             if not message_text:
                 logger.debug(f"Media-only Telegram message saved for chat {chat_id} (no AI processing)")
                 return

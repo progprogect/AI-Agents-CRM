@@ -10,6 +10,20 @@ import React, {
 import { Button } from "@/components/shared/Button";
 import type { ChatSendPayload } from "@/lib/types/message";
 
+// Web Speech API type declarations (not in default TS lib)
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => SpeechRecognition;
+    webkitSpeechRecognition?: new () => SpeechRecognition;
+  }
+}
+
+/** Returns the browser SpeechRecognition constructor, or null if unsupported. */
+function getSpeechRecognition(): (new () => SpeechRecognition) | null {
+  if (typeof window === "undefined") return null;
+  return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
+}
+
 interface MessageInputProps {
   onSend: (payload: ChatSendPayload) => void;
   disabled?: boolean;
@@ -54,6 +68,36 @@ const SendIcon = () => (
   </svg>
 );
 
+const MicIcon = ({ active }: { active: boolean }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 24 24"
+    strokeWidth={1.5}
+    stroke="currentColor"
+    className="h-5 w-5"
+    aria-hidden
+  >
+    {active ? (
+      /* Stop / recording indicator */
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z"
+      />
+    ) : (
+      /* Microphone icon */
+      <>
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
+        />
+      </>
+    )}
+  </svg>
+);
+
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
   disabled = false,
@@ -64,8 +108,57 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [content, setContent] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const speechSupported = getSpeechRecognition() !== null;
+
+  const toggleRecording = useCallback(() => {
+    const SpeechRecognitionClass = getSpeechRecognition();
+    if (!SpeechRecognitionClass) return;
+
+    if (isRecording) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    setVoiceError(null);
+    const recognition = new SpeechRecognitionClass();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "ru-RU";
+
+    recognition.onstart = () => setIsRecording(true);
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0]?.[0]?.transcript ?? "";
+      if (transcript) {
+        setContent((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      }
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      if (event.error !== "aborted") {
+        setVoiceError("Не удалось распознать речь. Попробуйте ещё раз.");
+      }
+      setIsRecording(false);
+    };
+
+    recognition.onend = () => setIsRecording(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }, [isRecording]);
+
+  // Cleanup recognition on unmount
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort();
+    };
+  }, []);
 
   const clearAttachment = useCallback(() => {
     setPendingFile(null);
@@ -157,6 +250,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           </button>
         </div>
       )}
+      {voiceError && (
+        <p className="mb-1 text-xs text-red-500">{voiceError}</p>
+      )}
       <div className="flex gap-2 items-end">
         <input
           ref={fileInputRef}
@@ -175,6 +271,22 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         >
           <AttachmentIcon />
         </button>
+        {speechSupported && (
+          <button
+            type="button"
+            onClick={toggleRecording}
+            disabled={disabled}
+            className={`shrink-0 p-2.5 rounded-sm border transition-colors disabled:opacity-50 ${
+              isRecording
+                ? "border-red-400 bg-red-50 text-red-500 animate-pulse"
+                : "border-gray-300 text-gray-600 hover:bg-gray-50"
+            }`}
+            aria-label={isRecording ? "Stop recording" : "Voice input"}
+            title={isRecording ? "Запись… нажмите чтобы остановить" : "Голосовой ввод"}
+          >
+            <MicIcon active={isRecording} />
+          </button>
+        )}
         <div className="flex-1 flex flex-col">
           <textarea
             ref={textareaRef}
