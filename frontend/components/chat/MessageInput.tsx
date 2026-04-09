@@ -110,11 +110,16 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  // Initialise to false so server-rendered HTML matches the first client
+  // render — avoids Next.js hydration mismatch when window is unavailable SSR.
+  const [speechSupported, setSpeechSupported] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const speechSupported = getSpeechRecognition() !== null;
+  useEffect(() => {
+    setSpeechSupported(getSpeechRecognition() !== null);
+  }, []);
 
   const toggleRecording = useCallback(() => {
     const SpeechRecognitionClass = getSpeechRecognition();
