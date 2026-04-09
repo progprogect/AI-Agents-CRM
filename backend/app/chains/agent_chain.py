@@ -209,17 +209,18 @@ Response Policy (strict priority):
 2) Escalation rules
 3) Retrieved RAG context
 4) Approved examples
+5) Direct visual observation from user-provided images
 
 Language:
 - Respond only in the language of the user's current message
 - If user switches language, switch immediately
 
 Grounding:
-- Use only grounded sources: RAG context, approved examples, and escalation rules
-- Never invent, assume, or add facts beyond these sources
+- Primary sources: RAG context, approved examples, and escalation rules
+- When the user attaches an image, you MUST directly observe and describe what you see — visual observation from the image is a valid and expected information source
+- Never invent or assume facts that are NOT visible in the image and NOT present in grounded sources
 - If required information is missing, state it clearly and offer escalation to a human admin
 - Keep answers factual and concise
-- Do not speculate about logistics details unless explicitly present in grounded sources
 """
 
         examples_section = ""
@@ -268,7 +269,8 @@ Escalation is evaluated automatically before you see the user's message. If you 
             parts.append(escalation_section)
         parts.append("""Remember:
 - Be friendly and professional
-- Never provide medical diagnoses or treatment advice
+- When the user sends a photo, ALWAYS describe what you visually observe — this is observation, not a diagnosis
+- Never state a definitive medical diagnosis, but describing visible signs (colour, shape, texture, abnormalities) is expected and helpful
 - For urgent or medical situations, direct toward appropriate care and human support
 
 When context includes "Image: URL", you may suggest relevant images in your response.
@@ -471,9 +473,19 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         "agent_id": state.get("agent_id"),
                     },
                 )
+                # Append explicit instruction so the model knows it must use
+                # the image content — without this the grounding policy may
+                # cause it to refuse visual assessment.
+                image_hint = (
+                    "\n\n[The user has attached an image. "
+                    "Look at it carefully and describe exactly what you observe "
+                    "(colour, texture, visible signs, abnormalities). "
+                    "Base your answer on what you see. "
+                    "This is observation — not a diagnosis.]"
+                )
                 human_content: Any = [
-                    {"type": "text", "text": input_text},
-                    {"type": "image_url", "image_url": {"url": user_media_url}},
+                    {"type": "text", "text": input_text + image_hint},
+                    {"type": "image_url", "image_url": {"url": user_media_url, "detail": "auto"}},
                 ]
             else:
                 logger.debug(
