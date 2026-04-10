@@ -41,8 +41,9 @@ export interface WorkflowStep {
 }
 
 export interface WorkflowFormStep extends WorkflowStep {
-  // Local UI-only field used as React key; synced to id
+  // Local UI-only fields — not serialised to the API payload
   _localId?: string;
+  _position?: { x: number; y: number };
 }
 
 // Standard examples (pre-filled)
