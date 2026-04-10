@@ -5,7 +5,7 @@
 -- Payment settings per channel binding
 CREATE TABLE IF NOT EXISTS payment_settings (
     setting_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    binding_id          UUID NOT NULL UNIQUE REFERENCES channel_bindings(binding_id) ON DELETE CASCADE,
+    binding_id          VARCHAR(255) NOT NULL UNIQUE REFERENCES channel_bindings(binding_id) ON DELETE CASCADE,
     enabled             BOOLEAN NOT NULL DEFAULT FALSE,
     provider            VARCHAR(50) NOT NULL DEFAULT 'telegram_native',
     -- telegram_native | external_link
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS payment_settings (
 -- Plans available for a binding (e.g. "1 month / 30 msgs / 299 RUB")
 CREATE TABLE IF NOT EXISTS payment_plans (
     plan_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    binding_id      UUID NOT NULL REFERENCES channel_bindings(binding_id) ON DELETE CASCADE,
+    binding_id      VARCHAR(255) NOT NULL REFERENCES channel_bindings(binding_id) ON DELETE CASCADE,
     name            VARCHAR(200) NOT NULL,
     duration_days   INT NOT NULL,
     price_amount    BIGINT NOT NULL,       -- smallest currency unit (kopeks / cents / Stars)
@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_plans_binding ON payment_plans(binding_id
 -- Per-user subscription state (the access source of truth)
 CREATE TABLE IF NOT EXISTS user_subscriptions (
     sub_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    binding_id          UUID NOT NULL REFERENCES channel_bindings(binding_id) ON DELETE CASCADE,
+    binding_id          VARCHAR(255) NOT NULL REFERENCES channel_bindings(binding_id) ON DELETE CASCADE,
     external_user_id    TEXT NOT NULL,
     status              VARCHAR(20) NOT NULL DEFAULT 'free',
     -- free | active | expired | manual
@@ -66,7 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_user_subs_expires ON user_subscriptions(expires_a
 CREATE TABLE IF NOT EXISTS payment_transactions (
     txn_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sub_id              UUID NOT NULL REFERENCES user_subscriptions(sub_id),
-    binding_id          UUID NOT NULL,
+    binding_id          VARCHAR(255) NOT NULL,
     external_user_id    TEXT NOT NULL,
     provider            VARCHAR(50) NOT NULL,
     -- telegram_native | external_link
