@@ -322,20 +322,26 @@ export const WorkflowStep: React.FC<WorkflowStepProps> = ({
                           handleUpdateStep(step.id, {
                             timer_trigger: step.timer_trigger
                               ? undefined
-                              : { delay_seconds: 3600, message_template: "" },
+                              : {
+                                  delay_seconds: 3600,
+                                  action_type: "static",
+                                  message_template: "",
+                                  prompt: null,
+                                },
                           })
                         }
                       />
                       <span className="text-sm text-gray-700 flex items-center gap-1">
                         <Clock size={14} className="text-blue-500" />
-                        Таймер-триггер (автоматическое сообщение)
+                        Таймер-триггер (автоматическое сообщение при бездействии)
                       </span>
                     </div>
 
                     {step.timer_trigger && (
-                      <div className="pl-4 space-y-2 border-l-2 border-blue-200">
+                      <div className="pl-4 space-y-3 border-l-2 border-blue-200">
+                        {/* Delay */}
                         <Input
-                          label="Задержка (в секундах)"
+                          label="Задержка бездействия (в секундах)"
                           type="number"
                           value={String(step.timer_trigger.delay_seconds)}
                           onChange={(e) =>
@@ -348,20 +354,91 @@ export const WorkflowStep: React.FC<WorkflowStepProps> = ({
                           }
                           placeholder="3600"
                         />
-                        <Textarea
-                          label="Текст сообщения"
-                          value={step.timer_trigger.message_template}
-                          onChange={(e) =>
-                            handleUpdateStep(step.id, {
-                              timer_trigger: {
-                                ...step.timer_trigger!,
-                                message_template: e.target.value,
-                              },
-                            })
-                          }
-                          rows={2}
-                          placeholder="Привет! Смогли ли вы решить свой вопрос?"
-                        />
+
+                        {/* Action type toggle */}
+                        <div>
+                          <p className="text-xs font-medium text-gray-600 mb-2">Тип действия</p>
+                          <div className="flex rounded-md border border-gray-200 overflow-hidden w-fit text-sm">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateStep(step.id, {
+                                  timer_trigger: {
+                                    ...step.timer_trigger!,
+                                    action_type: "static",
+                                  },
+                                })
+                              }
+                              className={`px-3 py-1.5 transition-colors ${
+                                (step.timer_trigger.action_type || "static") === "static"
+                                  ? "bg-[#251D1C] text-white"
+                                  : "bg-white text-gray-600 hover:bg-gray-50"
+                              }`}
+                            >
+                              Фиксированный текст
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleUpdateStep(step.id, {
+                                  timer_trigger: {
+                                    ...step.timer_trigger!,
+                                    action_type: "agent",
+                                  },
+                                })
+                              }
+                              className={`px-3 py-1.5 border-l border-gray-200 transition-colors ${
+                                step.timer_trigger.action_type === "agent"
+                                  ? "bg-[#251D1C] text-white"
+                                  : "bg-white text-gray-600 hover:bg-gray-50"
+                              }`}
+                            >
+                              Ответ агента (AI)
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Static: message template */}
+                        {(step.timer_trigger.action_type || "static") === "static" && (
+                          <Textarea
+                            label="Текст сообщения"
+                            value={step.timer_trigger.message_template}
+                            onChange={(e) =>
+                              handleUpdateStep(step.id, {
+                                timer_trigger: {
+                                  ...step.timer_trigger!,
+                                  message_template: e.target.value,
+                                },
+                              })
+                            }
+                            rows={2}
+                            placeholder="Привет! Смогли ли вы решить свой вопрос? Если нужна помощь — напишите."
+                          />
+                        )}
+
+                        {/* Agent: prompt instruction */}
+                        {step.timer_trigger.action_type === "agent" && (
+                          <Textarea
+                            label="Инструкция для агента"
+                            value={step.timer_trigger.prompt || ""}
+                            onChange={(e) =>
+                              handleUpdateStep(step.id, {
+                                timer_trigger: {
+                                  ...step.timer_trigger!,
+                                  prompt: e.target.value,
+                                },
+                              })
+                            }
+                            rows={3}
+                            placeholder="Напомни пользователю, что ты ждёшь его ответа. Учти контекст предыдущего разговора."
+                          />
+                        )}
+
+                        <p className="text-xs text-gray-400">
+                          {(step.timer_trigger.action_type || "static") === "static"
+                            ? "Поддерживается подстановка {переменных} из собранных данных шага."
+                            : "Агент сам сформулирует сообщение по инструкции с учётом истории диалога."}
+                        </p>
                       </div>
                     )}
                   </div>

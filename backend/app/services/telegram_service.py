@@ -250,6 +250,10 @@ class TelegramService:
                 return
 
             try:
+                # Cancel any pending inactivity timer — user has responded.
+                from app.services.agent_reply_coordinator import cancel_timer_trigger
+                await cancel_timer_trigger(conversation.conversation_id)
+
                 agent_data = await self.dynamodb.get_agent(binding.agent_id)
                 if not agent_data or "config" not in agent_data:
                     return

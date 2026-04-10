@@ -172,7 +172,9 @@ export interface MonitoringConfig {
 
 export interface WorkflowTimerTrigger {
   delay_seconds: number;
+  action_type: "static" | "agent";
   message_template: string;
+  prompt?: string | null;
 }
 
 export interface WorkflowTransition {

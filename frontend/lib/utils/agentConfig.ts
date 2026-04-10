@@ -19,7 +19,9 @@ export interface EscalationRule {
 
 export interface WorkflowTimerTrigger {
   delay_seconds: number;
+  action_type: "static" | "agent";
   message_template: string;
+  prompt?: string | null;
 }
 
 export interface WorkflowTransition {
@@ -278,7 +280,12 @@ export function agentConfigToFormData(
         is_forced: t.is_forced || false,
       })),
       timer_trigger: s.timer_trigger
-        ? { delay_seconds: s.timer_trigger.delay_seconds, message_template: s.timer_trigger.message_template }
+        ? {
+            delay_seconds: s.timer_trigger.delay_seconds,
+            action_type: (s.timer_trigger.action_type as "static" | "agent") || "static",
+            message_template: s.timer_trigger.message_template || "",
+            prompt: s.timer_trigger.prompt ?? null,
+          }
         : undefined,
     })) as WorkflowFormStep[],
   };
@@ -409,7 +416,12 @@ export function formDataToAgentConfig(
           is_forced: t.is_forced || false,
         })),
         timer_trigger: s.timer_trigger
-          ? { delay_seconds: s.timer_trigger.delay_seconds, message_template: s.timer_trigger.message_template }
+          ? {
+              delay_seconds: s.timer_trigger.delay_seconds,
+              action_type: s.timer_trigger.action_type || "static",
+              message_template: s.timer_trigger.message_template || "",
+              prompt: s.timer_trigger.prompt || null,
+            }
           : null,
       })),
     },

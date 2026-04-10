@@ -331,13 +331,30 @@ class MonitoringConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 class WorkflowTimerTrigger(BaseModel):
-    """Timer-based trigger attached to a workflow step."""
+    """Timer-based trigger attached to a workflow step.
+
+    When action_type == 'static', the agent sends ``message_template`` verbatim
+    (with {variable} substitution from the step's collected fields).
+
+    When action_type == 'agent', the LLM generates a proactive message using
+    the conversation context and the ``prompt`` instruction.  ``message_template``
+    is ignored in this mode.
+    """
 
     delay_seconds: int = Field(
-        ..., ge=1, description="Seconds to wait before sending the trigger message"
+        ..., ge=1, description="Seconds of user inactivity before the trigger fires"
+    )
+    action_type: Literal["static", "agent"] = Field(
+        default="static",
+        description="'static' sends message_template; 'agent' asks the LLM to generate a message",
     )
     message_template: str = Field(
-        ..., description="Message text; supports {collected.*} variable substitution"
+        default="",
+        description="Message text for action_type='static'; supports {variable} substitution",
+    )
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Instruction for the LLM when action_type='agent'",
     )
 
 

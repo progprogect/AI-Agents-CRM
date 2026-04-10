@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Literal
+from typing import Any, Literal
 
 from app.config import get_settings
 from app.models.conversation import ConversationStatus
@@ -75,6 +75,9 @@ async def notify_user_message_saved(
             ttl=ttl,
         )
         await redis.zadd(KEY_DUE, {conversation_id: float(fire_at_ms)})
+        # Cancel any pending workflow timer — user has responded, inactivity timer no longer relevant.
+        await redis.zrem(KEY_TIMER_DUE, conversation_id)
+        await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
     except Exception as exc:
         logger.warning(
             "Redis error scheduling debounced reply: %s; falling back to immediate reply",
@@ -85,6 +88,18 @@ async def notify_user_message_saved(
         return "fallback"
 
     return "scheduled"
+
+
+async def cancel_timer_trigger(conversation_id: str) -> None:
+    """Cancel any pending workflow timer for *conversation_id* (user replied before timer fired)."""
+    redis = get_redis_client()
+    try:
+        if not await redis.ping():
+            return
+        await redis.zrem(KEY_TIMER_DUE, conversation_id)
+        await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
+    except Exception as exc:
+        logger.debug("cancel_timer_trigger error for %s: %s", conversation_id, exc)
 
 
 async def _current_reply_version(redis, conversation_id: str) -> int:
@@ -280,6 +295,62 @@ async def schedule_timer_trigger(conversation_id: str, pending_timer: dict) -> N
     )
 
 
+async def _generate_agent_timer_message(
+    agent_config: "Any",
+    prompt_instruction: str,
+    conversation_history: list[dict],
+    conversation_id: str,
+) -> str:
+    """Call the LLM to generate a proactive timer message.
+
+    The LLM is given the agent's base system prompt + the timer prompt instruction
+    as a system message, plus the last N conversation turns as context.
+    """
+    try:
+        from app.services.llm_factory import get_llm_factory
+        from langchain_core.messages import HumanMessage as _HumanMessage, SystemMessage as _SystemMessage
+
+        llm = await get_llm_factory().get_chat_model(agent_config)
+
+        # Build system context from agent base system prompt.
+        base_prompt = ""
+        try:
+            base_prompt = getattr(getattr(agent_config, "prompts", None), "system_prompt", "") or ""
+        except Exception:
+            pass
+
+        system_content = (
+            f"{base_prompt}\n\n"
+            "--- TIMER TRIGGER ---\n"
+            f"{prompt_instruction}\n\n"
+            "Write only the message text. Do not add any explanations or preamble."
+        ).strip()
+
+        messages = [_SystemMessage(content=system_content)]
+        for turn in conversation_history[-10:]:
+            role = turn.get("role", "user")
+            content = turn.get("content", "")
+            if role in ("assistant", "ai"):
+                from langchain_core.messages import AIMessage as _AIMessage
+                messages.append(_AIMessage(content=content))
+            else:
+                messages.append(_HumanMessage(content=content))
+
+        result = await llm.ainvoke(messages)
+        text = result.content if hasattr(result, "content") else str(result)
+        if isinstance(text, list):
+            text = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in text)
+        return str(text).strip()
+    except Exception as exc:
+        logger.error(
+            "Timer trigger LLM generation failed for %s: %s",
+            conversation_id,
+            exc,
+            exc_info=True,
+        )
+        return ""
+
+
 async def execute_timer_trigger(conversation_id: str) -> None:
     """Fire a scheduled workflow timer trigger for a conversation."""
     import json as _json
@@ -335,23 +406,76 @@ async def execute_timer_trigger(conversation_id: str) -> None:
     channel_enum = MC(conversation_channel) if conversation_channel else MC.WEB_CHAT
     channel_sender = get_channel_sender(channel_enum, dynamodb, instagram_service, telegram_service)
 
-    # Resolve message text (substitute collected variables if available)
-    message_text = timer.get("message_template", "")
+    action_type = timer.get("action_type", "static")
 
-    # Try to obtain collected variables from LangGraph checkpointer state
+    # Load LangGraph state for variable substitution and conversation context.
+    collected: dict = {}
+    conversation_history: list[dict] = []
     try:
         from app.storage.postgres_checkpointer import get_checkpointer
         checkpointer = get_checkpointer()
         state_snapshot = await checkpointer.aget({"configurable": {"thread_id": conversation_id}})
-        if state_snapshot and state_snapshot.values.get("collected"):
-            collected = state_snapshot.values["collected"]
-            for k, v in collected.items():
-                message_text = message_text.replace(f"{{{k}}}", str(v))
-    except Exception:
-        pass
+        if state_snapshot:
+            collected = state_snapshot.values.get("collected") or {}
+            raw_messages = state_snapshot.values.get("messages") or []
+            for m in raw_messages[-20:]:
+                role = type(m).__name__.lower().replace("message", "").replace("ai", "assistant").replace("human", "user")
+                text = getattr(m, "content", "")
+                if isinstance(text, list):
+                    text = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in text)
+                if text:
+                    conversation_history.append({"role": role, "content": str(text)})
+    except Exception as exc:
+        logger.debug("Timer trigger: could not load checkpointer state for %s: %s", conversation_id, exc)
+
+    if action_type == "agent":
+        # Generate a proactive message via LLM using conversation context + prompt instruction.
+        prompt_instruction = timer.get("prompt", "")
+        if not prompt_instruction:
+            logger.warning(
+                "Timer trigger action_type=agent but no prompt for %s; skipping",
+                conversation_id,
+            )
+            await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
+            return
+
+        message_text = await _generate_agent_timer_message(
+            agent_config=agent_config,
+            prompt_instruction=prompt_instruction,
+            conversation_history=conversation_history,
+            conversation_id=conversation_id,
+        )
+    else:
+        # Static: substitute {variable} placeholders from collected fields.
+        message_text = timer.get("message_template", "")
+        for k, v in collected.items():
+            message_text = message_text.replace(f"{{{k}}}", str(v))
 
     if not message_text:
+        logger.info(
+            "Timer trigger produced empty message for %s; skipping",
+            conversation_id,
+        )
+        await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
         return
+
+    # Persist the timer message in the DB and send via channel.
+    import uuid as _uuid
+    from app.models.message import Message, MessageRole
+    timer_msg = Message(
+        message_id=str(_uuid.uuid4()),
+        conversation_id=conversation_id,
+        agent_id=conversation.agent_id,
+        role=MessageRole.ASSISTANT,
+        content=message_text,
+        channel=conversation.channel,
+        timestamp=utc_now(),
+        metadata={"timer_trigger": True, "step_id": timer.get("step_id")},
+    )
+    try:
+        await dynamodb.create_message(timer_msg)
+    except Exception as exc:
+        logger.warning("Timer trigger: could not persist message for %s: %s", conversation_id, exc)
 
     # Send via channel sender
     try:
@@ -360,7 +484,8 @@ async def execute_timer_trigger(conversation_id: str) -> None:
             message_text=message_text,
         )
         logger.info(
-            "Timer trigger message sent for conversation %s",
+            "Timer trigger (%s) message sent for conversation %s",
+            action_type,
             conversation_id,
             extra={"conversation_id": conversation_id},
         )
@@ -465,8 +590,68 @@ async def _poll_due_once() -> None:
             await redis.delete(lock_key)
 
 
+async def _poll_timers_once() -> None:
+    """Poll the workflow timer ZSET and fire any due triggers."""
+    redis = get_redis_client()
+    if not await redis.ping():
+        return
+
+    now_ms = int(time.time() * 1000)
+
+    try:
+        timer_due = await redis.zrangebyscore(KEY_TIMER_DUE, "-inf", now_ms, num=50)
+    except Exception as exc:
+        logger.debug("timer poll zrangebyscore: %s", exc)
+        return
+
+    for conversation_id in timer_due:
+        lock_key = f"{KEY_TIMER_LOCK_PREFIX}{conversation_id}"
+        acquired = await redis.set_nx_ex(lock_key, "1", LOCK_TTL_SECONDS)
+        if not acquired:
+            continue
+
+        try:
+            score = await redis.zscore(KEY_TIMER_DUE, conversation_id)
+            if score is None or score > now_ms:
+                continue
+
+            await redis.zrem(KEY_TIMER_DUE, conversation_id)
+
+            async def _run_timer(cid: str) -> None:
+                try:
+                    await execute_timer_trigger(cid)
+                except Exception as exc:
+                    logger.error(
+                        "Timer trigger task failed for %s: %s",
+                        cid,
+                        exc,
+                        exc_info=True,
+                        extra={"conversation_id": cid},
+                    )
+
+            asyncio.create_task(_run_timer(conversation_id))
+        finally:
+            await redis.delete(lock_key)
+
+
+async def run_timer_poll_loop(shutdown: asyncio.Event) -> None:
+    """Poll the workflow timer queue every 5 s, independent of debounce setting.
+
+    Started unconditionally at application startup so inactivity timers always
+    fire even when debounce is disabled.
+    """
+    logger.info("Workflow timer poll loop started")
+    while True:
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=5.0)
+            break
+        except asyncio.TimeoutError:
+            await _poll_timers_once()
+    logger.info("Workflow timer poll loop stopped")
+
+
 async def run_debounce_poll_loop(shutdown: asyncio.Event) -> None:
-    """Poll Redis due set periodically until shutdown is set."""
+    """Poll Redis debounce due set periodically until shutdown is set."""
     settings = get_settings()
     if settings.agent_reply_debounce_seconds <= 0:
         return

@@ -543,65 +543,97 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             step_id = state.get("current_step_id") or wf.start_step_id
             step_map = {s.id: s for s in wf.steps}
             step = step_map.get(step_id)
-            if step is None or not step.transitions:
+            if step is None:
                 return {}
-
-            llm = _get_service("llm")
-            if llm is None:
-                from app.services.llm_factory import get_llm_factory
-                llm = await get_llm_factory().get_chat_model(agent_config)
-
-            conversation_summary = "\n".join(
-                f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
-                for m in (state.get("messages") or [])[-6:]
-            )
 
             new_step_id = step_id
             timer_to_schedule = state.get("pending_timer")
 
-            for transition in step.transitions:
-                eval_prompt = (
-                    f"Evaluate whether the following condition is satisfied based on the conversation.\n"
-                    f"Condition: {transition.condition}\n\n"
-                    f"Recent conversation:\n{conversation_summary}\n\n"
-                    "Reply with exactly 'YES' or 'NO'."
-                )
-                try:
-                    eval_result = await llm.ainvoke([HumanMessage(content=eval_prompt)])
-                    answer = _normalise_llm_text(eval_result.content).upper().strip()
-                except Exception as exc:
-                    logger.warning("Transition evaluator LLM error: %s", exc)
-                    answer = "NO"
+            # Only run transition LLM eval when there are transitions to check.
+            if step.transitions:
+                llm = _get_service("llm")
+                if llm is None:
+                    from app.services.llm_factory import get_llm_factory
+                    llm = await get_llm_factory().get_chat_model(agent_config)
 
-                if answer.startswith("YES"):
-                    new_step_id = transition.next_step_id
-                    break
-                elif transition.is_forced:
-                    logger.debug(
-                        "Forced transition condition not met for step %s; staying",
-                        step_id,
-                        extra={"conversation_id": state["conversation_id"]},
+                conversation_summary = "\n".join(
+                    f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
+                    for m in (state.get("messages") or [])[-6:]
+                )
+
+                for transition in step.transitions:
+                    eval_prompt = (
+                        f"Evaluate whether the following condition is satisfied based on the conversation.\n"
+                        f"Condition: {transition.condition}\n\n"
+                        f"Recent conversation:\n{conversation_summary}\n\n"
+                        "Reply with exactly 'YES' or 'NO'."
                     )
-                    new_step_id = step_id
-                    break
+                    try:
+                        eval_result = await llm.ainvoke([HumanMessage(content=eval_prompt)])
+                        answer = _normalise_llm_text(eval_result.content).upper().strip()
+                    except Exception as exc:
+                        logger.warning("Transition evaluator LLM error: %s", exc)
+                        answer = "NO"
+
+                    if answer.startswith("YES"):
+                        new_step_id = transition.next_step_id
+                        break
+                    elif transition.is_forced:
+                        logger.debug(
+                            "Forced transition condition not met for step %s; staying",
+                            step_id,
+                            extra={"conversation_id": state["conversation_id"]},
+                        )
+                        new_step_id = step_id
+                        break
 
             history = list(state.get("step_history") or [])
             if not history or history[-1] != new_step_id:
                 history.append(new_step_id)
 
             if new_step_id != step_id:
+                # Stepped into a new step — always reset/set its timer.
                 new_step = step_map.get(new_step_id)
                 if new_step and new_step.timer_trigger:
                     tt = new_step.timer_trigger
                     fire_at_ms = int(time.time() * 1000) + tt.delay_seconds * 1000
                     timer_to_schedule = {
                         "delay_seconds": tt.delay_seconds,
+                        "action_type": getattr(tt, "action_type", "static"),
                         "message_template": tt.message_template,
+                        "prompt": getattr(tt, "prompt", None),
                         "step_id": new_step_id,
                         "fire_at_ms": fire_at_ms,
                     }
+                    logger.info(
+                        "Timer scheduled for new step %s in conversation %s (delay=%ds)",
+                        new_step_id,
+                        state.get("conversation_id", "?"),
+                        tt.delay_seconds,
+                    )
                 else:
                     timer_to_schedule = None
+            elif timer_to_schedule is None:
+                # Staying on the same step but no timer is set yet (first turn on this step
+                # or timer already fired and was consumed).  Schedule if step has a timer_trigger.
+                current_step = step_map.get(new_step_id)
+                if current_step and current_step.timer_trigger:
+                    tt = current_step.timer_trigger
+                    fire_at_ms = int(time.time() * 1000) + tt.delay_seconds * 1000
+                    timer_to_schedule = {
+                        "delay_seconds": tt.delay_seconds,
+                        "action_type": getattr(tt, "action_type", "static"),
+                        "message_template": tt.message_template,
+                        "prompt": getattr(tt, "prompt", None),
+                        "step_id": new_step_id,
+                        "fire_at_ms": fire_at_ms,
+                    }
+                    logger.info(
+                        "Timer scheduled (initial/re-entry) for step %s in conversation %s (delay=%ds)",
+                        new_step_id,
+                        state.get("conversation_id", "?"),
+                        tt.delay_seconds,
+                    )
 
             return {
                 "current_step_id": new_step_id,

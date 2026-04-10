@@ -50,6 +50,8 @@ class TestNotifyUserMessageSaved(unittest.IsolatedAsyncioTestCase):
                 rc.incr = AsyncMock(return_value=1)
                 rc.set = AsyncMock(return_value=True)
                 rc.zadd = AsyncMock(return_value=1)
+                rc.zrem = AsyncMock(return_value=1)
+                rc.delete = AsyncMock(return_value=1)
                 gr.return_value = rc
                 r = await notify_user_message_saved(
                     "c1",
