@@ -613,9 +613,14 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     )
                 else:
                     timer_to_schedule = None
-            elif timer_to_schedule is None:
-                # Staying on the same step but no timer is set yet (first turn on this step
-                # or timer already fired and was consumed).  Schedule if step has a timer_trigger.
+            else:
+                # Staying on the same step.  Always recalculate fire_at_ms from *now* so
+                # the inactivity countdown resets with each user message.
+                # This covers three cases:
+                #   (a) first turn on step (timer_to_schedule is None → set it)
+                #   (b) timer already fired (stale fire_at_ms in checkpoint → would
+                #       fire again immediately if we reused the old value)
+                #   (c) normal active conversation (timer resets from last user message)
                 current_step = step_map.get(new_step_id)
                 if current_step and current_step.timer_trigger:
                     tt = current_step.timer_trigger
@@ -628,12 +633,14 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         "step_id": new_step_id,
                         "fire_at_ms": fire_at_ms,
                     }
-                    logger.info(
-                        "Timer scheduled (initial/re-entry) for step %s in conversation %s (delay=%ds)",
+                    logger.debug(
+                        "Timer reset for step %s in conversation %s (delay=%ds)",
                         new_step_id,
                         state.get("conversation_id", "?"),
                         tt.delay_seconds,
                     )
+                else:
+                    timer_to_schedule = None
 
             return {
                 "current_step_id": new_step_id,
