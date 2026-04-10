@@ -551,19 +551,14 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
             # Only run transition LLM eval when there are transitions to check.
             if step.transitions:
-                llm = _get_service("llm")
-                if llm is None:
-                    from app.services.llm_factory import get_llm_factory
-                    llm = await get_llm_factory().get_chat_model(agent_config)
-
-                conversation_summary = "\n".join(
-                    f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
-                    for m in (state.get("messages") or [])[-6:]
-                )
+                # LLM and conversation_summary are lazily initialised: only loaded when
+                # at least one transition has a non-empty condition (avoids unnecessary
+                # work for pure pass-through steps where all conditions are empty).
+                llm = None
+                conversation_summary: str | None = None
 
                 for transition in step.transitions:
                     # Empty condition = unconditional pass-through (no LLM call needed).
-                    # Saves tokens and makes behaviour deterministic.
                     if not transition.condition.strip():
                         logger.debug(
                             "Transition from %s has empty condition — treating as unconditional",
@@ -571,6 +566,18 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         )
                         new_step_id = transition.next_step_id
                         break
+
+                    # Lazy-load LLM and conversation summary only on first real condition.
+                    if llm is None:
+                        llm = _get_service("llm")
+                        if llm is None:
+                            from app.services.llm_factory import get_llm_factory
+                            llm = await get_llm_factory().get_chat_model(agent_config)
+                    if conversation_summary is None:
+                        conversation_summary = "\n".join(
+                            f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
+                            for m in (state.get("messages") or [])[-6:]
+                        )
 
                     eval_prompt = (
                         f"Evaluate whether the following condition is satisfied based on the conversation.\n"
