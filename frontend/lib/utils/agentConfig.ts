@@ -28,6 +28,7 @@ export interface WorkflowTransition {
   condition: string;       // natural-language condition for LLM evaluator
   next_step_id: string;
   is_forced: boolean;      // if true, user cannot advance until condition is met
+  is_fallback: boolean;    // if true, this is the "else" branch (taken when no condition matched)
 }
 
 export interface WorkflowStep {
@@ -279,6 +280,7 @@ export function agentConfigToFormData(
         condition: t.condition || "",
         next_step_id: t.next_step_id || "",
         is_forced: t.is_forced || false,
+        is_fallback: t.is_fallback || false,
       })),
       timer_trigger: s.timer_trigger
         ? {
@@ -415,6 +417,7 @@ export function formDataToAgentConfig(
           condition: t.condition,
           next_step_id: t.next_step_id,
           is_forced: t.is_forced || false,
+          is_fallback: t.is_fallback || false,
         })),
         timer_trigger: s.timer_trigger
           ? {

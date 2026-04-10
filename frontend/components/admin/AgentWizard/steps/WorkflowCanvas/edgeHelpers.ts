@@ -71,31 +71,44 @@ export function stepsToFlow(
     // Transition edges
     step.transitions.forEach((tr, trIdx) => {
       const edgeId = `${step.id}→${tr.next_step_id}__${trIdx}`;
+      const isFallback = tr.is_fallback === true;
+      const isForced = tr.is_forced === true;
+
+      const edgeStyle = isFallback
+        ? { stroke: "#9A9590", strokeWidth: 1.5, strokeDasharray: "5 4" }
+        : isForced
+        ? { stroke: "#ef4444", strokeWidth: 2 }
+        : { stroke: "#251D1C", strokeWidth: 1.5 };
+
+      const edgeLabelBgStyle = isFallback
+        ? { fill: "#fff", fillOpacity: 0.85, stroke: "#9A9590" }
+        : isForced
+        ? { fill: "#fff", fillOpacity: 0.85, stroke: "#ef4444" }
+        : { fill: "#fff", fillOpacity: 0.85, stroke: "#BEBAB7" };
+
+      const edgeLabel = isFallback
+        ? "Иначе"
+        : tr.condition
+        ? tr.condition.length > 38
+          ? tr.condition.slice(0, 36) + "…"
+          : tr.condition
+        : undefined;
+
       edges.push({
         id: edgeId,
         source: step.id,
         target: tr.next_step_id,
         type: "smoothstep",
-        label: tr.condition
-          ? tr.condition.length > 38
-            ? tr.condition.slice(0, 36) + "…"
-            : tr.condition
-          : undefined,
-        labelStyle: { fontSize: 11 },
-        labelBgStyle: {
-          fill: "#fff",
-          fillOpacity: 0.85,
-          stroke: tr.is_forced ? "#ef4444" : "#BEBAB7",
-        },
-        style: {
-          stroke: tr.is_forced ? "#ef4444" : "#251D1C",
-          strokeWidth: tr.is_forced ? 2 : 1.5,
-        },
+        label: edgeLabel,
+        labelStyle: { fontSize: 11, fill: isFallback ? "#9A9590" : "#251D1C" },
+        labelBgStyle: edgeLabelBgStyle,
+        style: edgeStyle,
         data: {
           stepId: step.id,
           transitionIndex: trIdx,
           condition: tr.condition,
           is_forced: tr.is_forced,
+          is_fallback: tr.is_fallback ?? false,
           next_step_id: tr.next_step_id,
         },
       });
@@ -116,7 +129,7 @@ export function flowToSteps(
   existingSteps.forEach((s) => stepMap.set(s.id, s));
 
   // Rebuild transitions from edges (exclude start-node edges)
-  const transitionsBySource = new Map<string, { condition: string; is_forced: boolean; next_step_id: string }[]>();
+  const transitionsBySource = new Map<string, { condition: string; is_forced: boolean; is_fallback: boolean; next_step_id: string }[]>();
 
   edges.forEach((edge) => {
     if (edge.source === START_NODE_ID) return;
@@ -124,6 +137,7 @@ export function flowToSteps(
     list.push({
       condition: (edge.data as { condition?: string })?.condition ?? (edge.label as string) ?? "",
       is_forced: (edge.data as { is_forced?: boolean })?.is_forced ?? false,
+      is_fallback: (edge.data as { is_fallback?: boolean })?.is_fallback ?? false,
       next_step_id: edge.target,
     });
     transitionsBySource.set(edge.source, list);

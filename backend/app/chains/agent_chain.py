@@ -592,15 +592,23 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 llm = None
                 conversation_summary: str | None = None
 
+                # Collect the first fallback/empty-condition transition for post-loop use.
+                # Fallback transitions are NOT evaluated in the main loop — they are only
+                # applied after all conditional transitions have been checked and none matched.
+                fallback_transition = None
+
                 for transition in step.transitions:
-                    # Empty condition = unconditional pass-through (no LLM call needed).
-                    if not transition.condition.strip():
-                        logger.debug(
-                            "Transition from %s has empty condition — treating as unconditional",
-                            step_id,
-                        )
-                        new_step_id = transition.next_step_id
-                        break
+                    # is_fallback flag OR empty condition → this is the "else" branch.
+                    # Collect it and skip to the next conditional transition.
+                    if transition.is_fallback or not transition.condition.strip():
+                        if fallback_transition is None:
+                            fallback_transition = transition
+                            logger.debug(
+                                "Fallback transition collected for step %s → %s",
+                                step_id,
+                                transition.next_step_id,
+                            )
+                        continue  # do not evaluate fallback in the main conditional loop
 
                     # Lazy-load LLM and conversation summary only on first real condition.
                     if llm is None:
@@ -638,6 +646,17 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         )
                         new_step_id = step_id
                         break
+                else:
+                    # Loop exhausted without a break — no conditional transition matched.
+                    # Apply the fallback branch if one was configured.
+                    if fallback_transition is not None and new_step_id == step_id:
+                        logger.debug(
+                            "No condition matched for step %s — applying fallback → %s",
+                            step_id,
+                            fallback_transition.next_step_id,
+                            extra={"conversation_id": state["conversation_id"]},
+                        )
+                        new_step_id = fallback_transition.next_step_id
 
             history = list(state.get("step_history") or [])
             if not history or history[-1] != new_step_id:

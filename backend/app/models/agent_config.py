@@ -369,6 +369,14 @@ class WorkflowTransition(BaseModel):
         default=False,
         description="If True, the agent must stay on the current step until this condition is satisfied",
     )
+    is_fallback: bool = Field(
+        default=False,
+        description=(
+            "If True, this is the fallback (else) branch — "
+            "taken only when no prior conditional transition matched. "
+            "Mutually exclusive with is_forced."
+        ),
+    )
 
 
 class WorkflowStep(BaseModel):

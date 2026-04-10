@@ -171,7 +171,7 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
         type: "smoothstep",
         label: "",
         style: { stroke: "#251D1C", strokeWidth: 1.5 },
-        data: { condition: "", is_forced: false, next_step_id: connection.target },
+        data: { condition: "", is_forced: false, is_fallback: false, next_step_id: connection.target },
       };
       const next = addEdge(newEdge, edges);
       setEdges(next);
@@ -261,29 +261,36 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
   // ── Edge mutations ─────────────────────────────────────────────────────────
 
   const handleUpdateEdge = useCallback(
-    (edgeId: string, data: { condition: string; is_forced: boolean }) => {
-      const next = edges.map((e) =>
-        e.id === edgeId
-          ? {
-              ...e,
-              label: data.condition
-                ? data.condition.length > 38
-                  ? data.condition.slice(0, 36) + "…"
-                  : data.condition
-                : undefined,
-              data: { ...e.data, ...data, next_step_id: e.target },
-              style: {
-                stroke: data.is_forced ? "#ef4444" : "#251D1C",
-                strokeWidth: data.is_forced ? 2 : 1.5,
-              },
-              labelBgStyle: {
-                fill: "#fff",
-                fillOpacity: 0.85,
-                stroke: data.is_forced ? "#ef4444" : "#BEBAB7",
-              },
-            }
-          : e
-      );
+    (edgeId: string, data: { condition: string; is_forced: boolean; is_fallback: boolean }) => {
+      const next = edges.map((e) => {
+        if (e.id !== edgeId) return e;
+        const { is_fallback, is_forced, condition } = data;
+        const edgeStyle = is_fallback
+          ? { stroke: "#9A9590", strokeWidth: 1.5, strokeDasharray: "5 4" }
+          : is_forced
+          ? { stroke: "#ef4444", strokeWidth: 2 }
+          : { stroke: "#251D1C", strokeWidth: 1.5 };
+        const edgeLabelBg = {
+          fill: "#fff",
+          fillOpacity: 0.85,
+          stroke: is_fallback ? "#9A9590" : is_forced ? "#ef4444" : "#BEBAB7",
+        };
+        const edgeLabel = is_fallback
+          ? "Иначе"
+          : condition
+          ? condition.length > 38
+            ? condition.slice(0, 36) + "…"
+            : condition
+          : undefined;
+        return {
+          ...e,
+          label: edgeLabel,
+          labelStyle: { fontSize: 11, fill: is_fallback ? "#9A9590" : "#251D1C" },
+          data: { ...e.data, ...data, next_step_id: e.target },
+          style: edgeStyle,
+          labelBgStyle: edgeLabelBg,
+        };
+      });
       setEdges(next);
       flush(nodes, next);
     },

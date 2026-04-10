@@ -181,6 +181,7 @@ export interface WorkflowTransition {
   condition: string;
   next_step_id: string;
   is_forced: boolean;
+  is_fallback?: boolean;
 }
 
 export interface WorkflowStep {

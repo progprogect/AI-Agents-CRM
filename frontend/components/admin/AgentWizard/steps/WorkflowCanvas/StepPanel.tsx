@@ -22,7 +22,7 @@ interface StepPanelProps {
   edges: Edge[];
   onUpdateStep: (stepId: string, patch: Partial<WorkflowFormStep>) => void;
   onDeleteStep: (stepId: string) => void;
-  onUpdateEdge: (edgeId: string, data: { condition: string; is_forced: boolean }) => void;
+  onUpdateEdge: (edgeId: string, data: { condition: string; is_forced: boolean; is_fallback: boolean }) => void;
   onDeleteEdge: (edgeId: string) => void;
   onClose: () => void;
 }
@@ -135,36 +135,76 @@ function TimerSection({
 function TransitionRow({
   edge,
   targetStep,
+  hasDuplicateFallback,
   onUpdate,
   onDelete,
 }: {
   edge: Edge;
   targetStep: WorkflowFormStep | undefined;
-  onUpdate: (edgeId: string, data: { condition: string; is_forced: boolean }) => void;
+  /** True when another edge from the same source is already marked as fallback */
+  hasDuplicateFallback: boolean;
+  onUpdate: (edgeId: string, data: { condition: string; is_forced: boolean; is_fallback: boolean }) => void;
   onDelete: (edgeId: string) => void;
 }) {
   const condition = (edge.data as { condition?: string })?.condition ?? "";
   const is_forced = (edge.data as { is_forced?: boolean })?.is_forced ?? false;
+  const is_fallback = (edge.data as { is_fallback?: boolean })?.is_fallback ?? false;
 
   return (
-    <div className="border border-[#BEBAB7] rounded-md p-3 space-y-2 bg-white">
+    <div className={`border rounded-md p-3 space-y-2 bg-white ${is_fallback ? "border-[#9A9590]" : "border-[#BEBAB7]"}`}>
       {targetStep && (
-        <p className="text-[10px] text-[#9A9590]">
-          → <span className="font-medium text-[#443C3C]">{targetStep.name || targetStep.id}</span>
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-[#9A9590]">
+            → <span className="font-medium text-[#443C3C]">{targetStep.name || targetStep.id}</span>
+          </p>
+          {is_fallback && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#EEEAE7] text-[#9A9590] font-medium">
+              Иначе
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Fallback toggle */}
+      <div className="flex items-center gap-2">
+        <Toggle
+          checked={is_fallback}
+          onChange={() => {
+            if (!is_fallback) {
+              // Enabling fallback: clear condition and disable is_forced
+              onUpdate(edge.id, { condition: "", is_forced: false, is_fallback: true });
+            } else {
+              onUpdate(edge.id, { condition, is_forced, is_fallback: false });
+            }
+          }}
+        />
+        <span className="text-xs text-[#443C3C]">Ветка «Иначе» (если ни одно условие не выполнено)</span>
+      </div>
+
+      {/* Warning: duplicate fallback */}
+      {is_fallback && hasDuplicateFallback && (
+        <p className="text-[10px] text-amber-600">
+          Уже есть другая ветка «Иначе» из этого шага. Сработает первая по порядку.
         </p>
       )}
-      <Textarea
-        label="Условие перехода"
-        value={condition}
-        onChange={(e) => onUpdate(edge.id, { condition: e.target.value, is_forced })}
-        rows={2}
-        placeholder="Например: пользователь указал породу питомца"
-      />
+
+      {/* Condition textarea — hidden when is_fallback */}
+      {!is_fallback && (
+        <Textarea
+          label="Условие перехода"
+          value={condition}
+          onChange={(e) => onUpdate(edge.id, { condition: e.target.value, is_forced, is_fallback: false })}
+          rows={2}
+          placeholder="Например: пользователь указал породу питомца"
+        />
+      )}
+
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        {/* is_forced — disabled when is_fallback is on */}
+        <div className={`flex items-center gap-2 ${is_fallback ? "opacity-40 pointer-events-none" : ""}`}>
           <Toggle
             checked={is_forced}
-            onChange={() => onUpdate(edge.id, { condition, is_forced: !is_forced })}
+            onChange={() => onUpdate(edge.id, { condition, is_forced: !is_forced, is_fallback: false })}
           />
           <span className="text-xs text-[#443C3C]">Жёсткое (нельзя пропустить)</span>
         </div>
@@ -265,18 +305,25 @@ export function StepPanel({
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {outgoing.map((edge) => {
-                      const targetStep = steps.find((s) => s.id === edge.target);
-                      return (
-                        <TransitionRow
-                          key={edge.id}
-                          edge={edge}
-                          targetStep={targetStep}
-                          onUpdate={onUpdateEdge}
-                          onDelete={onDeleteEdge}
-                        />
-                      );
-                    })}
+                    {(() => {
+                      const fallbackCount = outgoing.filter(
+                        (e) => (e.data as { is_fallback?: boolean })?.is_fallback
+                      ).length;
+                      return outgoing.map((edge) => {
+                        const targetStep = steps.find((s) => s.id === edge.target);
+                        const thisIsFallback = (edge.data as { is_fallback?: boolean })?.is_fallback ?? false;
+                        return (
+                          <TransitionRow
+                            key={edge.id}
+                            edge={edge}
+                            targetStep={targetStep}
+                            hasDuplicateFallback={thisIsFallback && fallbackCount > 1}
+                            onUpdate={onUpdateEdge}
+                            onDelete={onDeleteEdge}
+                          />
+                        );
+                      });
+                    })()}
                   </div>
                 )}
               </Section>
@@ -296,76 +343,92 @@ export function StepPanel({
         })()}
 
         {/* ── Edge editing ── */}
-        {selectedEdge && !selectedStep && (
-          <>
-            <Section title="Условие перехода">
-              <div className="space-y-3">
-                <div className="text-xs text-[#9A9590] mb-2">
-                  {(() => {
-                    const from = steps.find((s) => s.id === selectedEdge.source);
-                    const to = steps.find((s) => s.id === selectedEdge.target);
-                    return from && to ? (
-                      <span>
-                        <span className="font-medium text-[#443C3C]">{from.name || from.id}</span>
-                        {" → "}
-                        <span className="font-medium text-[#443C3C]">{to.name || to.id}</span>
-                      </span>
-                    ) : null;
-                  })()}
-                </div>
+        {selectedEdge && !selectedStep && (() => {
+          const edgeCondition = (selectedEdge.data as { condition?: string })?.condition ?? "";
+          const edgeIsForced = (selectedEdge.data as { is_forced?: boolean })?.is_forced ?? false;
+          const edgeIsFallback = (selectedEdge.data as { is_fallback?: boolean })?.is_fallback ?? false;
+          return (
+            <>
+              <Section title="Настройка перехода">
+                <div className="space-y-3">
+                  <div className="text-xs text-[#9A9590] mb-2">
+                    {(() => {
+                      const from = steps.find((s) => s.id === selectedEdge.source);
+                      const to = steps.find((s) => s.id === selectedEdge.target);
+                      return from && to ? (
+                        <span>
+                          <span className="font-medium text-[#443C3C]">{from.name || from.id}</span>
+                          {" → "}
+                          <span className="font-medium text-[#443C3C]">{to.name || to.id}</span>
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
 
-                <Textarea
-                  label="Условие (естественный язык)"
-                  value={
-                    (selectedEdge.data as { condition?: string })?.condition ??
-                    (selectedEdge.label as string) ??
-                    ""
-                  }
-                  onChange={(e) =>
-                    onUpdateEdge(selectedEdge.id, {
-                      condition: e.target.value,
-                      is_forced:
-                        (selectedEdge.data as { is_forced?: boolean })?.is_forced ?? false,
-                    })
-                  }
-                  rows={3}
-                  placeholder="Например: пользователь указал своё имя"
-                />
+                  {/* Fallback toggle */}
+                  <div className="flex items-center gap-2">
+                    <Toggle
+                      checked={edgeIsFallback}
+                      onChange={() => {
+                        if (!edgeIsFallback) {
+                          onUpdateEdge(selectedEdge.id, { condition: "", is_forced: false, is_fallback: true });
+                        } else {
+                          onUpdateEdge(selectedEdge.id, { condition: edgeCondition, is_forced: edgeIsForced, is_fallback: false });
+                        }
+                      }}
+                    />
+                    <span className="text-sm text-[#443C3C]">Ветка «Иначе» (если ни одно условие не выполнено)</span>
+                  </div>
 
-                <div className="flex items-center gap-3">
-                  <Toggle
-                    checked={
-                      (selectedEdge.data as { is_forced?: boolean })?.is_forced ?? false
-                    }
-                    onChange={() =>
-                      onUpdateEdge(selectedEdge.id, {
-                        condition:
-                          (selectedEdge.data as { condition?: string })?.condition ?? "",
-                        is_forced: !(
-                          (selectedEdge.data as { is_forced?: boolean })?.is_forced ?? false
-                        ),
-                      })
-                    }
-                  />
-                  <span className="text-sm text-[#443C3C]">
-                    Жёсткое условие (пользователь не перейдёт дальше без выполнения)
-                  </span>
+                  {/* Condition — hidden when fallback */}
+                  {!edgeIsFallback && (
+                    <Textarea
+                      label="Условие (естественный язык)"
+                      value={edgeCondition}
+                      onChange={(e) =>
+                        onUpdateEdge(selectedEdge.id, {
+                          condition: e.target.value,
+                          is_forced: edgeIsForced,
+                          is_fallback: false,
+                        })
+                      }
+                      rows={3}
+                      placeholder="Например: пользователь указал своё имя"
+                    />
+                  )}
+
+                  {/* is_forced — disabled when fallback */}
+                  <div className={`flex items-center gap-3 ${edgeIsFallback ? "opacity-40 pointer-events-none" : ""}`}>
+                    <Toggle
+                      checked={edgeIsForced}
+                      onChange={() =>
+                        onUpdateEdge(selectedEdge.id, {
+                          condition: edgeCondition,
+                          is_forced: !edgeIsForced,
+                          is_fallback: false,
+                        })
+                      }
+                    />
+                    <span className="text-sm text-[#443C3C]">
+                      Жёсткое условие (пользователь не перейдёт дальше без выполнения)
+                    </span>
+                  </div>
                 </div>
+              </Section>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => onDeleteEdge(selectedEdge.id)}
+                  className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors"
+                >
+                  <Trash2 size={14} />
+                  Удалить переход
+                </button>
               </div>
-            </Section>
-
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => onDeleteEdge(selectedEdge.id)}
-                className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors"
-              >
-                <Trash2 size={14} />
-                Удалить переход
-              </button>
-            </div>
-          </>
-        )}
+            </>
+          );
+        })()}
       </div>
     </div>
   );
