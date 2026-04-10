@@ -41,3 +41,11 @@ export interface UpdateChannelBindingRequest {
   metadata?: Record<string, any>;
 }
 
+/** A single bot command entry returned by GET /channel-bindings/{id}/commands */
+export interface TelegramCommand {
+  key: string;
+  command: string;      // includes leading slash, e.g. "/restart"
+  description: string;
+  enabled: boolean;
+}
+

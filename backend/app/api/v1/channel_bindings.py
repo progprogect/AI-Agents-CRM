@@ -4,7 +4,7 @@ import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.api.auth import require_admin
 from app.api.exceptions import AgentNotFoundError
@@ -42,6 +42,25 @@ class UpdateChannelBindingRequest(BaseModel):
     is_active: Optional[bool] = Field(None, description="Whether binding is active")
     access_token: Optional[str] = Field(None, description="New access token")
     metadata: Optional[dict[str, Any]] = Field(None, description="Updated metadata")
+
+
+class UpdateCommandsRequest(BaseModel):
+    """Request to update enabled/disabled bot commands for a Telegram binding."""
+
+    commands: dict[str, bool] = Field(
+        ...,
+        description="Map of command key to enabled flag, e.g. {\"restart\": true}",
+    )
+
+    @field_validator("commands")
+    @classmethod
+    def validate_command_keys(cls, v: dict[str, bool]) -> dict[str, bool]:
+        from app.services.bot_commands_service import TELEGRAM_BOT_COMMANDS
+        known = {cmd["key"] for cmd in TELEGRAM_BOT_COMMANDS}
+        unknown = set(v.keys()) - known
+        if unknown:
+            raise ValueError(f"Unknown command key(s): {unknown}")
+        return v
 
 
 class ChannelBindingResponse(BaseModel):
@@ -283,4 +302,92 @@ async def verify_channel_binding(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to verify channel binding: {str(e)}",
         )
+
+
+@router.get(
+    "/channel-bindings/{binding_id}/commands",
+    response_model=list[dict[str, Any]],
+)
+async def get_binding_commands(
+    binding_id: str,
+    binding_service: ChannelBindingService = Depends(get_channel_binding_service),
+    _admin: str = require_admin(),
+):
+    """Return the command catalog for a Telegram binding with enabled/disabled flags.
+
+    Returns a list like:
+      [{"key": "restart", "command": "/restart", "description": "...", "enabled": true}]
+    """
+    binding = await binding_service.get_binding(binding_id)
+    if not binding:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Binding not found")
+
+    if get_enum_value(binding.channel_type) != "telegram":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bot commands are only supported for Telegram bindings",
+        )
+
+    from app.services.bot_commands_service import get_commands_status
+    return get_commands_status(binding)
+
+
+@router.put(
+    "/channel-bindings/{binding_id}/commands",
+    response_model=list[dict[str, Any]],
+)
+async def update_binding_commands(
+    binding_id: str,
+    request: UpdateCommandsRequest,
+    binding_service: ChannelBindingService = Depends(get_channel_binding_service),
+    _admin: str = require_admin(),
+):
+    """Enable or disable bot commands for a Telegram binding.
+
+    Also calls Telegram setMyCommands so the menu button in the bot
+    is updated immediately — no manual action needed.
+    """
+    binding = await binding_service.get_binding(binding_id)
+    if not binding:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Binding not found")
+
+    if get_enum_value(binding.channel_type) != "telegram":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bot commands are only supported for Telegram bindings",
+        )
+
+    # Merge new commands into existing metadata (preserve other metadata keys)
+    current_metadata = dict(binding.metadata)
+    existing_commands: dict[str, bool] = current_metadata.get("telegram_commands", {})
+    existing_commands.update(request.commands)
+    current_metadata["telegram_commands"] = existing_commands
+
+    try:
+        updated_binding = await binding_service.update_binding(
+            binding_id=binding_id,
+            metadata=current_metadata,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update commands: {str(e)}",
+        )
+
+    # Sync Telegram bot menu (non-fatal — log errors but don't fail the request)
+    try:
+        bot_token = await binding_service.get_access_token(binding_id)
+        from app.services.bot_commands_service import sync_telegram_commands
+        await sync_telegram_commands(bot_token, existing_commands)
+    except Exception as exc:
+        logger.warning(
+            "Could not sync Telegram bot commands for binding %s: %s",
+            binding_id,
+            exc,
+        )
+
+    from app.services.bot_commands_service import get_commands_status
+    return get_commands_status(updated_binding)
 

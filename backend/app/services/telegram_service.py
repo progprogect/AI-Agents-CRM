@@ -183,6 +183,26 @@ class TelegramService:
                 external_user_username=username,
             )
 
+            # Intercept bot commands (/restart, etc.) before passing to agent.
+            # Commands are handled only when explicitly enabled in the binding metadata.
+            if message_text.startswith("/"):
+                if bot_token is None:
+                    try:
+                        bot_token = await self.channel_binding_service.get_access_token(binding_id)
+                    except Exception:
+                        pass
+                if bot_token:
+                    from app.services.bot_commands_service import dispatch_command
+                    handled = await dispatch_command(
+                        command=message_text,
+                        chat_id=chat_id,
+                        binding=binding,
+                        bot_token=bot_token,
+                        dynamodb=self.dynamodb,
+                    )
+                    if handled:
+                        return  # command was processed; do not pass to agent
+
             # Build metadata for the message
             msg_metadata: dict[str, Any] = {}
             if media_url:

@@ -326,6 +326,26 @@ export const api = {
     );
   },
 
+  // Bot command management (Telegram only)
+  async getTelegramCommands(bindingId: string): Promise<import("./types/channel").TelegramCommand[]> {
+    return request<import("./types/channel").TelegramCommand[]>(
+      `/api/v1/channel-bindings/${bindingId}/commands`,
+      {},
+      true
+    );
+  },
+
+  async updateTelegramCommands(
+    bindingId: string,
+    commands: Record<string, boolean>
+  ): Promise<import("./types/channel").TelegramCommand[]> {
+    return request<import("./types/channel").TelegramCommand[]>(
+      `/api/v1/channel-bindings/${bindingId}/commands`,
+      { method: "PUT", body: JSON.stringify({ commands }) },
+      true
+    );
+  },
+
   async transcribeVoice(
     conversationId: string,
     audioBlob: Blob,
