@@ -8,7 +8,6 @@ import type { WorkflowFormStep, WorkflowTimerTrigger } from "@/lib/utils/agentCo
 import { Input } from "@/components/shared/Input";
 import { Textarea } from "@/components/shared/Textarea";
 import { Toggle } from "@/components/shared/Toggle";
-import { START_NODE_ID } from "./edgeHelpers";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -217,9 +216,7 @@ export function StepPanel({
       <div className="flex-1 overflow-y-auto px-4 py-4">
           {/* ── Step editing ── */}
         {selectedStep && (() => {
-          const outgoing = edges.filter(
-            (e) => e.source === selectedStep.id && e.source !== START_NODE_ID
-          );
+          const outgoing = edges.filter((e) => e.source === selectedStep.id);
           return (
             <>
               <Section title="Основное">
