@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { TelegramBotCommandsPanel } from "@/components/admin/TelegramBotCommandsPanel";
+import { PaymentSettingsPanel } from "@/components/admin/PaymentSettingsPanel";
 import type { ChannelBinding, ChannelConfig, ChannelType, CreateChannelBindingRequest } from "@/lib/types/channel";
 import {
   CheckCircle2,
@@ -666,6 +667,7 @@ function ChannelCard({
   const [guideOpen, setGuideOpen] = useState(bindings.length === 0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [telegramCommandsOpenId, setTelegramCommandsOpenId] = useState<string | null>(null);
+  const [telegramPaymentOpenId, setTelegramPaymentOpenId] = useState<string | null>(null);
 
   const activeBinding = bindings.find((b) => b.is_active);
 
@@ -756,6 +758,21 @@ function ChannelCard({
                         {commandsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                       </button>
                       {commandsOpen && <TelegramBotCommandsPanel binding={b} embedded />}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTelegramPaymentOpenId((id) => (id === b.binding_id ? null : b.binding_id))
+                        }
+                        className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-[#443C3C] bg-[#FAFAFA] border-t border-[#BEBAB7] hover:bg-[#EEEAE7]/60 transition-colors ${
+                          telegramPaymentOpenId !== b.binding_id ? "rounded-b-md" : ""
+                        }`}
+                      >
+                        <span>Оплата</span>
+                        {telegramPaymentOpenId === b.binding_id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                      {telegramPaymentOpenId === b.binding_id && (
+                        <PaymentSettingsPanel binding={b} />
+                      )}
                     </>
                   ) : undefined
                 }

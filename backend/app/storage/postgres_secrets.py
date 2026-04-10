@@ -190,6 +190,62 @@ class PostgresSecretsManager:
             await conn.execute("DELETE FROM secrets WHERE key = $1", secret_name)
         self.clear_cache(secret_name)
 
+    # ── Payment provider tokens ────────────────────────────────────────────────
+
+    async def store_payment_token(
+        self, binding_id: str, token: str, sandbox: bool = False
+    ) -> str:
+        """Encrypt and persist a payment provider token.  Returns the secret_name key."""
+        suffix = "test" if sandbox else "live"
+        secret_name = f"payment:{binding_id}:{suffix}"
+        secret_value = json.dumps({"provider_token": token})
+        encrypted = self._get_fernet().encrypt(secret_value.encode()).decode()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO secrets (key, value_encrypted, created_at)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (key) DO UPDATE SET value_encrypted = EXCLUDED.value_encrypted
+                """,
+                secret_name,
+                encrypted,
+                datetime.utcnow(),
+            )
+        self.clear_cache(secret_name)
+        return secret_name
+
+    async def get_payment_token(self, secret_name: str) -> str:
+        """Decrypt and return a payment provider token."""
+        cache_key = f"{secret_name}:provider_token"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT value_encrypted FROM secrets WHERE key = $1",
+                secret_name,
+            )
+        if not row:
+            raise ValueError(f"Payment token secret '{secret_name}' not found")
+        try:
+            decrypted = self._get_fernet().decrypt(row["value_encrypted"].encode()).decode()
+            data = json.loads(decrypted)
+            token = data.get("provider_token", "")
+            if not token:
+                raise ValueError(f"No provider_token in secret {secret_name}")
+            self._cache[cache_key] = token
+            return token
+        except InvalidToken:
+            raise ValueError(f"Failed to decrypt payment token secret {secret_name}")
+
+    async def delete_payment_token(self, secret_name: str) -> None:
+        """Remove a payment provider token secret."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM secrets WHERE key = $1", secret_name)
+        self.clear_cache(secret_name)
+
     # ── Global app settings (stored encrypted, not per-binding) ──────────────
 
     async def get_global_setting(self, key: str) -> Optional[str]:

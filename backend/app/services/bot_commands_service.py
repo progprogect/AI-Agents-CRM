@@ -33,6 +33,11 @@ TELEGRAM_BOT_COMMANDS: list[dict[str, str]] = [
         "command": "restart",
         "description": "Начать новый чат",
     },
+    {
+        "key": "paysupport",
+        "command": "paysupport",
+        "description": "Вопросы по оплате",
+    },
 ]
 
 
@@ -176,6 +181,31 @@ async def handle_restart(
         )
 
 
+async def handle_paysupport(
+    dynamodb: Any,
+    chat_id: str,
+    binding: ChannelBinding,
+    bot_token: str,
+) -> None:
+    """Handle /paysupport command: send payment support contact info."""
+    try:
+        from app.models.payment import get_payment_settings
+        pay_settings = await get_payment_settings(binding.binding_id)
+        contact = (pay_settings.support_contact if pay_settings else None) or "поддержку сервиса"
+        await _send_telegram_message(
+            bot_token=bot_token,
+            chat_id=chat_id,
+            text=(
+                "По вопросам оплаты обратитесь к "
+                f"{contact}.\n\n"
+                "Если вы уже совершили оплату, но доступ не открылся — "
+                "пожалуйста, пришлите скриншот чека."
+            ),
+        )
+    except Exception as exc:
+        logger.error("handle_paysupport failed for chat_id=%s: %s", chat_id, exc, exc_info=True)
+
+
 async def _send_telegram_message(bot_token: str, chat_id: str, text: str) -> None:
     """Send a plain text message to a Telegram chat."""
     url = f"{TELEGRAM_API_BASE}{bot_token}/sendMessage"
@@ -195,6 +225,7 @@ async def _send_telegram_message(bot_token: str, chat_id: str, text: str) -> Non
 
 COMMAND_HANDLERS: dict[str, Any] = {
     "restart": handle_restart,
+    "paysupport": handle_paysupport,
 }
 
 

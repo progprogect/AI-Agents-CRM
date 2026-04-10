@@ -1026,6 +1026,138 @@ export const api = {
       true
     );
   },
+
+  // ── Payment ──────────────────────────────────────────────────────────────────
+
+  async getPaymentSettings(bindingId: string): Promise<import("./types/payment").PaymentSettings> {
+    return request<import("./types/payment").PaymentSettings>(
+      `/api/v1/channel-bindings/${bindingId}/payment-settings`,
+      {},
+      true
+    );
+  },
+
+  async upsertPaymentSettings(
+    bindingId: string,
+    data: import("./types/payment").UpsertPaymentSettingsRequest
+  ): Promise<import("./types/payment").PaymentSettings> {
+    return request<import("./types/payment").PaymentSettings>(
+      `/api/v1/channel-bindings/${bindingId}/payment-settings`,
+      { method: "PUT", body: JSON.stringify(data) },
+      true
+    );
+  },
+
+  async setPaymentToken(
+    bindingId: string,
+    token?: string,
+    tokenSandbox?: string
+  ): Promise<{ ok: boolean; has_live_token: boolean; has_sandbox_token: boolean }> {
+    return request(
+      `/api/v1/channel-bindings/${bindingId}/payment-token`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ token: token ?? null, token_sandbox: tokenSandbox ?? null }),
+      },
+      true
+    );
+  },
+
+  async listPaymentPlans(
+    bindingId: string,
+    activeOnly = true
+  ): Promise<import("./types/payment").PaymentPlan[]> {
+    return request<import("./types/payment").PaymentPlan[]>(
+      `/api/v1/channel-bindings/${bindingId}/payment-plans?active_only=${activeOnly}`,
+      {},
+      true
+    );
+  },
+
+  async createPaymentPlan(
+    bindingId: string,
+    data: import("./types/payment").CreatePlanRequest
+  ): Promise<import("./types/payment").PaymentPlan> {
+    return request<import("./types/payment").PaymentPlan>(
+      `/api/v1/channel-bindings/${bindingId}/payment-plans`,
+      { method: "POST", body: JSON.stringify(data) },
+      true
+    );
+  },
+
+  async updatePaymentPlan(
+    bindingId: string,
+    planId: string,
+    data: Partial<import("./types/payment").CreatePlanRequest>
+  ): Promise<import("./types/payment").PaymentPlan> {
+    return request<import("./types/payment").PaymentPlan>(
+      `/api/v1/channel-bindings/${bindingId}/payment-plans/${planId}`,
+      { method: "PUT", body: JSON.stringify(data) },
+      true
+    );
+  },
+
+  async deletePaymentPlan(bindingId: string, planId: string): Promise<void> {
+    return request<void>(
+      `/api/v1/channel-bindings/${bindingId}/payment-plans/${planId}`,
+      { method: "DELETE" },
+      true
+    );
+  },
+
+  async listSubscriptions(
+    bindingId: string,
+    status?: string,
+    limit = 50,
+    offset = 0
+  ): Promise<import("./types/payment").UserSubscription[]> {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (status) params.set("status", status);
+    return request<import("./types/payment").UserSubscription[]>(
+      `/api/v1/channel-bindings/${bindingId}/subscriptions?${params}`,
+      {},
+      true
+    );
+  },
+
+  async updateSubscription(
+    bindingId: string,
+    externalUserId: string,
+    data: import("./types/payment").UpdateSubscriptionRequest
+  ): Promise<import("./types/payment").UserSubscription> {
+    return request<import("./types/payment").UserSubscription>(
+      `/api/v1/channel-bindings/${bindingId}/subscriptions/${encodeURIComponent(externalUserId)}`,
+      { method: "PUT", body: JSON.stringify(data) },
+      true
+    );
+  },
+
+  async resetSubscriptionCounter(bindingId: string, externalUserId: string): Promise<void> {
+    return request<void>(
+      `/api/v1/channel-bindings/${bindingId}/subscriptions/${encodeURIComponent(externalUserId)}/reset`,
+      { method: "POST" },
+      true
+    );
+  },
+
+  async listTransactions(
+    bindingId: string,
+    limit = 100
+  ): Promise<import("./types/payment").PaymentTransaction[]> {
+    return request<import("./types/payment").PaymentTransaction[]>(
+      `/api/v1/channel-bindings/${bindingId}/transactions?limit=${limit}`,
+      {},
+      true
+    );
+  },
+
+  async refundTransaction(txnId: string): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>(
+      `/api/v1/transactions/${txnId}/refund`,
+      { method: "POST" },
+      true
+    );
+  },
 };
 
 export { ApiError };

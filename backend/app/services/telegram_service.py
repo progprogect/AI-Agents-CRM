@@ -74,9 +74,24 @@ class TelegramService:
             if binding.channel_type != ChannelType.TELEGRAM:
                 return
 
+            # ── Payment webhooks (not inside 'message') ─────────────────────
+            if "pre_checkout_query" in payload:
+                await self._handle_pre_checkout_query(payload["pre_checkout_query"], binding)
+                return
+
             message_data = payload.get("message")
             if not message_data:
                 logger.debug(f"Telegram update without message: {payload.get('update_id')}")
+                return
+
+            # ── successful_payment arrives inside message ─────────────────
+            if "successful_payment" in message_data:
+                chat = message_data.get("chat", {})
+                chat_id = str(chat.get("id", ""))
+                if chat_id:
+                    await self._handle_successful_payment(
+                        message_data["successful_payment"], binding, chat_id
+                    )
                 return
 
             # Extract basic fields
@@ -254,6 +269,40 @@ class TelegramService:
                 from app.services.agent_reply_coordinator import cancel_timer_trigger
                 await cancel_timer_trigger(conversation.conversation_id)
 
+                # ── Payment guard: check subscription before calling agent ──
+                from app.models.payment import get_payment_settings
+                from app.services.payment.guard import GuardResult, check as payment_check
+                pay_settings = await get_payment_settings(binding.binding_id)
+                if pay_settings and pay_settings.enabled:
+                    try:
+                        bot_token_for_pay = bot_token or await self.channel_binding_service.get_access_token(binding_id)
+                        guard_result = await payment_check(
+                            binding_id=binding.binding_id,
+                            external_user_id=chat_id,
+                            settings=pay_settings,
+                        )
+                        if guard_result == GuardResult.BLOCK_SEND_INVOICE:
+                            from app.services.payment.service import PaymentService
+                            pay_svc = PaymentService(
+                                binding_id=binding.binding_id,
+                                bot_token=bot_token_for_pay,
+                                secret_key=self.settings.jwt_secret_key or self.settings.secret_encryption_key or "fallback-key",
+                            )
+                            await pay_svc.send_plans_keyboard(chat_id, settings=pay_settings)
+                            return
+                        elif guard_result == GuardResult.GRACE:
+                            await self.send_message(
+                                binding_id, chat_id,
+                                "Для продолжения необходимо оплатить подписку. "
+                                "Пожалуйста, выберите план из предыдущего сообщения.",
+                            )
+                            return
+                        elif guard_result == GuardResult.PENDING_HARD:
+                            return
+                        # GuardResult.ALLOW: proceed normally
+                    except Exception as pay_exc:
+                        logger.warning("Payment guard error (allowing through): %s", pay_exc)
+
                 agent_data = await self.dynamodb.get_agent(binding.agent_id)
                 if not agent_data or "config" not in agent_data:
                     return
@@ -309,6 +358,56 @@ class TelegramService:
         except Exception as e:
             logger.error(f"Error handling Telegram webhook event: {e}", exc_info=True)
             raise
+
+    async def _handle_pre_checkout_query(
+        self, query: dict[str, Any], binding: Any
+    ) -> None:
+        """Handle Telegram pre_checkout_query — must respond within 10 seconds."""
+        query_id = query.get("id", "")
+        payload_str = query.get("invoice_payload", "")
+        try:
+            bot_token = await self.channel_binding_service.get_access_token(binding.binding_id)
+            from app.services.payment.service import PaymentService
+            pay_svc = PaymentService(
+                binding_id=binding.binding_id,
+                bot_token=bot_token,
+                secret_key=self.settings.jwt_secret_key or self.settings.secret_encryption_key or "fallback-key",
+            )
+            await pay_svc.answer_pre_checkout(
+                bot_token=bot_token,
+                query_id=query_id,
+                payload_str=payload_str,
+            )
+        except Exception as exc:
+            logger.error("pre_checkout_query handler error: %s", exc, exc_info=True)
+
+    async def _handle_successful_payment(
+        self, payment_data: dict[str, Any], binding: Any, chat_id: str
+    ) -> None:
+        """Handle successful_payment inside a message update."""
+        try:
+            bot_token = await self.channel_binding_service.get_access_token(binding.binding_id)
+            from app.services.payment.service import PaymentService
+            pay_svc = PaymentService(
+                binding_id=binding.binding_id,
+                bot_token=bot_token,
+                secret_key=self.settings.jwt_secret_key or self.settings.secret_encryption_key or "fallback-key",
+            )
+            activated = await pay_svc.handle_successful_payment(payment_data, chat_id)
+            if activated:
+                expires_str = (
+                    activated.expires_at.strftime("%d.%m.%Y")
+                    if activated.expires_at
+                    else "бессрочно"
+                )
+                await self.send_message(
+                    binding.binding_id,
+                    chat_id,
+                    f"Оплата прошла успешно! Подписка активирована до {expires_str}. "
+                    "Теперь вы можете продолжить общение.",
+                )
+        except Exception as exc:
+            logger.error("successful_payment handler error: %s", exc, exc_info=True)
 
     async def _find_or_create_conversation(
         self,
