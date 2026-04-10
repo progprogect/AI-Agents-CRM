@@ -562,6 +562,16 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 )
 
                 for transition in step.transitions:
+                    # Empty condition = unconditional pass-through (no LLM call needed).
+                    # Saves tokens and makes behaviour deterministic.
+                    if not transition.condition.strip():
+                        logger.debug(
+                            "Transition from %s has empty condition — treating as unconditional",
+                            step_id,
+                        )
+                        new_step_id = transition.next_step_id
+                        break
+
                     eval_prompt = (
                         f"Evaluate whether the following condition is satisfied based on the conversation.\n"
                         f"Condition: {transition.condition}\n\n"
