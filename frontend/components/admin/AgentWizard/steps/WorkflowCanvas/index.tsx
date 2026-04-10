@@ -123,6 +123,8 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
     (nextNodes: Node[], nextEdges: Edge[]) => {
       const nextSteps = flowToSteps(nextNodes, nextEdges, steps);
       const newStartId = deriveStartStepId(nextEdges) || nextSteps[0]?.id || "";
+      // Mark as canvas-originated so the sync useEffect doesn't rebuild nodes/edges.
+      lastStepsRef.current = nextSteps;
       onUpdate({
         workflow_steps: nextSteps,
         workflow_start_step_id: newStartId,
@@ -136,33 +138,29 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      setNodes((prev) => {
-        const next = applyNodeChanges(changes, prev);
-        // Only flush on drag-stop or position changes (not selection changes)
-        const hasPositionChange = changes.some(
-          (c) => c.type === "position" && c.dragging === false
-        );
-        if (hasPositionChange) {
-          flush(next, edges);
-        }
-        return next;
-      });
+      const next = applyNodeChanges(changes, nodes);
+      setNodes(next);
+      // Only flush on drag-stop (not on selection or add changes)
+      const hasPositionChange = changes.some(
+        (c) => c.type === "position" && c.dragging === false
+      );
+      if (hasPositionChange) {
+        flush(next, edges);
+      }
     },
-    [edges, flush]
+    [nodes, edges, flush]
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
-      setEdges((prev) => {
-        const next = applyEdgeChanges(changes, prev);
-        const hasRemove = changes.some((c) => c.type === "remove");
-        if (hasRemove) {
-          flush(nodes, next);
-        }
-        return next;
-      });
+      const next = applyEdgeChanges(changes, edges);
+      setEdges(next);
+      const hasRemove = changes.some((c) => c.type === "remove");
+      if (hasRemove) {
+        flush(nodes, next);
+      }
     },
-    [nodes, flush]
+    [nodes, edges, flush]
   );
 
   const onConnect: OnConnect = useCallback(
@@ -175,13 +173,11 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
         style: { stroke: "#251D1C", strokeWidth: 1.5 },
         data: { condition: "", is_forced: false, next_step_id: connection.target },
       };
-      setEdges((prev) => {
-        const next = addEdge(newEdge, prev);
-        flush(nodes, next);
-        return next;
-      });
+      const next = addEdge(newEdge, edges);
+      setEdges(next);
+      flush(nodes, next);
     },
-    [nodes, flush]
+    [nodes, edges, flush]
   );
 
   // ── Click handlers ─────────────────────────────────────────────────────────
@@ -225,6 +221,8 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
     const nextNodes = [...nodes, newNode];
     const nextSteps = [...steps, { ...newStep, _position: position }];
     setNodes(nextNodes);
+    // Mark as canvas-originated to prevent useEffect from rebuilding canvas
+    lastStepsRef.current = nextSteps;
     onUpdate({
       workflow_steps: nextSteps,
       workflow_start_step_id: config.workflow_start_step_id || id,
@@ -234,14 +232,13 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
   const handleUpdateStep = useCallback(
     (stepId: string, patch: Partial<WorkflowFormStep>) => {
       const nextSteps = steps.map((s) => (s.id === stepId ? { ...s, ...patch } : s));
-      // Update node data too so StepNode re-renders
+      const updatedStep = nextSteps.find((s) => s.id === stepId);
+      // Update node data so StepNode re-renders immediately
       setNodes((prev) =>
-        prev.map((n) =>
-          n.id === stepId
-            ? { ...n, data: { step: nextSteps.find((s) => s.id === stepId) } }
-            : n
-        )
+        prev.map((n) => (n.id === stepId ? { ...n, data: { step: updatedStep } } : n))
       );
+      // Mark as canvas-originated to prevent useEffect from rebuilding canvas
+      lastStepsRef.current = nextSteps;
       onUpdate({ workflow_steps: nextSteps });
     },
     [steps, onUpdate]
@@ -265,46 +262,42 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
 
   const handleUpdateEdge = useCallback(
     (edgeId: string, data: { condition: string; is_forced: boolean }) => {
-      setEdges((prev) => {
-        const next = prev.map((e) =>
-          e.id === edgeId
-            ? {
-                ...e,
-                label: data.condition
-                  ? data.condition.length > 38
-                    ? data.condition.slice(0, 36) + "…"
-                    : data.condition
-                  : undefined,
-                data: { ...e.data, ...data, next_step_id: e.target },
-                style: {
-                  stroke: data.is_forced ? "#ef4444" : "#251D1C",
-                  strokeWidth: data.is_forced ? 2 : 1.5,
-                },
-                labelBgStyle: {
-                  fill: "#fff",
-                  fillOpacity: 0.85,
-                  stroke: data.is_forced ? "#ef4444" : "#BEBAB7",
-                },
-              }
-            : e
-        );
-        flush(nodes, next);
-        return next;
-      });
+      const next = edges.map((e) =>
+        e.id === edgeId
+          ? {
+              ...e,
+              label: data.condition
+                ? data.condition.length > 38
+                  ? data.condition.slice(0, 36) + "…"
+                  : data.condition
+                : undefined,
+              data: { ...e.data, ...data, next_step_id: e.target },
+              style: {
+                stroke: data.is_forced ? "#ef4444" : "#251D1C",
+                strokeWidth: data.is_forced ? 2 : 1.5,
+              },
+              labelBgStyle: {
+                fill: "#fff",
+                fillOpacity: 0.85,
+                stroke: data.is_forced ? "#ef4444" : "#BEBAB7",
+              },
+            }
+          : e
+      );
+      setEdges(next);
+      flush(nodes, next);
     },
-    [nodes, flush]
+    [edges, nodes, flush]
   );
 
   const handleDeleteEdge = useCallback(
     (edgeId: string) => {
-      setEdges((prev) => {
-        const next = prev.filter((e) => e.id !== edgeId);
-        flush(nodes, next);
-        return next;
-      });
+      const next = edges.filter((e) => e.id !== edgeId);
+      setEdges(next);
       setSelectedEdgeId(null);
+      flush(nodes, next);
     },
-    [nodes, flush]
+    [edges, nodes, flush]
   );
 
   // ── Fit view on mount ──────────────────────────────────────────────────────
