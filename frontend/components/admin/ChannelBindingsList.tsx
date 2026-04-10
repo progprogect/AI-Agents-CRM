@@ -2,8 +2,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/components/shared/Button";
+import React, { useState, useEffect, useCallback } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { ChannelBinding, TelegramCommand } from "@/lib/types/channel";
 
@@ -190,9 +189,8 @@ export function ChannelBindingsList({
             const commandsOpen = expandedCommands === binding.binding_id;
 
             return (
-              <>
+              <React.Fragment key={binding.binding_id}>
                 <tr
-                  key={binding.binding_id}
                   className="hover:bg-[#EEEAE7]/5 transition-colors duration-150"
                 >
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -271,13 +269,13 @@ export function ChannelBindingsList({
                   </td>
                 </tr>
                 {isTelegram && commandsOpen && (
-                  <tr key={`${binding.binding_id}-commands`}>
+                  <tr>
                     <td colSpan={6} className="p-0">
                       <BotCommandsPanel binding={binding} />
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             );
           })}
         </tbody>

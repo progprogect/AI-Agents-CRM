@@ -113,15 +113,22 @@ async def handle_restart(
     4. Send a confirmation message to the user.
     """
     try:
-        # Find existing conversation for this user
-        existing_conversations = await dynamodb.list_conversations(
+        # Find existing active conversations for this user.
+        # list_conversations does not support external_user_id filtering,
+        # so we fetch by agent_id + status and filter client-side — same
+        # pattern as _find_or_create_conversation in telegram_service.py.
+        all_conversations = await dynamodb.list_conversations(
             agent_id=binding.agent_id,
-            external_user_id=chat_id,
             status=ConversationStatus.AI_ACTIVE,
+            limit=200,
         )
+        existing_conversations = [
+            c for c in (all_conversations or [])
+            if c.external_user_id == chat_id
+        ]
 
         # Close all active conversations for this chat_id
-        for conv in (existing_conversations or []):
+        for conv in existing_conversations:
             await dynamodb.update_conversation(
                 conversation_id=conv.conversation_id,
                 status=ConversationStatus.CLOSED,
