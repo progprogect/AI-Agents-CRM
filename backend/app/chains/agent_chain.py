@@ -282,14 +282,32 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
     def _build_step_system_prompt(
         base_prompt: str, step: WorkflowStep, collected: dict[str, str]
     ) -> str:
-        lines = [base_prompt, f"\n--- Current workflow step: {step.name} ---"]
+        is_mandatory = step.required or any(tr.is_forced for tr in step.transitions)
+        label = "ОБЯЗАТЕЛЬНЫЙ ЭТАП" if is_mandatory else "Текущий этап"
+        lines = [base_prompt, f"\n--- {label}: {step.name} ---"]
         lines.append(step.instructions)
+
         if step.collect:
             missing = [v for v in step.collect if v not in collected]
             if missing:
-                lines.append(
-                    f"\nPlease collect the following information from the user: {', '.join(missing)}"
-                )
+                lines.append(f"\nНеобходимо узнать у пользователя: {', '.join(missing)}")
+
+        if is_mandatory:
+            forced_conditions = [
+                tr.condition for tr in step.transitions
+                if tr.is_forced and tr.condition.strip()
+            ]
+            lines.append(
+                "\nПРИОРИТЕТНОЕ ПРАВИЛО ЭТОГО ЭТАПА:\n"
+                "Сначала выполни задачу этого этапа — задай нужные вопросы и получи ответы.\n"
+                "Как только ты соберёшь необходимую информацию, ты сможешь полноценно помочь пользователю.\n"
+                "Если пользователь задаёт вопросы по теме до того, как ты собрал данные — "
+                "кратко дай понять, что ответишь на них сразу после, и верни к сбору информации."
+            )
+            if forced_conditions:
+                criteria = "; ".join(forced_conditions)
+                lines.append(f"Критерий завершения этапа: {criteria}.")
+
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -403,6 +421,23 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             # Skip RAG when query is empty (e.g. image-only message with no caption).
             if rag_svc is None or not agent_config.rag.enabled or not (state["user_message"] or "").strip():
                 return {"rag_context": None, "rag_media_list": []}
+
+            # Skip RAG on mandatory data-collection steps to prevent retrieved
+            # domain content from flooding the prompt and causing the LLM to answer
+            # topic questions before the required step is complete.
+            wf = agent_config.workflow
+            if wf.enabled and wf.steps:
+                step_id = state.get("current_step_id") or wf.start_step_id
+                step_map = {s.id: s for s in wf.steps}
+                current_step = step_map.get(step_id)
+                if current_step and current_step.required:
+                    logger.debug(
+                        "RAG skipped: step '%s' is required (mandatory data-collection phase)",
+                        step_id,
+                        extra={"conversation_id": state["conversation_id"]},
+                    )
+                    return {"rag_context": None, "rag_media_list": []}
+
             try:
                 context, media_list = await rag_svc.get_context_and_media(
                     query=state["user_message"],
