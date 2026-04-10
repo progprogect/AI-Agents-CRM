@@ -121,21 +121,25 @@ async def check(
         await _invalidate(cache_key)
         return GuardResult.ALLOW
 
-    # ── Grace period ─────────────────────────────────────────────────────────
-    if sub.invoice_sent_at:
-        if sub.grace_messages_used < settings.grace_messages:
-            await increment_grace_messages(sub.sub_id)
-            return GuardResult.GRACE
-        return GuardResult.PENDING_HARD
-
-    # ── Throttle: don't re-send invoice too soon ─────────────────────────────
+    # ── Grace period + throttle ───────────────────────────────────────────────
+    # If an invoice was already sent and the re-send throttle has NOT expired:
+    #   • still within grace limit → remind the user (GRACE)
+    #   • grace exhausted         → stay silent (PENDING_HARD)
+    # If the throttle HAS expired (or no invoice was ever sent):
+    #   → send a fresh invoice (BLOCK_SEND_INVOICE)
     if sub.invoice_sent_at:
         sent_at = sub.invoice_sent_at
         if sent_at.tzinfo is None:
             sent_at = sent_at.replace(tzinfo=timezone.utc)
         hours_since = (now - sent_at).total_seconds() / 3600
+
         if hours_since < settings.invoice_resend_hours:
+            # Within throttle window: use grace messages or go silent
+            if sub.grace_messages_used < settings.grace_messages:
+                await increment_grace_messages(sub.sub_id)
+                return GuardResult.GRACE
             return GuardResult.PENDING_HARD
+        # Throttle window expired → fall through to re-send invoice
 
     return GuardResult.BLOCK_SEND_INVOICE
 
