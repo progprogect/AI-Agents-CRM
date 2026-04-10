@@ -150,8 +150,17 @@ class TelegramService:
                     file_id = message_data["document"]["file_id"]
                     media_url = await self._get_file_url(bot_token, file_id)
                     media_type = "document"
-                elif has_sticker:
-                    media_type = "image"  # stickers treated as images
+                elif has_sticker and bot_token:
+                    st = message_data.get("sticker") or {}
+                    fid = st.get("file_id") or (st.get("thumb") or {}).get("file_id")
+                    if fid:
+                        media_url = await self._get_file_url(bot_token, fid)
+                    media_type = "image"
+
+            # Public HTTPS URL for Telegram file — pass to vision model (same as web chat).
+            vision_user_media_url: Optional[str] = (
+                media_url if media_type == "image" and media_url else None
+            )
 
             # Skip if no text and no media at all
             if not message_text and not media_url and not has_sticker:
@@ -232,10 +241,12 @@ class TelegramService:
             if status_value in [ConversationStatus.NEEDS_HUMAN.value, ConversationStatus.HUMAN_ACTIVE.value]:
                 return
 
-            # Only call agent when there is text (voice messages are transcribed above,
-            # so message_text will be non-empty if STT succeeded).
-            if not message_text:
-                logger.debug(f"Media-only Telegram message saved for chat {chat_id} (no AI processing)")
+            # Call agent when there is text, or a photo/sticker URL for vision (voice → text above).
+            if not message_text.strip() and not vision_user_media_url:
+                logger.debug(
+                    "Telegram message saved for chat %s (no text and no image for vision), skipping agent",
+                    chat_id,
+                )
                 return
 
             try:
@@ -260,7 +271,8 @@ class TelegramService:
                 agent_service = create_agent_service(agent_config, self.dynamodb, telegram_sender)
 
                 settings = get_settings()
-                if settings.agent_reply_debounce_seconds > 0:
+                # Same as web chat: debounce would drop user_media_url on the delayed process_message path.
+                if settings.agent_reply_debounce_seconds > 0 and not vision_user_media_url:
                     from app.services.agent_reply_coordinator import notify_user_message_saved
                     from app.storage.redis import get_redis_client
 
@@ -283,6 +295,7 @@ class TelegramService:
                     user_message=message_text,
                     conversation_id=conversation.conversation_id,
                     conversation_history=conversation_history,
+                    user_media_url=vision_user_media_url,
                 )
                 if result.get("escalate"):
                     logger.info(f"Message escalated for conversation {conversation.conversation_id}")
