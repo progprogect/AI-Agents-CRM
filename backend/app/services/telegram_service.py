@@ -93,6 +93,11 @@ class TelegramService:
                 await self._handle_pre_checkout_query(payload["pre_checkout_query"], binding)
                 return
 
+            # ── Inline-keyboard callback (plan selection before invoice) ────
+            if "callback_query" in payload:
+                await self._handle_callback_query(payload["callback_query"], binding)
+                return
+
             message_data = payload.get("message")
             if not message_data:
                 logger.debug(f"Telegram update without message: {payload.get('update_id')}")
@@ -372,6 +377,38 @@ class TelegramService:
         except Exception as e:
             logger.error(f"Error handling Telegram webhook event: {e}", exc_info=True)
             raise
+
+    async def _handle_callback_query(
+        self, query: dict[str, Any], binding: Any
+    ) -> None:
+        """Handle inline-keyboard button presses (e.g. plan selection before invoice)."""
+        query_id = query.get("id", "")
+        data = query.get("data", "")
+        chat_id = str((query.get("from") or {}).get("id", ""))
+
+        try:
+            bot_token = await self.channel_binding_service.get_access_token(binding.binding_id)
+
+            # Always answer the callback to remove the loading spinner
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    f"{self.TELEGRAM_API_BASE_URL}{bot_token}/answerCallbackQuery",
+                    json={"callback_query_id": query_id},
+                )
+
+            # Plan selection: send the actual invoice for the chosen plan
+            if data.startswith("pay_plan:") and chat_id:
+                plan_id = data[len("pay_plan:"):]
+                from app.services.payment.service import PaymentService
+                pay_svc = PaymentService(
+                    binding_id=binding.binding_id,
+                    bot_token=bot_token,
+                    secret_key=self._get_invoice_signing_key(),
+                )
+                await pay_svc.send_invoice_for_plan(chat_id, plan_id)
+
+        except Exception as exc:
+            logger.error("callback_query handler error: %s", exc, exc_info=True)
 
     async def _handle_pre_checkout_query(
         self, query: dict[str, Any], binding: Any
