@@ -1,6 +1,6 @@
 -- Migration 011: Payment integration tables
 -- Supports Telegram-native (YooKassa/Stars) and external-link (Stripe) providers.
--- DB is the single source of truth for access; providers only trigger updates.
+-- DB is the single source of truth for access, providers only trigger updates.
 
 -- Payment settings per channel binding
 CREATE TABLE IF NOT EXISTS payment_settings (
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     external_user_id    TEXT NOT NULL,
     provider            VARCHAR(50) NOT NULL,
     -- telegram_native | external_link
-    provider_charge_id  TEXT UNIQUE,       -- NULL for pending; set on completion
+    provider_charge_id  TEXT UNIQUE,       -- NULL for pending, set on completion
     plan_id             UUID REFERENCES payment_plans(plan_id),
     amount              BIGINT,
     currency            VARCHAR(10),
