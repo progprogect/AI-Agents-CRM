@@ -1,7 +1,8 @@
 """Speech-to-text service using OpenAI gpt-4o-mini-transcribe.
 
 Cost: $0.003/min (2× cheaper than Whisper-1 / gpt-4o-transcribe at $0.006/min).
-Supported formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, ogg/oga (Telegram voice).
+Supported formats: mp3, mp4, mpeg, mpga, m4a, wav, webm, ogg.
+Telegram voice uses ``.oga`` on disk; we rename to ``.ogg`` for the API (same bytes).
 File size limit: 25 MB per request.
 
 Usage:
@@ -141,6 +142,16 @@ def _filename_from_url(url: str) -> str:
     return "voice.ogg"
 
 
+def _normalize_filename_for_openai_transcription(filename: str) -> str:
+    """OpenAI /v1/audio/transcriptions rejects ``.oga`` (Telegram voice); use ``.ogg``."""
+    if "." not in filename:
+        return filename
+    base, ext = filename.rsplit(".", 1)
+    if ext.lower() == "oga":
+        return f"{base}.ogg"
+    return filename
+
+
 async def _call_openai_transcription(
     audio_bytes: bytes,
     filename: str,
@@ -148,12 +159,12 @@ async def _call_openai_transcription(
 ) -> str:
     """Send audio bytes to OpenAI Transcription API and return transcript."""
     api_key = await _get_openai_api_key()
+    filename = _normalize_filename_for_openai_transcription(filename)
 
     # Determine content-type from filename extension
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "ogg"
     content_type_map = {
         "ogg": "audio/ogg",
-        "oga": "audio/ogg",
         "mp3": "audio/mpeg",
         "mp4": "audio/mp4",
         "m4a": "audio/mp4",
