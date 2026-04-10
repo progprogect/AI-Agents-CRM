@@ -8,7 +8,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.auth import require_admin
+from app.api.tenant import TenantContext, get_tenant_context, require_role
 from app.dependencies import CommonDependencies
 from app.models.notification_config import NotificationConfig, NotificationType
 from app.services.channel_binding_service import ChannelBindingService
@@ -83,11 +83,14 @@ def get_notification_service(
 async def list_notification_configs(
     active_only: bool = False,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
-    """List all notification configs."""
+    """List notification configs for the current organization."""
     try:
-        configs = await deps.dynamodb.list_notification_configs(active_only=active_only)
+        org_id = None if ctx.is_platform_admin else ctx.org_id
+        configs = await deps.dynamodb.list_notification_configs(
+            active_only=active_only, organization_id=org_id
+        )
         return [NotificationConfigResponse.from_config(config) for config in configs]
     except Exception as e:
         logger.error(f"Failed to list notification configs: {e}", exc_info=True)
@@ -105,7 +108,7 @@ async def list_notification_configs(
 async def create_notification_config(
     request: CreateNotificationConfigRequest,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Create a new notification config."""
     # Validate notification type
@@ -169,10 +172,11 @@ async def create_notification_config(
             chat_id=request.chat_id,
             is_active=True,
             description=request.description,
-            created_by=_admin,
+            created_by=ctx.user_email,
         )
 
-        await deps.dynamodb.create_notification_config(config)
+        org_id = None if ctx.is_platform_admin else ctx.org_id
+        await deps.dynamodb.create_notification_config(config, organization_id=org_id)
 
         logger.info(
             f"Created notification config: {config_id}, type: {request.notification_type}"
@@ -198,7 +202,7 @@ async def create_notification_config(
 async def get_notification_config(
     config_id: str,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Get notification config by ID."""
     config = await deps.dynamodb.get_notification_config(config_id)
@@ -218,7 +222,7 @@ async def update_notification_config(
     config_id: str,
     request: UpdateNotificationConfigRequest,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Update notification config."""
     config = await deps.dynamodb.get_notification_config(config_id)
@@ -304,7 +308,7 @@ async def update_notification_config(
 async def delete_notification_config(
     config_id: str,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Delete notification config and its secret."""
     config = await deps.dynamodb.get_notification_config(config_id)
@@ -344,7 +348,7 @@ async def delete_notification_config(
 async def test_notification(
     config_id: str,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Send a test notification."""
     config = await deps.dynamodb.get_notification_config(config_id)

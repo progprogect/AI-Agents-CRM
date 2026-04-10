@@ -1,4 +1,4 @@
-/** Authentication utilities for admin access. */
+/** Authentication utilities for admin access — multitenancy-aware. */
 
 const ADMIN_TOKEN_KEY = "agent_admin_token";
 
@@ -21,16 +21,29 @@ export function isAuthenticated(): boolean {
   return getAdminToken() !== null;
 }
 
+export type UserRole = "owner" | "admin" | "member";
+
+export interface TokenPayload {
+  sub: string;
+  /** Backward compat */
+  is_super_admin: boolean;
+  /** Multitenancy */
+  org_id: string | null;
+  role: UserRole | null;
+  is_platform_admin: boolean;
+  iat: number;
+  exp: number;
+}
+
 /** Decode JWT payload without verifying signature (safe — only for UI hints). */
-export function getTokenPayload(): { sub: string; is_super_admin: boolean } | null {
+export function getTokenPayload(): TokenPayload | null {
   const token = getAdminToken();
   if (!token) return null;
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
-    // base64url → base64 → JSON
     const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(atob(base64));
+    return JSON.parse(atob(base64)) as TokenPayload;
   } catch {
     return null;
   }
@@ -41,5 +54,43 @@ export function getCurrentUserEmail(): string | null {
 }
 
 export function isSuperAdmin(): boolean {
-  return getTokenPayload()?.is_super_admin === true;
+  const p = getTokenPayload();
+  return p?.is_platform_admin === true || p?.is_super_admin === true;
+}
+
+export function isPlatformAdmin(): boolean {
+  return getTokenPayload()?.is_platform_admin === true;
+}
+
+export function getOrgId(): string | null {
+  return getTokenPayload()?.org_id ?? null;
+}
+
+export function getUserRole(): UserRole | null {
+  return getTokenPayload()?.role ?? null;
+}
+
+/** Can create / edit / delete agents and channels. */
+export function canManageAgents(): boolean {
+  if (isPlatformAdmin()) return true;
+  const role = getUserRole();
+  return role === "owner" || role === "admin";
+}
+
+/** Can manage LLM API keys (openai, google). Only owners. */
+export function canManageKeys(): boolean {
+  if (isPlatformAdmin()) return true;
+  return getUserRole() === "owner";
+}
+
+/** Can invite / remove team members. */
+export function canManageTeam(): boolean {
+  if (isPlatformAdmin()) return true;
+  const role = getUserRole();
+  return role === "owner" || role === "admin";
+}
+
+/** Can view conversations and chat (any authenticated member). */
+export function canViewConversations(): boolean {
+  return isAuthenticated();
 }

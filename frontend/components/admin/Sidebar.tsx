@@ -9,7 +9,12 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAdminWebSocket } from "@/lib/hooks/useAdminWebSocket";
 import { api } from "@/lib/api";
-import { isSuperAdmin } from "@/lib/auth";
+import {
+  isSuperAdmin,
+  isPlatformAdmin,
+  canManageTeam,
+  canManageKeys,
+} from "@/lib/auth";
 
 import {
   Bot,
@@ -23,6 +28,9 @@ import {
   MessageCircle,
   CreditCard,
   X,
+  Settings,
+  UserCog,
+  Building2,
 } from "lucide-react";
 import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
 
@@ -54,11 +62,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   const baseNav = useNavItems();
 
-  // Build navigation dynamically — super admin gets Users link
+  // Build navigation dynamically — based on role
   const navigation = [
     ...baseNav,
+    // Team management (owner + admin)
+    ...(canManageTeam()
+      ? [{ name: "Команда", href: "/admin/team", icon: <UserCog size={20} /> }]
+      : []),
+    // Settings / LLM keys (owner only)
+    ...(canManageKeys()
+      ? [{ name: "Настройки", href: "/admin/settings", icon: <Settings size={20} /> }]
+      : []),
+    // Platform admin: legacy users page
     ...(isSuperAdmin()
       ? [{ name: t("users"), href: "/admin/users", icon: <Users size={20} /> }]
+      : []),
+    // Platform admin: organizations management
+    ...(isPlatformAdmin()
+      ? [{ name: "Организации", href: "/admin/organizations", icon: <Building2 size={20} /> }]
       : []),
   ];
 

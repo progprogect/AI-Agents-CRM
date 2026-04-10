@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 
-from app.api.auth import require_admin
+from app.api.tenant import TenantContext, get_tenant_context, require_role
 from app.config import get_settings
 from app.dependencies import CommonDependencies
 from app.services.cloudinary_browse import (
@@ -40,9 +40,13 @@ def _ensure_postgres() -> None:
     pass
 
 
-async def _ensure_agent_exists(deps: CommonDependencies, agent_id: str) -> dict | None:
-    """Ensure agent exists. Returns agent dict or None if not found."""
-    agent = await deps.dynamodb.get_agent(agent_id)
+async def _ensure_agent_exists(
+    deps: CommonDependencies,
+    agent_id: str,
+    organization_id: Optional[str] = None,
+) -> dict | None:
+    """Ensure agent exists and belongs to the given org. Returns agent dict or raises 404."""
+    agent = await deps.dynamodb.get_agent(agent_id, organization_id=organization_id)
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -67,11 +71,11 @@ def _ensure_cloudinary_storage() -> None:
 async def list_rag_folders(
     agent_id: str,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """List RAG folders for agent (flat list, build tree on client)."""
     _ensure_postgres()
-    await _ensure_agent_exists(deps, agent_id)
+    await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     folders = get_postgres_rag_folders()
     items = await folders.list_folders(agent_id)
     # Serialize UUIDs
@@ -84,11 +88,11 @@ async def create_rag_folder(
     name: str = Form(...),
     parent_id: Optional[str] = Form(None),
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Create RAG folder."""
     _ensure_postgres()
-    await _ensure_agent_exists(deps, agent_id)
+    await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     pid = UUID(parent_id) if parent_id else None
     folders = get_postgres_rag_folders()
     folder = await folders.create_folder(agent_id, name, pid)
@@ -113,11 +117,11 @@ async def update_rag_folder(
     folder_id: str,
     name: str = Body(..., embed=True),
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Rename RAG folder."""
     _ensure_postgres()
-    await _ensure_agent_exists(deps, agent_id)
+    await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     try:
         fid = UUID(folder_id)
     except ValueError:
@@ -134,11 +138,11 @@ async def delete_rag_folder(
     agent_id: str,
     folder_id: str,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Delete RAG folder (cascade)."""
     _ensure_postgres()
-    await _ensure_agent_exists(deps, agent_id)
+    await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     try:
         fid = UUID(folder_id)
     except ValueError:
@@ -158,11 +162,11 @@ async def list_rag_documents(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """List RAG documents for agent."""
     _ensure_postgres()
-    await _ensure_agent_exists(deps, agent_id)
+    await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     fid = UUID(folder_id) if folder_id else None
     rag = get_postgres_rag_client()
     items = await rag.list_documents(agent_id, fid, limit, offset)
@@ -189,11 +193,11 @@ async def upload_rag_document(
     folder_id: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Upload RAG document (file → Cloudinary, process, index)."""
     _ensure_postgres()
-    agent = await _ensure_agent_exists(deps, agent_id)
+    agent = await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     agent_config_dict = agent.get("config", {}) if agent else {}
 
     content = await file.read()
@@ -275,11 +279,11 @@ async def list_cloudinary_rag_resources(
     max_results: int = Query(100, ge=1, le=100),
     next_cursor: Optional[str] = Query(None),
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Search Cloudinary assets by public_id prefix (Admin Search API)."""
     _ensure_postgres()
-    await _ensure_agent_exists(deps, agent_id)
+    await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     _ensure_cloudinary_storage()
 
     settings = get_settings()
@@ -317,11 +321,11 @@ async def import_rag_documents_from_cloudinary(
     agent_id: str,
     body: CloudinaryImportRequest,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Download existing Cloudinary files and index them into RAG (no re-upload)."""
     _ensure_postgres()
-    agent = await _ensure_agent_exists(deps, agent_id)
+    agent = await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     agent_config_dict = agent.get("config", {}) if agent else {}
     _ensure_cloudinary_storage()
 
@@ -452,11 +456,11 @@ async def update_rag_document(
     title: Optional[str] = Body(None, embed=True),
     folder_id: Optional[str] = Body(None, embed=True),
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Update RAG document (rename, move)."""
     _ensure_postgres()
-    await _ensure_agent_exists(deps, agent_id)
+    await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     fid = UUID(folder_id) if folder_id else None
     rag = get_postgres_rag_client()
     ok = await rag.update_document(agent_id, document_id, title=title, folder_id=fid)
@@ -470,11 +474,11 @@ async def delete_rag_document(
     agent_id: str,
     document_id: str,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Delete RAG document (and Cloudinary file if applicable)."""
     _ensure_postgres()
-    await _ensure_agent_exists(deps, agent_id)
+    await _ensure_agent_exists(deps, agent_id, organization_id=(None if ctx.is_platform_admin else ctx.org_id))
     rag = get_postgres_rag_client()
     doc = await rag.get_document(agent_id, document_id)
     if not doc:

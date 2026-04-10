@@ -219,18 +219,52 @@ class LLMFactory:
 
         return self._clients[cache_key]
 
-    async def get_chat_model(self, agent_config: AgentConfig) -> BaseChatModel:
-        """Get chat model (OpenAI or Google) for agent config."""
-        openai_key = self.settings.openai_api_key
-        if not openai_key:
+    async def _resolve_openai_key(self, org_id: Optional[str] = None) -> str:
+        """Resolve OpenAI API key: org key → platform env fallback."""
+        # 1. Try org-specific key
+        if org_id:
             try:
-                openai_key = await self.secrets_manager.get_openai_api_key()
+                from app.storage.postgres_secrets import get_postgres_secrets_manager
+                pg_secrets = get_postgres_secrets_manager()
+                org_key = await pg_secrets.get_org_llm_key(org_id, "openai")
+                if org_key:
+                    return self._clean_api_key(org_key)
+            except Exception as e:
+                logger.warning(f"Could not fetch org LLM key for {org_id}: {e}")
+        # 2. Platform env fallback
+        key = self.settings.openai_api_key
+        if not key:
+            try:
+                key = await self.secrets_manager.get_openai_api_key()
             except Exception as e:
                 logger.error(f"Failed to get OpenAI API key: {e}")
                 raise RuntimeError("OpenAI API key not found") from e
-        openai_key = self._clean_api_key(openai_key)
+        return self._clean_api_key(key)
 
-        google_key = _get_google_api_key_sync(self.settings)
+    async def _resolve_google_key(self, org_id: Optional[str] = None) -> Optional[str]:
+        """Resolve Google API key: org key → platform env fallback."""
+        if org_id:
+            try:
+                from app.storage.postgres_secrets import get_postgres_secrets_manager
+                pg_secrets = get_postgres_secrets_manager()
+                org_key = await pg_secrets.get_org_llm_key(org_id, "google")
+                if org_key:
+                    return org_key
+            except Exception as e:
+                logger.warning(f"Could not fetch org Google key for {org_id}: {e}")
+        return _get_google_api_key_sync(self.settings)
+
+    async def get_chat_model(
+        self,
+        agent_config: AgentConfig,
+        org_id: Optional[str] = None,
+    ) -> BaseChatModel:
+        """Get chat model (OpenAI or Google) for agent config.
+
+        Resolves API keys per-org first, then falls back to platform env.
+        """
+        openai_key = await self._resolve_openai_key(org_id)
+        google_key = await self._resolve_google_key(org_id)
 
         return create_chat_model(
             agent_config=agent_config,
@@ -263,9 +297,19 @@ class LLMFactory:
         self._embeddings_cache[cache_key] = embeddings
         return embeddings
 
-    def clear_cache(self, agent_id: Optional[str] = None) -> None:
-        """Clear cached clients and embeddings."""
-        if agent_id:
+    def clear_cache(self, agent_id: Optional[str] = None, org_id: Optional[str] = None) -> None:
+        """Clear cached clients and embeddings.
+
+        If org_id is given, clears only caches associated with that org.
+        """
+        if org_id:
+            keys_to_remove = [k for k in self._clients if str(k).startswith(f"org:{org_id}:")]
+            for k in keys_to_remove:
+                self._clients.pop(k, None)
+            emb_keys = [k for k in self._embeddings_cache if k[0] == org_id]
+            for k in emb_keys:
+                self._embeddings_cache.pop(k, None)
+        elif agent_id:
             self._clients.pop(agent_id, None)
         else:
             self._clients.clear()

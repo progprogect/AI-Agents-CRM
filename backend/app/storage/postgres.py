@@ -283,6 +283,7 @@ class PostgreSQLClient:
         sort_order: str = "desc",
         created_from: Optional[datetime] = None,
         created_to: Optional[datetime] = None,
+        organization_id: Optional[str] = None,
     ) -> list[Conversation]:
         where = []
         params = []
@@ -291,6 +292,14 @@ class PostgreSQLClient:
             where.append(f"agent_id = ${i}")
             params.append(agent_id)
             i += 1
+        else:
+            # Filter by org: only conversations for agents in this org
+            if organization_id:
+                where.append(
+                    f"agent_id IN (SELECT agent_id FROM agents WHERE organization_id = ${i})"
+                )
+                params.append(organization_id)
+                i += 1
         if status:
             where.append(f"status = ${i}")
             params.append(status.value)
@@ -428,22 +437,30 @@ class PostgreSQLClient:
         return items
 
     # Agent operations
-    async def create_agent(self, agent_id: str, config: dict[str, Any]) -> dict[str, Any]:
+    async def create_agent(
+        self,
+        agent_id: str,
+        config: dict[str, Any],
+        organization_id: Optional[str] = None,
+    ) -> dict[str, Any]:
         config_json = json.dumps(config)
         now = utc_now()
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO agents (agent_id, config, is_active, created_at, updated_at)
-                VALUES ($1, $2::jsonb, TRUE, $3, $4)
+                INSERT INTO agents (agent_id, config, is_active, created_at, updated_at, organization_id)
+                VALUES ($1, $2::jsonb, TRUE, $3, $4, $5)
                 ON CONFLICT (agent_id) DO UPDATE SET
-                    config = EXCLUDED.config, updated_at = EXCLUDED.updated_at
+                    config = EXCLUDED.config,
+                    updated_at = EXCLUDED.updated_at,
+                    organization_id = COALESCE(EXCLUDED.organization_id, agents.organization_id)
                 """,
                 agent_id,
                 config_json,
                 now,
                 now,
+                organization_id,
             )
         return {
             "agent_id": agent_id,
@@ -453,10 +470,21 @@ class PostgreSQLClient:
             "is_active": True,
         }
 
-    async def get_agent(self, agent_id: str) -> Optional[dict[str, Any]]:
+    async def get_agent(
+        self,
+        agent_id: str,
+        organization_id: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM agents WHERE agent_id = $1", agent_id)
+            if organization_id:
+                row = await conn.fetchrow(
+                    "SELECT * FROM agents WHERE agent_id = $1 AND organization_id = $2",
+                    agent_id,
+                    organization_id,
+                )
+            else:
+                row = await conn.fetchrow("SELECT * FROM agents WHERE agent_id = $1", agent_id)
         if not row:
             return None
         d = dict(row)
@@ -469,22 +497,48 @@ class PostgreSQLClient:
         return d
 
     async def update_agent_status(
-        self, agent_id: str, is_active: bool
+        self,
+        agent_id: str,
+        is_active: bool,
+        organization_id: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE agents SET is_active = $1, updated_at = $2 WHERE agent_id = $3",
-                is_active,
-                utc_now(),
-                agent_id,
-            )
-        return await self.get_agent(agent_id)
+            if organization_id:
+                await conn.execute(
+                    "UPDATE agents SET is_active = $1, updated_at = $2 WHERE agent_id = $3 AND organization_id = $4",
+                    is_active,
+                    utc_now(),
+                    agent_id,
+                    organization_id,
+                )
+            else:
+                await conn.execute(
+                    "UPDATE agents SET is_active = $1, updated_at = $2 WHERE agent_id = $3",
+                    is_active,
+                    utc_now(),
+                    agent_id,
+                )
+        return await self.get_agent(agent_id, organization_id=organization_id)
 
-    async def list_agents(self, active_only: bool = True) -> list[dict[str, Any]]:
+    async def list_agents(
+        self,
+        active_only: bool = True,
+        organization_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            if active_only:
+            if organization_id and active_only:
+                rows = await conn.fetch(
+                    "SELECT * FROM agents WHERE is_active = TRUE AND organization_id = $1",
+                    organization_id,
+                )
+            elif organization_id:
+                rows = await conn.fetch(
+                    "SELECT * FROM agents WHERE organization_id = $1",
+                    organization_id,
+                )
+            elif active_only:
                 rows = await conn.fetch("SELECT * FROM agents WHERE is_active = TRUE")
             else:
                 rows = await conn.fetch("SELECT * FROM agents")
@@ -625,7 +679,9 @@ class PostgreSQLClient:
 
     # Notification config operations
     async def create_notification_config(
-        self, config: "NotificationConfig"
+        self,
+        config: "NotificationConfig",
+        organization_id: Optional[str] = None,
     ) -> "NotificationConfig":
         from app.models.notification_config import NotificationConfig
 
@@ -636,8 +692,8 @@ class PostgreSQLClient:
                 """
                 INSERT INTO notification_configs (
                     config_id, notification_type, bot_token_secret_name, encrypted_bot_token,
-                    chat_id, is_active, description, created_at, updated_at, created_by
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    chat_id, is_active, description, created_at, updated_at, created_by, organization_id
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 """,
                 config.config_id,
                 nt,
@@ -649,6 +705,7 @@ class PostgreSQLClient:
                 config.created_at,
                 config.updated_at,
                 config.created_by,
+                organization_id,
             )
         return config
 
@@ -668,13 +725,25 @@ class PostgreSQLClient:
         return NotificationConfig(**_row_to_notification_config(row))
 
     async def list_notification_configs(
-        self, active_only: bool = False
+        self,
+        active_only: bool = False,
+        organization_id: Optional[str] = None,
     ) -> list["NotificationConfig"]:
         from app.models.notification_config import NotificationConfig
 
         pool = await get_pool()
         async with pool.acquire() as conn:
-            if active_only:
+            if organization_id and active_only:
+                rows = await conn.fetch(
+                    "SELECT * FROM notification_configs WHERE is_active = TRUE AND organization_id = $1",
+                    organization_id,
+                )
+            elif organization_id:
+                rows = await conn.fetch(
+                    "SELECT * FROM notification_configs WHERE organization_id = $1",
+                    organization_id,
+                )
+            elif active_only:
                 rows = await conn.fetch("SELECT * FROM notification_configs WHERE is_active = TRUE")
             else:
                 rows = await conn.fetch("SELECT * FROM notification_configs")

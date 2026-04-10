@@ -10,6 +10,7 @@ from pydantic import BaseModel, EmailStr
 
 from app.config import get_settings
 from app.api.auth import get_current_admin, require_super_admin
+from app.api.tenant import DEFAULT_ORG_ID
 from app.services.email_service import send_otp_email
 from app.services.password_service import hash_password, verify_password
 from app.services.otp_service import (
@@ -49,6 +50,10 @@ class TokenResponse(BaseModel):
 class MeResponse(BaseModel):
     email: str
     is_super_admin: bool
+    # Multitenancy fields
+    org_id: Optional[str] = None
+    role: Optional[str] = None
+    is_platform_admin: bool = False
 
 
 class AdminUserResponse(BaseModel):
@@ -65,17 +70,51 @@ class InviteUserBody(BaseModel):
 
 # --- Helpers ---
 
-def _create_jwt(email: str) -> str:
-    """Create a signed JWT for the given email, including is_super_admin flag."""
+async def _get_user_org_context(email: str) -> tuple[Optional[str], Optional[str]]:
+    """Lookup user's organization_id and role from organization_members table.
+
+    Returns (org_id, role). Returns (DEFAULT_ORG_ID, 'owner') as fallback
+    so that super-admins / legacy users still work without org membership.
+    """
+    try:
+        from app.storage.postgres import get_pool
+        pool = await get_pool()
+        row = await pool.fetchrow(
+            """
+            SELECT om.organization_id, om.role
+            FROM organization_members om
+            JOIN organizations o ON o.id = om.organization_id
+            WHERE om.email = $1 AND om.is_active = TRUE AND o.is_active = TRUE
+            ORDER BY om.created_at ASC
+            LIMIT 1
+            """,
+            email,
+        )
+        if row:
+            return str(row["organization_id"]), row["role"]
+    except Exception as e:
+        logger.warning(f"Could not look up org for {email}: {e}")
+    # Fallback: assign to default org as owner (covers legacy/super-admin cases)
+    return DEFAULT_ORG_ID, "owner"
+
+
+def _create_jwt(email: str, org_id: Optional[str] = None, role: Optional[str] = None) -> str:
+    """Create a signed JWT for the given email including multitenancy claims."""
     settings = get_settings()
     if not settings.jwt_secret_key:
         raise RuntimeError("JWT_SECRET_KEY is not configured")
 
     now = datetime.now(timezone.utc)
     super_admins = get_super_admin_emails()
+    is_platform_admin = email.lower() in super_admins
     payload = {
         "sub": email,
-        "is_super_admin": email.lower() in super_admins,
+        # Legacy field kept for backward compat
+        "is_super_admin": is_platform_admin,
+        # Multitenancy fields
+        "org_id": org_id,
+        "role": role,
+        "is_platform_admin": is_platform_admin,
         "iat": now,
         "exp": now + timedelta(hours=settings.jwt_expires_hours),
     }
@@ -119,8 +158,9 @@ async def verify_otp_endpoint(body: VerifyOTPBody) -> TokenResponse:
             detail="Invalid or expired code.",
         )
 
+    org_id, role = await _get_user_org_context(email)
     try:
-        token = _create_jwt(email)
+        token = _create_jwt(email, org_id=org_id, role=role)
     except RuntimeError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -169,8 +209,9 @@ async def login_with_password(body: LoginPasswordBody) -> TokenResponse:
             detail="Invalid email or password.",
         )
 
+    org_id, role = await _get_user_org_context(email)
     try:
-        token = _create_jwt(email)
+        token = _create_jwt(email, org_id=org_id, role=role)
     except RuntimeError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -184,11 +225,16 @@ async def login_with_password(body: LoginPasswordBody) -> TokenResponse:
 
 @router.get("/me", response_model=MeResponse)
 async def get_me(current_user: str = Depends(get_current_admin)) -> MeResponse:
-    """Return current user info decoded from JWT."""
+    """Return current user info decoded from JWT, including multitenancy context."""
     super_admins = get_super_admin_emails()
+    is_platform_admin = current_user.lower() in super_admins if super_admins else True
+    org_id, role = await _get_user_org_context(current_user)
     return MeResponse(
         email=current_user,
-        is_super_admin=current_user.lower() in super_admins if super_admins else True,
+        is_super_admin=is_platform_admin,
+        org_id=org_id,
+        role=role,
+        is_platform_admin=is_platform_admin,
     )
 
 

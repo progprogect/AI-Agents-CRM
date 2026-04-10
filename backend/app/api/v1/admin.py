@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from app.api.auth import require_admin
+from app.api.tenant import TenantContext, get_tenant_context, require_role
 from app.api.exceptions import ConversationNotFoundError
 from app.api.websocket import connection_manager
 from app.config import get_settings
@@ -73,9 +73,9 @@ async def list_conversations(
         description="Filter: conversation created_at <= this (ISO date/datetime, UTC; date-only = end of day UTC)",
     ),
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
-    """List conversations (admin view)."""
+    """List conversations (admin view), scoped to current organization."""
     if sort_by not in ("created_at", "updated_at"):
         raise HTTPException(
             status_code=400,
@@ -117,6 +117,7 @@ async def list_conversations(
                 detail=f"Invalid marketing_status: {marketing_status}. Valid values: {', '.join(valid_marketing_statuses)}",
             )
 
+    org_id = None if ctx.is_platform_admin else ctx.org_id
     conversations = await deps.dynamodb.list_conversations(
         agent_id=agent_id,
         status=status_enum,
@@ -127,6 +128,7 @@ async def list_conversations(
         sort_order=sort_order,
         created_from=dt_from,
         created_to=dt_to,
+        organization_id=org_id,
     )
     return conversations
 
@@ -135,7 +137,7 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: str,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Get conversation by ID (admin view)."""
 
@@ -164,7 +166,7 @@ async def handoff_conversation(
     conversation_id: str,
     request: HandoffRequest,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Handoff conversation to human admin."""
 
@@ -218,7 +220,7 @@ async def return_to_ai(
     conversation_id: str,
     request: ReturnToAIRequest,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Return conversation to AI."""
 
@@ -270,7 +272,7 @@ async def reset_agent_context(
     conversation_id: str,
     request: ResetAgentContextRequest,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Mark now as agent context reset: messages at or before this time are not sent to the agent."""
     conversation = await deps.dynamodb.get_conversation(conversation_id)
@@ -317,7 +319,7 @@ async def get_audit_logs(
     sort: str = Query(default="desc", description="Sort order: 'asc' or 'desc'"),
     limit: int = Query(default=100, ge=1, le=1000, description="Maximum number of logs"),
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Get audit logs with filtering and sorting."""
     try:
@@ -406,7 +408,7 @@ async def send_admin_message(
     conversation_id: str,
     request: SendAdminMessageRequest,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Send a message as admin in a conversation."""
 
@@ -587,7 +589,7 @@ class UpdateMarketingStatusResponse(BaseModel):
 async def refresh_instagram_profile(
     conversation_id: str,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Refresh Instagram user profile information."""
 
@@ -665,7 +667,7 @@ async def update_marketing_status(
     conversation_id: str,
     request: UpdateMarketingStatusRequest,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Update marketing status of a conversation."""
 
@@ -768,7 +770,7 @@ async def get_stats(
         description="Include comparison with previous period",
     ),
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Get statistics with optional period filtering and comparison."""
     # Validate period parameter
@@ -971,7 +973,7 @@ async def get_stats(
 # ── Channel configuration ─────────────────────────────────────────────────────
 
 @router.get("/channel-config")
-async def get_channel_config(_admin: str = require_admin()):
+async def get_channel_config(ctx: TenantContext = Depends(get_tenant_context)):
     """Return webhook URLs and verify tokens for all supported channels (admin only)."""
     import uuid as _uuid
 
@@ -1028,7 +1030,7 @@ class ChannelSettingsRequest(BaseModel):
 @router.put("/instagram-settings")
 async def update_instagram_settings(
     body: ChannelSettingsRequest,
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Save Instagram app-level settings (verify token + app secret) to the DB."""
     from app.storage.postgres_secrets import get_postgres_secrets_manager
@@ -1045,7 +1047,7 @@ async def update_instagram_settings(
 @router.put("/whatsapp-settings")
 async def update_whatsapp_settings(
     body: ChannelSettingsRequest,
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Save WhatsApp app-level settings (verify token + app secret) to the DB."""
     from app.storage.postgres_secrets import get_postgres_secrets_manager

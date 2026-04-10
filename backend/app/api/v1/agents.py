@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
 
 from app.api.auth import require_admin
+from app.api.tenant import TenantContext, get_tenant_context, require_role
 from app.api.exceptions import AgentNotFoundError, InvalidAgentConfigError
 from app.api.schemas import AgentIDValidator
 from app.dependencies import CommonDependencies
@@ -57,9 +58,11 @@ class AgentResponse(BaseModel):
 async def create_agent(
     request: CreateAgentRequest,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Create a new agent."""
+    org_id = ctx.org_id if not ctx.is_platform_admin else ctx.org_id
+
     # Check if agent already exists
     existing_agent = await deps.dynamodb.get_agent(request.agent_id)
     if existing_agent:
@@ -71,14 +74,11 @@ async def create_agent(
     # Validate agent configuration
     try:
         agent_config = AgentConfig.from_dict(request.config)
-        # Ensure agent_id matches
         if agent_config.agent_id != request.agent_id:
             raise InvalidAgentConfigError(
                 "Agent ID in config must match agent_id in request",
                 validation_errors={"agent_id_mismatch": True},
             )
-
-        # RAG: allow empty sources - user can add documents via RAG page after creation
     except Exception as e:
         if isinstance(e, InvalidAgentConfigError):
             raise
@@ -87,8 +87,9 @@ async def create_agent(
             validation_errors={"parse_error": str(e)},
         )
 
-    # Create agent
-    agent_data = await deps.dynamodb.create_agent(request.agent_id, request.config)
+    agent_data = await deps.dynamodb.create_agent(
+        request.agent_id, request.config, organization_id=org_id
+    )
 
     # Index RAG documents if enabled
     if agent_config.rag.enabled and agent_config.rag.sources:
@@ -97,8 +98,6 @@ async def create_agent(
             index_name = agent_config.rag.vector_store.get(
                 "index_name", f"agent_{request.agent_id}_documents"
             )
-
-            # Prepare documents for indexing
             documents = []
             for source in agent_config.rag.sources:
                 if source.get("content"):
@@ -115,31 +114,15 @@ async def create_agent(
                     index_name=index_name,
                     agent_config=agent_config,
                 )
-
                 logger.info(
                     f"Indexed {success_count} RAG documents for agent {request.agent_id}, "
                     f"{failed_count} failed",
-                    extra={
-                        "agent_id": request.agent_id,
-                        "success_count": success_count,
-                        "failed_count": failed_count,
-                    },
                 )
-
-                if failed_count > 0:
-                    logger.warning(
-                        f"Some RAG documents failed to index for agent {request.agent_id}",
-                        extra={"agent_id": request.agent_id, "failed_count": failed_count},
-                    )
         except Exception as e:
             logger.error(
                 f"Failed to index RAG documents for agent {request.agent_id}: {str(e)}",
                 exc_info=True,
-                extra={"agent_id": request.agent_id},
             )
-            # Don't fail agent creation if RAG indexing fails
-            # Agent will be created but RAG won't work until documents are indexed manually
-            # In production, you might want to mark agent as "needs_indexing" or retry
 
     return AgentResponse(**agent_data)
 
@@ -148,9 +131,11 @@ async def create_agent(
 async def get_agent(
     agent_id: str,
     deps: CommonDependencies = Depends(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
-    """Get agent by ID."""
-    agent = await deps.dynamodb.get_agent(agent_id)
+    """Get agent by ID. Enforces org isolation."""
+    org_id = None if ctx.is_platform_admin else ctx.org_id
+    agent = await deps.dynamodb.get_agent(agent_id, organization_id=org_id)
     if not agent:
         raise AgentNotFoundError(agent_id)
     return AgentResponse(**agent)
@@ -160,9 +145,11 @@ async def get_agent(
 async def list_agents(
     active_only: bool = Query(default=True, description="Filter only active agents"),
     deps: CommonDependencies = Depends(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
-    """List all agents."""
-    agents = await deps.dynamodb.list_agents(active_only=active_only)
+    """List agents for the current organization."""
+    org_id = None if ctx.is_platform_admin else ctx.org_id
+    agents = await deps.dynamodb.list_agents(active_only=active_only, organization_id=org_id)
     return [AgentResponse(**agent) for agent in agents]
 
 
@@ -171,18 +158,16 @@ async def update_agent(
     agent_id: str,
     config: dict[str, Any],
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Update agent configuration."""
-    # Get existing agent
-    existing = await deps.dynamodb.get_agent(agent_id)
+    org_id = None if ctx.is_platform_admin else ctx.org_id
+    existing = await deps.dynamodb.get_agent(agent_id, organization_id=org_id)
     if not existing:
         raise AgentNotFoundError(agent_id)
 
-    # Merge configs (escalation dict merged deeply — see _merge_agent_config)
     updated_config = _merge_agent_config(existing.get("config", {}) or {}, config)
 
-    # Validate updated configuration
     try:
         agent_config = AgentConfig.from_dict(updated_config)
         if agent_config.agent_id != agent_id:
@@ -198,7 +183,7 @@ async def update_agent(
             validation_errors={"parse_error": str(e)},
         )
 
-    agent_data = await deps.dynamodb.create_agent(agent_id, updated_config)
+    agent_data = await deps.dynamodb.create_agent(agent_id, updated_config, organization_id=org_id)
     return AgentResponse(**agent_data)
 
 
@@ -206,17 +191,18 @@ async def update_agent(
 async def delete_agent(
     agent_id: str,
     deps: CommonDependencies = Depends(),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Delete agent (soft delete by setting is_active=False)."""
-    existing = await deps.dynamodb.get_agent(agent_id)
+    org_id = None if ctx.is_platform_admin else ctx.org_id
+    existing = await deps.dynamodb.get_agent(agent_id, organization_id=org_id)
     if not existing:
         raise AgentNotFoundError(agent_id)
 
-    # Soft delete - update is_active status atomically
-    updated = await deps.dynamodb.update_agent_status(agent_id, is_active=False)
+    updated = await deps.dynamodb.update_agent_status(
+        agent_id, is_active=False, organization_id=org_id
+    )
     if not updated:
         raise AgentNotFoundError(agent_id)
 
     return None
-

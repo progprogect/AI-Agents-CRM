@@ -28,6 +28,9 @@ from app.api.v1 import chat, agents, admin, channel_bindings, instagram, telegra
 from app.api.v1 import instagram_test, whatsapp_test, debug, webhook_test, webhook_events, notifications
 from app.api.v1 import auth_router, crm, whatsapp, twilio_whatsapp, media
 from app.api.v1 import payments
+from app.api.v1 import platform as platform_router
+from app.api.v1 import team as team_router
+from app.api.v1 import org_settings as org_settings_router
 from app.api import websocket, admin_websocket
 
 # Setup logging
@@ -277,6 +280,9 @@ def create_app() -> FastAPI:
     app.include_router(twilio_whatsapp.router, prefix="/api/v1", tags=["twilio-whatsapp"])
     app.include_router(media.router, prefix="/api/v1", tags=["media"])
     app.include_router(notifications.router, prefix="/api/v1/admin", tags=["notifications"])
+    app.include_router(platform_router.router, prefix="/api/v1", tags=["platform"])
+    app.include_router(team_router.router, prefix="/api/v1", tags=["team"])
+    app.include_router(org_settings_router.router, prefix="/api/v1", tags=["org-settings"])
     app.include_router(payments.router, prefix="/api/v1", tags=["payments"])
     app.include_router(debug.router, prefix="/api/v1", tags=["debug"])
     app.include_router(instagram_test.router, prefix="/api/v1", tags=["instagram-test"])

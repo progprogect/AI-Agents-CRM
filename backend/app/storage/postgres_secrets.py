@@ -285,6 +285,70 @@ class PostgresSecretsManager:
         self.clear_cache(secret_name)
 
 
+    # --- Org LLM key methods (multitenancy) ---
+
+    async def save_org_llm_key(self, org_id: str, provider: str, plain_key: str) -> None:
+        """Encrypt and save an LLM API key for an organization."""
+        encrypted = self._get_fernet().encrypt(plain_key.encode()).decode()
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO organization_llm_keys (organization_id, provider, encrypted_key, updated_at)
+                VALUES ($1::uuid, $2, $3, NOW())
+                ON CONFLICT (organization_id, provider)
+                DO UPDATE SET encrypted_key = EXCLUDED.encrypted_key, updated_at = NOW()
+                """,
+                org_id,
+                provider,
+                encrypted,
+            )
+        # Invalidate in-memory cache for this org+provider
+        self.clear_cache(f"org_llm:{org_id}:{provider}")
+
+    async def get_org_llm_key(self, org_id: str, provider: str) -> Optional[str]:
+        """Decrypt and return the LLM API key for an organization, or None if not set."""
+        cache_key = f"org_llm:{org_id}:{provider}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT encrypted_key FROM organization_llm_keys WHERE organization_id = $1::uuid AND provider = $2",
+                org_id,
+                provider,
+            )
+        if not row:
+            return None
+        try:
+            plain = self._get_fernet().decrypt(row["encrypted_key"].encode()).decode()
+            self._cache[cache_key] = plain
+            return plain
+        except Exception:
+            return None
+
+    async def delete_org_llm_key(self, org_id: str, provider: str) -> None:
+        """Remove an LLM API key for an organization."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM organization_llm_keys WHERE organization_id = $1::uuid AND provider = $2",
+                org_id,
+                provider,
+            )
+        self.clear_cache(f"org_llm:{org_id}:{provider}")
+
+    async def list_org_llm_key_providers(self, org_id: str) -> list[str]:
+        """Return list of provider names that have a stored key for this org."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT provider FROM organization_llm_keys WHERE organization_id = $1::uuid",
+                org_id,
+            )
+        return [r["provider"] for r in rows]
+
+
 @lru_cache()
 def get_postgres_secrets_manager() -> PostgresSecretsManager:
     settings = get_settings()

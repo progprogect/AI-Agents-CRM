@@ -6,7 +6,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
 
-from app.api.auth import require_admin
+from app.api.tenant import TenantContext, get_tenant_context, require_role
 from app.api.exceptions import AgentNotFoundError
 from app.dependencies import CommonDependencies
 from app.utils.datetime_utils import to_utc_iso_string
@@ -114,11 +114,12 @@ async def create_channel_binding(
     request: CreateChannelBindingRequest,
     deps: CommonDependencies = Depends(),
     binding_service: ChannelBindingService = Depends(get_channel_binding_service),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Create a new channel binding for an agent."""
-    # Verify agent exists
-    agent_data = await deps.dynamodb.get_agent(agent_id)
+    org_id = None if ctx.is_platform_admin else ctx.org_id
+    # Verify agent exists and belongs to this org
+    agent_data = await deps.dynamodb.get_agent(agent_id, organization_id=org_id)
     if not agent_data:
         raise AgentNotFoundError(agent_id)
 
@@ -139,7 +140,7 @@ async def create_channel_binding(
             channel_account_id=request.channel_account_id,
             access_token=request.access_token,
             metadata=request.metadata,
-            created_by=_admin,
+            created_by=ctx.user_email,
             channel_username=request.channel_username,
         )
         return ChannelBindingResponse.from_binding(binding)
@@ -165,11 +166,12 @@ async def list_channel_bindings(
     active_only: bool = Query(default=True, description="Filter only active bindings"),
     deps: CommonDependencies = Depends(),
     binding_service: ChannelBindingService = Depends(get_channel_binding_service),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Get all channel bindings for an agent."""
-    # Verify agent exists
-    agent_data = await deps.dynamodb.get_agent(agent_id)
+    org_id = None if ctx.is_platform_admin else ctx.org_id
+    # Verify agent exists and belongs to this org
+    agent_data = await deps.dynamodb.get_agent(agent_id, organization_id=org_id)
     if not agent_data:
         raise AgentNotFoundError(agent_id)
 
@@ -200,7 +202,7 @@ async def list_channel_bindings(
 async def get_channel_binding(
     binding_id: str,
     binding_service: ChannelBindingService = Depends(get_channel_binding_service),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Get channel binding by ID."""
     binding = await binding_service.get_binding(binding_id)
@@ -221,7 +223,7 @@ async def update_channel_binding(
     binding_id: str,
     request: UpdateChannelBindingRequest,
     binding_service: ChannelBindingService = Depends(get_channel_binding_service),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Update channel binding."""
     try:
@@ -251,7 +253,7 @@ async def update_channel_binding(
 async def delete_channel_binding(
     binding_id: str,
     binding_service: ChannelBindingService = Depends(get_channel_binding_service),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Delete channel binding."""
     try:
@@ -275,7 +277,7 @@ async def delete_channel_binding(
 async def verify_channel_binding(
     binding_id: str,
     binding_service: ChannelBindingService = Depends(get_channel_binding_service),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Verify channel binding token."""
     try:
@@ -311,7 +313,7 @@ async def verify_channel_binding(
 async def get_binding_commands(
     binding_id: str,
     binding_service: ChannelBindingService = Depends(get_channel_binding_service),
-    _admin: str = require_admin(),
+    ctx: TenantContext = Depends(get_tenant_context),
 ):
     """Return the command catalog for a Telegram binding with enabled/disabled flags.
 
@@ -340,7 +342,7 @@ async def update_binding_commands(
     binding_id: str,
     request: UpdateCommandsRequest,
     binding_service: ChannelBindingService = Depends(get_channel_binding_service),
-    _admin: str = require_admin(),
+    ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Enable or disable bot commands for a Telegram binding.
 
