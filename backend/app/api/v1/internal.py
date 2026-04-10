@@ -189,11 +189,17 @@ async def _test_timer_delivery() -> dict:
             "elapsed_ms": round((time.monotonic() - start) * 1000),
         }
     finally:
-        # Clean up: remove test conversation and messages
+        # Clean up smoke test data via direct SQL (no delete_conversation method exists)
         try:
-            from app.dependencies import get_dynamodb
-            db = get_dynamodb()
-            await db.delete_conversation(smoke_conv_id)
+            from app.storage.postgres import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM messages WHERE conversation_id = $1", smoke_conv_id
+                )
+                await conn.execute(
+                    "DELETE FROM conversations WHERE conversation_id = $1", smoke_conv_id
+                )
         except Exception:
             pass  # cleanup failure must not affect test result
         # Clean Redis timer keys
