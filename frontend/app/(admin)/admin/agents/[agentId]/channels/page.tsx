@@ -2,10 +2,11 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
+import { TelegramBotCommandsPanel } from "@/components/admin/TelegramBotCommandsPanel";
 import type { ChannelBinding, ChannelConfig, ChannelType, CreateChannelBindingRequest } from "@/lib/types/channel";
 import {
   CheckCircle2,
@@ -582,50 +583,55 @@ function BindingRow({
   onToggle,
   onDelete,
   onVerify,
+  bottomSlot,
 }: {
   binding: ChannelBinding;
   onToggle: () => void;
   onDelete: () => void;
   onVerify: () => void;
+  bottomSlot?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 p-3 bg-white border border-[#BEBAB7] rounded-md text-sm">
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-[#251D1C] truncate flex items-center gap-2">
-          {binding.channel_username || binding.channel_account_id}
-          {binding.channel_type === "whatsapp" && binding.metadata?.provider === "twilio" && (
-            <span className="text-[10px] font-medium bg-[#EEEAE7] text-[#443C3C] px-1.5 py-0.5 rounded">
-              Twilio
-            </span>
-          )}
+    <div className="rounded-md border border-[#BEBAB7] bg-white text-sm overflow-hidden">
+      <div className="flex items-center gap-3 p-3">
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-[#251D1C] truncate flex items-center gap-2">
+            {binding.channel_username || binding.channel_account_id}
+            {binding.channel_type === "whatsapp" && binding.metadata?.provider === "twilio" && (
+              <span className="text-[10px] font-medium bg-[#EEEAE7] text-[#443C3C] px-1.5 py-0.5 rounded">
+                Twilio
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-[#9A9590]">ID: {binding.channel_account_id}</div>
         </div>
-        <div className="text-xs text-[#9A9590]">ID: {binding.channel_account_id}</div>
-      </div>
-      <StatusBadge binding={binding} />
-      <div className="flex items-center gap-1.5">
-        {!binding.is_verified && (
+        <StatusBadge binding={binding} />
+        <div className="flex items-center gap-1.5">
+          {!binding.is_verified && (
+            <button
+              onClick={onVerify}
+              className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded border border-blue-200 hover:border-blue-400"
+            >
+              Verify
+            </button>
+          )}
           <button
-            onClick={onVerify}
-            className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 rounded border border-blue-200 hover:border-blue-400"
+            onClick={onToggle}
+            className="text-[#9A9590] hover:text-[#443C3C]"
+            title={binding.is_active ? "Deactivate" : "Activate"}
           >
-            Verify
+            {binding.is_active ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
           </button>
-        )}
-        <button
-          onClick={onToggle}
-          className="text-[#9A9590] hover:text-[#443C3C]"
-          title={binding.is_active ? "Deactivate" : "Activate"}
-        >
-          {binding.is_active ? <ToggleRight size={18} className="text-green-500" /> : <ToggleLeft size={18} />}
-        </button>
-        <button
-          onClick={onDelete}
-          className="text-[#9A9590] hover:text-red-500"
-          title="Remove connection"
-        >
-          <Trash2 size={14} />
-        </button>
+          <button
+            onClick={onDelete}
+            className="text-[#9A9590] hover:text-red-500"
+            title="Remove connection"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
+      {bottomSlot}
     </div>
   );
 }
@@ -659,6 +665,7 @@ function ChannelCard({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(bindings.length === 0);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [telegramCommandsOpenId, setTelegramCommandsOpenId] = useState<string | null>(null);
 
   const activeBinding = bindings.find((b) => b.is_active);
 
@@ -723,15 +730,38 @@ function ChannelCard({
       {/* Active connections */}
       {bindings.length > 0 && (
         <div className="px-5 py-3 space-y-2 border-b border-[#BEBAB7]">
-          {bindings.map((b) => (
-            <BindingRow
-              key={b.binding_id}
-              binding={b}
-              onToggle={() => handleToggle(b)}
-              onDelete={() => handleDelete(b.binding_id)}
-              onVerify={() => handleVerify(b.binding_id)}
-            />
-          ))}
+          {bindings.map((b) => {
+            const isTg = channelType === "telegram";
+            const commandsOpen = telegramCommandsOpenId === b.binding_id;
+            return (
+              <BindingRow
+                key={b.binding_id}
+                binding={b}
+                onToggle={() => handleToggle(b)}
+                onDelete={() => handleDelete(b.binding_id)}
+                onVerify={() => handleVerify(b.binding_id)}
+                bottomSlot={
+                  isTg ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTelegramCommandsOpenId((id) => (id === b.binding_id ? null : b.binding_id))
+                        }
+                        className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-[#443C3C] bg-[#FAFAFA] border-t border-[#BEBAB7] hover:bg-[#EEEAE7]/60 transition-colors ${
+                          !commandsOpen ? "rounded-b-md" : ""
+                        }`}
+                      >
+                        <span>Команды бота</span>
+                        {commandsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                      {commandsOpen && <TelegramBotCommandsPanel binding={b} embedded />}
+                    </>
+                  ) : undefined
+                }
+              />
+            );
+          })}
         </div>
       )}
 
