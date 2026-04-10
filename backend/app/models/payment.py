@@ -350,7 +350,9 @@ async def set_invoice_sent(sub_id: str) -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
-            "UPDATE user_subscriptions SET invoice_sent_at = NOW(), updated_at = NOW() WHERE sub_id = $1",
+            # Reset grace_messages_used so the user gets a fresh reminder cycle
+            # each time a new invoice keyboard is sent (including after throttle re-sends).
+            "UPDATE user_subscriptions SET invoice_sent_at = NOW(), grace_messages_used = 0, updated_at = NOW() WHERE sub_id = $1",
             sub_id,
         )
 
