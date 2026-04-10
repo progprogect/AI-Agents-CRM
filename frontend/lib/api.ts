@@ -326,6 +326,24 @@ export const api = {
     );
   },
 
+  async transcribeVoice(
+    conversationId: string,
+    audioBlob: Blob,
+    filename = "voice.webm"
+  ): Promise<{ transcript: string }> {
+    const formData = new FormData();
+    formData.append("file", audioBlob, filename);
+    const res = await fetch(
+      `/api/v1/chat/conversations/${conversationId}/voice`,
+      { method: "POST", body: formData }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new ApiError(res.status.toString(), err.detail || "Transcription failed");
+    }
+    return res.json();
+  },
+
   async uploadWebChatMedia(
     conversationId: string,
     file: File

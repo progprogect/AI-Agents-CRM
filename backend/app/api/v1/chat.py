@@ -175,6 +175,43 @@ async def close_conversation(
 
 
 @router.post(
+    "/conversations/{conversation_id}/voice",
+    status_code=status.HTTP_200_OK,
+)
+async def transcribe_voice_message(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    deps: CommonDependencies = Depends(),
+):
+    """Transcribe a voice recording captured in the web chat.
+
+    Accepts a raw audio blob (webm, ogg, mp4 …) from MediaRecorder,
+    sends it to the STT service, and returns the transcript text.
+    The client then places the transcript in the message input and sends
+    it as a regular text message — same pipeline as Telegram voice notes.
+    """
+    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    if not conversation:
+        raise ConversationNotFoundError(conversation_id)
+
+    status_value = get_enum_value(conversation.status)
+    if status_value == ConversationStatus.CLOSED.value:
+        raise HTTPException(status_code=400, detail="Conversation is closed")
+
+    audio_bytes = await file.read()
+    filename = file.filename or "voice.webm"
+
+    try:
+        from app.services.stt_service import STTError, transcribe_bytes
+        transcript = await transcribe_bytes(audio_bytes, filename, language="ru")
+    except Exception as exc:
+        logger.warning("Voice transcription failed for conversation %s: %s", conversation_id, exc)
+        raise HTTPException(status_code=500, detail="Transcription failed. Please try again.")
+
+    return {"transcript": transcript}
+
+
+@router.post(
     "/conversations/{conversation_id}/media/upload",
     response_model=MediaUploadResponse,
     status_code=status.HTTP_201_CREATED,

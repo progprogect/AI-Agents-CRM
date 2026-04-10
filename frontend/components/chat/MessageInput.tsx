@@ -1,4 +1,4 @@
-/** Message input component with send icon and improved styling. */
+/** Message input component with send icon, image attachment, and voice recording. */
 
 import React, {
   useState,
@@ -8,52 +8,8 @@ import React, {
   useCallback,
 } from "react";
 import { Button } from "@/components/shared/Button";
+import { api, ApiError } from "@/lib/api";
 import type { ChatSendPayload } from "@/lib/types/message";
-
-// Minimal Web Speech API type shim — not in standard TS DOM lib
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-interface SpeechRecognitionResult {
-  [index: number]: SpeechRecognitionAlternative;
-  isFinal: boolean;
-}
-interface SpeechRecognitionResultList {
-  [index: number]: SpeechRecognitionResult;
-}
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
-  resultIndex: number;
-}
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-}
-interface SpeechRecognitionInstance {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onstart: (() => void) | null;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: new () => SpeechRecognitionInstance;
-    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
-  }
-}
-
-/** Returns the browser SpeechRecognition constructor, or null if unsupported. */
-function getSpeechRecognition(): (new () => SpeechRecognitionInstance) | null {
-  if (typeof window === "undefined") return null;
-  return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
-}
 
 interface MessageInputProps {
   onSend: (payload: ChatSendPayload) => void;
@@ -62,7 +18,13 @@ interface MessageInputProps {
   maxLength?: number;
   /** When the parent holds an attachment (e.g. admin composer), allow send with empty text. */
   allowEmpty?: boolean;
+  /** Conversation ID — required for backend voice transcription. */
+  conversationId?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Icons
+// ---------------------------------------------------------------------------
 
 const AttachmentIcon = () => (
   <svg
@@ -110,24 +72,57 @@ const MicIcon = ({ active }: { active: boolean }) => (
     aria-hidden
   >
     {active ? (
-      /* Stop / recording indicator */
       <path
         strokeLinecap="round"
         strokeLinejoin="round"
         d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z"
       />
     ) : (
-      /* Microphone icon */
-      <>
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
-        />
-      </>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"
+      />
     )}
   </svg>
 );
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Pick the best supported MIME type for MediaRecorder (prefer ogg/opus for Whisper). */
+function getBestMimeType(): string {
+  const candidates = [
+    "audio/ogg;codecs=opus",
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+  ];
+  for (const type of candidates) {
+    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type)) {
+      return type;
+    }
+  }
+  return "";
+}
+
+function mimeToExtension(mime: string): string {
+  if (mime.includes("ogg")) return "ogg";
+  if (mime.includes("mp4")) return "mp4";
+  return "webm";
+}
+
+/** Format elapsed seconds as mm:ss */
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export const MessageInput: React.FC<MessageInputProps> = ({
   onSend,
@@ -135,116 +130,31 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   placeholder = "Type your message...",
   maxLength,
   allowEmpty = false,
+  conversationId,
 }) => {
   const [content, setContent] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Voice recording state
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  // Initialise to false so server-rendered HTML matches the first client
-  // render — avoids Next.js hydration mismatch when window is unavailable SSR.
-  const [speechSupported, setSpeechSupported] = useState(false);
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
-  // Buffer for committed (final) transcript segments collected while recording.
-  const committedRef = useRef<string>("");
+  // true once we confirm MediaRecorder is available (SSR-safe)
+  const [micSupported, setMicSupported] = useState(false);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Check MediaRecorder support after mount (SSR-safe)
   useEffect(() => {
-    setSpeechSupported(getSpeechRecognition() !== null);
+    setMicSupported(typeof MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia);
   }, []);
-
-  const toggleRecording = useCallback(() => {
-    const SpeechRecognitionClass = getSpeechRecognition();
-    if (!SpeechRecognitionClass) return;
-
-    if (isRecording) {
-      // Stop recording; onend will fire and content remains in textarea.
-      recognitionRef.current?.stop();
-      return;
-    }
-
-    setVoiceError(null);
-    // Snapshot the current textarea content so we can append to it.
-    const baseContent = committedRef.current;
-
-    const recognition = new SpeechRecognitionClass();
-    // continuous = true: keep recording until the user explicitly stops.
-    recognition.continuous = true;
-    // interimResults = true: show live partial transcription in the textarea
-    // so the user can see recognition is working in real time.
-    recognition.interimResults = true;
-    recognition.lang = "ru-RU";
-
-    recognition.onstart = () => setIsRecording(true);
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let finalPart = "";
-      let interimPart = "";
-      for (let i = event.resultIndex ?? 0; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          finalPart += result[0].transcript;
-        } else {
-          interimPart += result[0].transcript;
-        }
-      }
-      // Commit final segments immediately.
-      if (finalPart) {
-        committedRef.current = committedRef.current
-          ? `${committedRef.current} ${finalPart}`
-          : finalPart;
-      }
-      // Show committed + current interim so the user sees live feedback.
-      const displayed = interimPart
-        ? `${committedRef.current} ${interimPart}`.trim()
-        : committedRef.current;
-      setContent(baseContent ? `${baseContent} ${displayed}`.trim() : displayed);
-    };
-
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error === "not-allowed") {
-        setVoiceError("Нет доступа к микрофону. Разрешите доступ в настройках браузера.");
-      } else if (event.error !== "aborted") {
-        setVoiceError("Ошибка распознавания речи. Попробуйте ещё раз.");
-      }
-      setIsRecording(false);
-    };
-
-    recognition.onend = () => {
-      setIsRecording(false);
-      // Reset committed buffer for the next recording session.
-      committedRef.current = "";
-    };
-
-    recognitionRef.current = recognition;
-    committedRef.current = "";
-    recognition.start();
-  }, [isRecording]);
-
-  // Cleanup recognition on unmount
-  useEffect(() => {
-    return () => {
-      recognitionRef.current?.abort();
-    };
-  }, []);
-
-  const clearAttachment = useCallback(() => {
-    setPendingFile(null);
-    setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return null;
-    });
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -254,11 +164,36 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     }
   }, [content]);
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopTimer();
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Image attachment
+  // ---------------------------------------------------------------------------
+
+  const clearAttachment = useCallback(() => {
+    setPendingFile(null);
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (!f || !f.type.startsWith("image/")) {
-      return;
-    }
+    if (!f || !f.type.startsWith("image/")) return;
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(f);
@@ -266,17 +201,95 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     setPendingFile(f);
   };
 
+  // ---------------------------------------------------------------------------
+  // Voice recording (MediaRecorder → backend STT)
+  // ---------------------------------------------------------------------------
+
+  function stopTimer() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  const startRecording = useCallback(async () => {
+    if (!conversationId) {
+      setVoiceError("Голосовой ввод недоступен в этом режиме.");
+      return;
+    }
+    setVoiceError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const mimeType = getBestMimeType();
+      const options = mimeType ? { mimeType } : {};
+      const recorder = new MediaRecorder(stream, options);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        stopTimer();
+        setRecordingSeconds(0);
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+
+        const blob = new Blob(audioChunksRef.current, {
+          type: mimeType || "audio/webm",
+        });
+        const ext = mimeToExtension(mimeType);
+        const filename = `voice.${ext}`;
+
+        setIsTranscribing(true);
+        try {
+          const { transcript } = await api.transcribeVoice(conversationId, blob, filename);
+          if (transcript) {
+            setContent((prev) => (prev ? `${prev} ${transcript}` : transcript));
+          } else {
+            setVoiceError("Не удалось распознать речь. Попробуйте ещё раз.");
+          }
+        } catch (err) {
+          const msg = err instanceof ApiError ? err.message : "Ошибка транскрипции.";
+          setVoiceError(msg);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start(250); // collect chunks every 250ms
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      timerRef.current = setInterval(() => setRecordingSeconds((s) => s + 1), 1000);
+    } catch {
+      setVoiceError("Нет доступа к микрофону. Разрешите доступ в настройках браузера.");
+    }
+  }, [conversationId]);
+
+  const stopRecording = useCallback(() => {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+  }, []);
+
+  const handleMicClick = useCallback(() => {
+    if (isRecording) stopRecording();
+    else void startRecording();
+  }, [isRecording, startRecording, stopRecording]);
+
+  // ---------------------------------------------------------------------------
+  // Send
+  // ---------------------------------------------------------------------------
+
   const handleSend = () => {
-    const canSend =
-      !disabled &&
-      (content.trim() || pendingFile || allowEmpty);
+    const canSend = !disabled && (content.trim() || pendingFile || allowEmpty);
     if (canSend) {
       onSend({ content, file: pendingFile });
       setContent("");
       clearAttachment();
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "auto";
-      }
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
     }
   };
 
@@ -289,17 +302,20 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
-    if (maxLength && value.length > maxLength) {
-      return;
-    }
+    if (maxLength && value.length > maxLength) return;
     setContent(value);
   };
 
   const remainingChars = maxLength ? maxLength - content.length : null;
   const isNearLimit = maxLength && remainingChars !== null && remainingChars < 20;
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
   return (
     <div className="border-t border-[#251D1C]/20 p-4 bg-white">
+      {/* Image preview */}
       {previewUrl && (
         <div className="mb-2 flex items-center gap-2 rounded-sm border border-gray-200 bg-gray-50 p-2">
           <img
@@ -307,22 +323,36 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             alt="Attachment preview"
             className="h-14 w-14 rounded object-cover"
           />
-          <span className="text-xs text-gray-600 flex-1 truncate">
-            {pendingFile?.name}
-          </span>
-          <button
-            type="button"
-            onClick={clearAttachment}
-            className="text-sm text-red-600 hover:underline"
-          >
+          <span className="text-xs text-gray-600 flex-1 truncate">{pendingFile?.name}</span>
+          <button type="button" onClick={clearAttachment} className="text-sm text-red-600 hover:underline">
             Remove
           </button>
         </div>
       )}
-      {voiceError && (
-        <p className="mb-1 text-xs text-red-500">{voiceError}</p>
+
+      {/* Recording indicator */}
+      {isRecording && (
+        <div className="mb-2 flex items-center gap-2 rounded-sm bg-red-50 border border-red-200 px-3 py-1.5">
+          <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" aria-hidden />
+          <span className="text-xs font-medium text-red-600">
+            Запись… {formatDuration(recordingSeconds)}
+          </span>
+          <span className="text-xs text-red-500 ml-auto">Нажмите стоп чтобы отправить</span>
+        </div>
       )}
+
+      {/* Transcribing indicator */}
+      {isTranscribing && (
+        <div className="mb-2 flex items-center gap-2 rounded-sm bg-blue-50 border border-blue-200 px-3 py-1.5">
+          <span className="text-xs text-blue-600">Распознаю речь…</span>
+        </div>
+      )}
+
+      {/* Error */}
+      {voiceError && <p className="mb-1 text-xs text-red-500">{voiceError}</p>}
+
       <div className="flex gap-2 items-end">
+        {/* Image attach */}
         <input
           ref={fileInputRef}
           type="file"
@@ -334,57 +364,55 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          disabled={disabled}
+          disabled={disabled || isRecording || isTranscribing}
           className="shrink-0 p-2.5 rounded-sm border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
           aria-label="Attach image"
         >
           <AttachmentIcon />
         </button>
-        {speechSupported && (
+
+        {/* Mic button — shown only when MediaRecorder is available and conversationId given */}
+        {micSupported && conversationId && (
           <button
             type="button"
-            onClick={toggleRecording}
-            disabled={disabled}
+            onClick={handleMicClick}
+            disabled={disabled || isTranscribing}
             className={`shrink-0 p-2.5 rounded-sm border transition-colors disabled:opacity-50 ${
               isRecording
-                ? "border-red-400 bg-red-50 text-red-500 animate-pulse"
+                ? "border-red-400 bg-red-50 text-red-500"
                 : "border-gray-300 text-gray-600 hover:bg-gray-50"
             }`}
-            aria-label={isRecording ? "Stop recording" : "Voice input"}
-            title={isRecording ? "Запись… нажмите чтобы остановить" : "Голосовой ввод"}
+            aria-label={isRecording ? "Стоп" : "Голосовое сообщение"}
+            title={isRecording ? "Остановить запись" : "Записать голосовое сообщение"}
           >
             <MicIcon active={isRecording} />
           </button>
         )}
+
+        {/* Textarea */}
         <div className="flex-1 flex flex-col">
           <textarea
             ref={textareaRef}
             value={content}
             onChange={handleChange}
             onKeyPress={handleKeyPress}
-            disabled={disabled}
-            placeholder={placeholder}
+            disabled={disabled || isRecording || isTranscribing}
+            placeholder={isRecording ? "Говорите…" : isTranscribing ? "Распознаю…" : placeholder}
             rows={1}
             maxLength={maxLength}
             className="flex-1 px-4 py-2.5 border border-gray-300 rounded-sm bg-white transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#251D1C] focus:border-[#251D1C] resize-none disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px] max-h-[120px] overflow-y-auto"
             aria-label="Message input"
           />
           {maxLength && (
-            <div
-              className={`text-xs mt-1 px-1 ${
-                isNearLimit ? "text-[#F59E0B]" : "text-gray-400"
-              }`}
-            >
+            <div className={`text-xs mt-1 px-1 ${isNearLimit ? "text-[#F59E0B]" : "text-gray-400"}`}>
               {remainingChars} characters remaining
             </div>
           )}
         </div>
+
         <Button
           onClick={handleSend}
-          disabled={
-            disabled ||
-            (!content.trim() && !pendingFile && !allowEmpty)
-          }
+          disabled={disabled || isRecording || isTranscribing || (!content.trim() && !pendingFile && !allowEmpty)}
           variant="primary"
           icon={<SendIcon />}
           iconPosition="right"
@@ -396,4 +424,3 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     </div>
   );
 };
-

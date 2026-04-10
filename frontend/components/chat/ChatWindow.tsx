@@ -118,6 +118,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       <MessageInput
         onSend={(payload) => void sendMessage(payload)}
         disabled={isLoading}
+        conversationId={conversationId}
         placeholder={
           agentName
             ? `Type your message to ${agentName}...`

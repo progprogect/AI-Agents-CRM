@@ -30,6 +30,40 @@ class STTError(Exception):
     """Raised when speech-to-text transcription fails."""
 
 
+async def transcribe_bytes(
+    audio_bytes: bytes,
+    filename: str = "voice.webm",
+    language: Optional[str] = None,
+) -> str:
+    """Transcribe audio from raw bytes (web chat MediaRecorder upload).
+
+    Args:
+        audio_bytes: Raw audio data (webm, ogg, mp4, etc.)
+        filename: Filename with extension used for MIME type detection.
+        language: BCP-47 language code hint, e.g. ``"ru"`` or ``"en"``.
+
+    Returns:
+        Transcript string (may be empty if audio is silent/unintelligible).
+
+    Raises:
+        STTError: On API error or missing API key.
+    """
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise STTError(
+            f"Audio exceeds size limit ({MAX_AUDIO_BYTES // (1024 * 1024)} MB)"
+        )
+    transcript = await _call_openai_transcription(audio_bytes, filename, language)
+    logger.info(
+        "STT transcribed %d bytes → %d chars (model=%s language=%s filename=%s)",
+        len(audio_bytes),
+        len(transcript),
+        STT_MODEL,
+        language or "auto",
+        filename,
+    )
+    return transcript
+
+
 async def transcribe_from_url(
     url: str,
     language: Optional[str] = None,
