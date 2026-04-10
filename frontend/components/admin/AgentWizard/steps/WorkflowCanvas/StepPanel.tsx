@@ -8,6 +8,7 @@ import type { WorkflowFormStep, WorkflowTimerTrigger } from "@/lib/utils/agentCo
 import { Input } from "@/components/shared/Input";
 import { Textarea } from "@/components/shared/Textarea";
 import { Toggle } from "@/components/shared/Toggle";
+import { START_NODE_ID } from "./edgeHelpers";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -18,6 +19,8 @@ interface StepPanelProps {
   selectedEdge: Edge | null;
   /** All steps (for showing step name dropdown on edges) */
   steps: WorkflowFormStep[];
+  /** All canvas edges (used to show outgoing transitions in the step panel) */
+  edges: Edge[];
   onUpdateStep: (stepId: string, patch: Partial<WorkflowFormStep>) => void;
   onDeleteStep: (stepId: string) => void;
   onUpdateEdge: (edgeId: string, data: { condition: string; is_forced: boolean }) => void;
@@ -128,12 +131,64 @@ function TimerSection({
   );
 }
 
+// ── Inline transition row ──────────────────────────────────────────────────────
+
+function TransitionRow({
+  edge,
+  targetStep,
+  onUpdate,
+  onDelete,
+}: {
+  edge: Edge;
+  targetStep: WorkflowFormStep | undefined;
+  onUpdate: (edgeId: string, data: { condition: string; is_forced: boolean }) => void;
+  onDelete: (edgeId: string) => void;
+}) {
+  const condition = (edge.data as { condition?: string })?.condition ?? "";
+  const is_forced = (edge.data as { is_forced?: boolean })?.is_forced ?? false;
+
+  return (
+    <div className="border border-[#BEBAB7] rounded-md p-3 space-y-2 bg-white">
+      {targetStep && (
+        <p className="text-[10px] text-[#9A9590]">
+          → <span className="font-medium text-[#443C3C]">{targetStep.name || targetStep.id}</span>
+        </p>
+      )}
+      <Textarea
+        label="Условие перехода"
+        value={condition}
+        onChange={(e) => onUpdate(edge.id, { condition: e.target.value, is_forced })}
+        rows={2}
+        placeholder="Например: пользователь указал породу питомца"
+      />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Toggle
+            checked={is_forced}
+            onChange={() => onUpdate(edge.id, { condition, is_forced: !is_forced })}
+          />
+          <span className="text-xs text-[#443C3C]">Жёсткое (нельзя пропустить)</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onDelete(edge.id)}
+          className="text-[#9A9590] hover:text-red-500 transition-colors"
+          title="Удалить переход"
+        >
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
 export function StepPanel({
   selectedStep,
   selectedEdge,
   steps,
+  edges,
   onUpdateStep,
   onDeleteStep,
   onUpdateEdge,
@@ -160,59 +215,88 @@ export function StepPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {/* ── Step editing ── */}
-        {selectedStep && (
-          <>
-            <Section title="Основное">
-              <div className="space-y-3">
-                <Input
-                  label="Название шага"
-                  value={selectedStep.name}
-                  onChange={(e) => onUpdateStep(selectedStep.id, { name: e.target.value })}
-                  placeholder="Приветствие, Сбор данных, Финал…"
-                />
-                <Textarea
-                  label="Инструкции для агента"
-                  value={selectedStep.instructions}
-                  onChange={(e) =>
-                    onUpdateStep(selectedStep.id, { instructions: e.target.value })
-                  }
-                  rows={5}
-                  placeholder="Что агент должен делать, спрашивать или сообщать пользователю на этом шаге"
-                />
-                <div className="flex items-center gap-3">
-                  <Toggle
-                    checked={selectedStep.required}
-                    onChange={() =>
-                      onUpdateStep(selectedStep.id, { required: !selectedStep.required })
-                    }
+          {/* ── Step editing ── */}
+        {selectedStep && (() => {
+          const outgoing = edges.filter(
+            (e) => e.source === selectedStep.id && e.source !== START_NODE_ID
+          );
+          return (
+            <>
+              <Section title="Основное">
+                <div className="space-y-3">
+                  <Input
+                    label="Название шага"
+                    value={selectedStep.name}
+                    onChange={(e) => onUpdateStep(selectedStep.id, { name: e.target.value })}
+                    placeholder="Приветствие, Сбор данных, Финал…"
                   />
-                  <span className="text-sm text-[#443C3C]">
-                    Обязательный шаг (нельзя пропустить)
-                  </span>
+                  <Textarea
+                    label="Инструкции для агента"
+                    value={selectedStep.instructions}
+                    onChange={(e) =>
+                      onUpdateStep(selectedStep.id, { instructions: e.target.value })
+                    }
+                    rows={5}
+                    placeholder="Что агент должен делать, спрашивать или сообщать пользователю на этом шаге"
+                  />
+                  <div className="flex items-center gap-3">
+                    <Toggle
+                      checked={selectedStep.required}
+                      onChange={() =>
+                        onUpdateStep(selectedStep.id, { required: !selectedStep.required })
+                      }
+                    />
+                    <span className="text-sm text-[#443C3C]">
+                      Обязательный шаг (нельзя пропустить)
+                    </span>
+                  </div>
                 </div>
+              </Section>
+
+              <TimerSection
+                timer={selectedStep.timer_trigger}
+                onUpdate={(t) =>
+                  onUpdateStep(selectedStep.id, { timer_trigger: t ?? undefined })
+                }
+              />
+
+              {/* ── Outgoing transitions ── */}
+              <Section title="Переходы из этого шага">
+                {outgoing.length === 0 ? (
+                  <p className="text-xs text-[#9A9590]">
+                    Нет переходов. Соедините этот шаг со следующим на канве, затем настройте условие здесь.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {outgoing.map((edge) => {
+                      const targetStep = steps.find((s) => s.id === edge.target);
+                      return (
+                        <TransitionRow
+                          key={edge.id}
+                          edge={edge}
+                          targetStep={targetStep}
+                          onUpdate={onUpdateEdge}
+                          onDelete={onDeleteEdge}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </Section>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => onDeleteStep(selectedStep.id)}
+                  className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors"
+                >
+                  <Trash2 size={14} />
+                  Удалить шаг
+                </button>
               </div>
-            </Section>
-
-            <TimerSection
-              timer={selectedStep.timer_trigger}
-              onUpdate={(t) =>
-                onUpdateStep(selectedStep.id, { timer_trigger: t ?? undefined })
-              }
-            />
-
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => onDeleteStep(selectedStep.id)}
-                className="flex items-center gap-2 text-sm text-red-500 hover:text-red-700 transition-colors"
-              >
-                <Trash2 size={14} />
-                Удалить шаг
-              </button>
-            </div>
-          </>
-        )}
+            </>
+          );
+        })()}
 
         {/* ── Edge editing ── */}
         {selectedEdge && !selectedStep && (

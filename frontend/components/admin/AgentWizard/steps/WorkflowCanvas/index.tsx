@@ -378,6 +378,7 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
             selectedStep={selectedStep}
             selectedEdge={selectedEdge}
             steps={steps}
+            edges={edges}
             onUpdateStep={handleUpdateStep}
             onDeleteStep={handleDeleteStep}
             onUpdateEdge={handleUpdateEdge}
