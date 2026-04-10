@@ -17,12 +17,14 @@ interface SpeechRecognitionAlternative {
 }
 interface SpeechRecognitionResult {
   [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
 }
 interface SpeechRecognitionResultList {
   [index: number]: SpeechRecognitionResult;
 }
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
+  resultIndex: number;
 }
 interface SpeechRecognitionErrorEvent extends Event {
   error: string;
@@ -143,6 +145,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   // render — avoids Next.js hydration mismatch when window is unavailable SSR.
   const [speechSupported, setSpeechSupported] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  // Buffer for committed (final) transcript segments collected while recording.
+  const committedRef = useRef<string>("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -155,35 +159,66 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     if (!SpeechRecognitionClass) return;
 
     if (isRecording) {
+      // Stop recording; onend will fire and content remains in textarea.
       recognitionRef.current?.stop();
       return;
     }
 
     setVoiceError(null);
+    // Snapshot the current textarea content so we can append to it.
+    const baseContent = committedRef.current;
+
     const recognition = new SpeechRecognitionClass();
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    // continuous = true: keep recording until the user explicitly stops.
+    recognition.continuous = true;
+    // interimResults = true: show live partial transcription in the textarea
+    // so the user can see recognition is working in real time.
+    recognition.interimResults = true;
     recognition.lang = "ru-RU";
 
     recognition.onstart = () => setIsRecording(true);
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0]?.[0]?.transcript ?? "";
-      if (transcript) {
-        setContent((prev) => (prev ? `${prev} ${transcript}` : transcript));
+      let finalPart = "";
+      let interimPart = "";
+      for (let i = event.resultIndex ?? 0; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalPart += result[0].transcript;
+        } else {
+          interimPart += result[0].transcript;
+        }
       }
+      // Commit final segments immediately.
+      if (finalPart) {
+        committedRef.current = committedRef.current
+          ? `${committedRef.current} ${finalPart}`
+          : finalPart;
+      }
+      // Show committed + current interim so the user sees live feedback.
+      const displayed = interimPart
+        ? `${committedRef.current} ${interimPart}`.trim()
+        : committedRef.current;
+      setContent(baseContent ? `${baseContent} ${displayed}`.trim() : displayed);
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error !== "aborted") {
-        setVoiceError("Не удалось распознать речь. Попробуйте ещё раз.");
+      if (event.error === "not-allowed") {
+        setVoiceError("Нет доступа к микрофону. Разрешите доступ в настройках браузера.");
+      } else if (event.error !== "aborted") {
+        setVoiceError("Ошибка распознавания речи. Попробуйте ещё раз.");
       }
       setIsRecording(false);
     };
 
-    recognition.onend = () => setIsRecording(false);
+    recognition.onend = () => {
+      setIsRecording(false);
+      // Reset committed buffer for the next recording session.
+      committedRef.current = "";
+    };
 
     recognitionRef.current = recognition;
+    committedRef.current = "";
     recognition.start();
   }, [isRecording]);
 
