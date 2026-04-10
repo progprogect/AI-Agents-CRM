@@ -93,7 +93,12 @@ async def check(
 
     # ── Active subscription ──────────────────────────────────────────────────
     if sub.status == "active":
-        expired = sub.expires_at and sub.expires_at.replace(tzinfo=timezone.utc) < now if sub.expires_at and sub.expires_at.tzinfo is None else sub.expires_at and sub.expires_at < now
+        if sub.expires_at is not None:
+            # Normalise to UTC-aware before comparing (handle naive DB datetimes).
+            exp = sub.expires_at if sub.expires_at.tzinfo else sub.expires_at.replace(tzinfo=timezone.utc)
+            expired: bool = exp < now
+        else:
+            expired = False
 
         if expired:
             await update_subscription(sub.sub_id, status="expired")

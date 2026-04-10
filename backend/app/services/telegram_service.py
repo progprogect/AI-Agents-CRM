@@ -48,6 +48,20 @@ class TelegramService:
         self.dynamodb = dynamodb
         self.settings = settings
 
+    def _get_invoice_signing_key(self) -> str:
+        """Return the key used to sign/verify invoice payloads.
+
+        Raises RuntimeError if no suitable key is configured, so that we never
+        fall back to a hard-coded value that could be exploited.
+        """
+        key = self.settings.jwt_secret_key or self.settings.secret_encryption_key
+        if not key:
+            raise RuntimeError(
+                "Invoice signing key not configured. "
+                "Set JWT_SECRET_KEY or SECRET_ENCRYPTION_KEY in environment."
+            )
+        return key
+
     async def _get_file_url(self, bot_token: str, file_id: str) -> Optional[str]:
         """Resolve a Telegram file_id to a publicly accessible download URL."""
         url = f"{self.TELEGRAM_API_BASE_URL}{bot_token}/getFile?file_id={file_id}"
@@ -286,7 +300,7 @@ class TelegramService:
                             pay_svc = PaymentService(
                                 binding_id=binding.binding_id,
                                 bot_token=bot_token_for_pay,
-                                secret_key=self.settings.jwt_secret_key or self.settings.secret_encryption_key or "fallback-key",
+                                secret_key=self._get_invoice_signing_key(),
                             )
                             await pay_svc.send_plans_keyboard(chat_id, settings=pay_settings)
                             return
@@ -371,7 +385,7 @@ class TelegramService:
             pay_svc = PaymentService(
                 binding_id=binding.binding_id,
                 bot_token=bot_token,
-                secret_key=self.settings.jwt_secret_key or self.settings.secret_encryption_key or "fallback-key",
+                secret_key=self._get_invoice_signing_key(),
             )
             await pay_svc.answer_pre_checkout(
                 bot_token=bot_token,
@@ -391,7 +405,7 @@ class TelegramService:
             pay_svc = PaymentService(
                 binding_id=binding.binding_id,
                 bot_token=bot_token,
-                secret_key=self.settings.jwt_secret_key or self.settings.secret_encryption_key or "fallback-key",
+                secret_key=self._get_invoice_signing_key(),
             )
             activated = await pay_svc.handle_successful_payment(payment_data, chat_id)
             if activated:

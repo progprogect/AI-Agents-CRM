@@ -103,6 +103,16 @@ class PaymentService:
 
         b_id, user_id, plan_id = result
 
+        # Ensure the payload was issued by this binding (prevents cross-binding replay).
+        if b_id != self.binding_id:
+            logger.warning(
+                "invoice_payload binding_id mismatch: expected %s got %s (chat_id=%s)",
+                self.binding_id,
+                b_id,
+                chat_id,
+            )
+            return None
+
         plan = await get_payment_plan(plan_id)
         if not plan:
             logger.error("Plan %s from payload not found", plan_id)
