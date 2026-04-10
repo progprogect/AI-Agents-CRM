@@ -10,7 +10,7 @@ from typing import Any, Literal
 from app.config import get_settings
 from app.models.conversation import ConversationStatus
 from app.models.message import MessageChannel
-from app.services.agent_service import create_agent_service
+from app.services.agent_service import create_agent_service, organization_id_from_agent_row
 from app.services.conversation_service import build_conversation_history_for_agent
 from app.storage.redis import get_redis_client
 from app.utils.datetime_utils import to_utc_iso_string, utc_now
@@ -203,7 +203,12 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
         cur = await _current_reply_version(redis, conversation_id)
         return cur != expected_version
 
-    agent_service = create_agent_service(agent_config, dynamodb, channel_sender)
+    agent_service = create_agent_service(
+        agent_config,
+        dynamodb,
+        channel_sender,
+        organization_id=organization_id_from_agent_row(agent_data),
+    )
     try:
         result = await agent_service.process_message(
             user_message=agent_input,
@@ -310,7 +315,10 @@ async def _generate_agent_timer_message(
         from app.services.llm_factory import get_llm_factory
         from langchain_core.messages import HumanMessage as _HumanMessage, SystemMessage as _SystemMessage
 
-        llm = await get_llm_factory().get_chat_model(agent_config)
+        from app.storage.postgres import fetch_agent_organization_id
+
+        org_id = await fetch_agent_organization_id(agent_config.agent_id)
+        llm = await get_llm_factory().get_chat_model(agent_config, org_id=org_id)
 
         # Build system context from agent base system prompt.
         base_prompt = ""

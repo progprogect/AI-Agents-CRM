@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.auth import get_current_admin
+from app.api.tenant import DEFAULT_ORG_ID, TenantContext, get_tenant_context
 from app.api.v1 import rag as rag_module
 from app.dependencies import CommonDependencies
 from app.services.cloudinary_browse import public_id_allowed
@@ -26,8 +26,13 @@ def _make_test_client(settings_obj) -> TestClient:
     app = FastAPI()
     app.include_router(rag_module.router, prefix="/api/v1/agents", tags=["rag"])
 
-    async def override_admin() -> str:
-        return "test"
+    async def override_tenant() -> TenantContext:
+        return TenantContext(
+            user_email="test@example.com",
+            org_id=DEFAULT_ORG_ID,
+            role="owner",
+            is_platform_admin=False,
+        )
 
     def override_common() -> CommonDependencies:
         mock_db = MagicMock()
@@ -35,7 +40,7 @@ def _make_test_client(settings_obj) -> TestClient:
         mock_cache = MagicMock()
         return CommonDependencies(config=settings_obj, dynamodb=mock_db, cache=mock_cache)
 
-    app.dependency_overrides[get_current_admin] = override_admin
+    app.dependency_overrides[get_tenant_context] = override_tenant
     app.dependency_overrides[CommonDependencies] = override_common
     return TestClient(app)
 

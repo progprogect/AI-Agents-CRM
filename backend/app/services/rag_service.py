@@ -10,6 +10,7 @@ from app.chains.rag_chain import RAGChain
 from app.config import get_settings
 from app.models.agent_config import AgentConfig
 from app.services.llm_factory import LLMFactory, get_llm_factory
+from app.storage.postgres import fetch_agent_organization_id
 from app.storage.postgres_rag import PostgresRAGClient, get_postgres_rag_client
 from app.utils.llm_provider import get_rag_embeddings_config
 from app.utils.rag_context_budget import format_rag_context_with_budget
@@ -107,7 +108,8 @@ class RAGService:
                 vector_dimension=embeddings_config.dimensions,
             )
 
-            embeddings = await self.rag_chain._get_embeddings(embeddings_config)
+            org_id = await fetch_agent_organization_id(agent_id)
+            embeddings = await self.rag_chain._get_embeddings(embeddings_config, org_id=org_id)
             indexed_docs = []
 
             for doc in documents:
@@ -225,6 +227,7 @@ class RAGService:
                 )
 
             recall_k = _vector_retrieval_top_k(agent_config, top_k)
+            org_id = await fetch_agent_organization_id(agent_id)
             results = await self.rag_chain.retrieve(
                 query=query,
                 agent_id=agent_id,
@@ -232,6 +235,7 @@ class RAGService:
                 embeddings_config=embeddings_config,
                 top_k=recall_k,
                 score_threshold=score_threshold,
+                org_id=org_id,
             )
 
             logger.debug(
@@ -280,6 +284,7 @@ class RAGService:
                 )
 
             recall_k = _vector_retrieval_top_k(agent_config, top_k)
+            org_id = await fetch_agent_organization_id(agent_id)
             raw = await self.rag_chain.retrieve(
                 query=query,
                 agent_id=agent_id,
@@ -287,6 +292,7 @@ class RAGService:
                 embeddings_config=embeddings_config,
                 top_k=recall_k,
                 score_threshold=score_threshold,
+                org_id=org_id,
             )
             if not raw:
                 return ""
@@ -335,6 +341,7 @@ class RAGService:
             )
 
         recall_k = _vector_retrieval_top_k(agent_config, top_k)
+        org_id = await fetch_agent_organization_id(agent_id)
         try:
             t0 = time.perf_counter()
             raw_results = await self.rag_chain.retrieve(
@@ -344,6 +351,7 @@ class RAGService:
                 embeddings_config=embeddings_config,
                 top_k=recall_k,
                 score_threshold=score_threshold,
+                org_id=org_id,
             )
             rag_ms = (time.perf_counter() - t0) * 1000.0
         except Exception as e:

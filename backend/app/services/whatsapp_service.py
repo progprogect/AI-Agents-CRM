@@ -196,7 +196,10 @@ class WhatsAppService:
         # Process through agent and send reply
         try:
             from app.models.agent_config import AgentConfig
-            from app.services.agent_service import create_agent_service
+            from app.services.agent_service import (
+                create_agent_service,
+                organization_id_from_agent_row,
+            )
             from app.services.channel_sender import WhatsAppSender
             from app.services.conversation_service import build_conversation_history_for_agent
 
@@ -215,7 +218,12 @@ class WhatsAppService:
             )
 
             wa_sender = WhatsAppSender(self, self.dynamodb, twilio_service=None)
-            agent_service = create_agent_service(agent_config, self.dynamodb, wa_sender)
+            agent_service = create_agent_service(
+                agent_config,
+                self.dynamodb,
+                wa_sender,
+                organization_id=organization_id_from_agent_row(agent_data),
+            )
 
             settings = get_settings()
             if settings.agent_reply_debounce_seconds > 0:

@@ -305,12 +305,20 @@ class InstagramService:
 
             # Create channel sender for Instagram
             from app.services.channel_sender import InstagramSender
-            from app.services.agent_service import create_agent_service
+            from app.services.agent_service import (
+                create_agent_service,
+                organization_id_from_agent_row,
+            )
 
             instagram_sender = InstagramSender(self, self.dynamodb)
 
             # Create agent service with channel sender
-            agent_service = create_agent_service(agent_config, self.dynamodb, instagram_sender)
+            agent_service = create_agent_service(
+                agent_config,
+                self.dynamodb,
+                instagram_sender,
+                organization_id=organization_id_from_agent_row(agent_data),
+            )
 
             settings = get_settings()
             if settings.agent_reply_debounce_seconds > 0:

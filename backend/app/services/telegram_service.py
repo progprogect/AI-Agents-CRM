@@ -327,7 +327,10 @@ class TelegramService:
                     return
 
                 from app.models.agent_config import AgentConfig
-                from app.services.agent_service import create_agent_service
+                from app.services.agent_service import (
+                    create_agent_service,
+                    organization_id_from_agent_row,
+                )
                 from app.services.channel_sender import TelegramSender
                 from app.services.conversation_service import build_conversation_history_for_agent
 
@@ -340,7 +343,12 @@ class TelegramService:
                 )
 
                 telegram_sender = TelegramSender(self, self.dynamodb)
-                agent_service = create_agent_service(agent_config, self.dynamodb, telegram_sender)
+                agent_service = create_agent_service(
+                    agent_config,
+                    self.dynamodb,
+                    telegram_sender,
+                    organization_id=organization_id_from_agent_row(agent_data),
+                )
 
                 settings = get_settings()
                 # Same as web chat: debounce would drop user_media_url on the delayed process_message path.

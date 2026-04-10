@@ -43,6 +43,19 @@ async def close_pool() -> None:
         _pool = None
 
 
+async def fetch_agent_organization_id(agent_id: str) -> Optional[str]:
+    """Return organization UUID as str for an agent, or None if missing."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT organization_id FROM agents WHERE agent_id = $1",
+            agent_id,
+        )
+    if not row or row.get("organization_id") is None:
+        return None
+    return str(row["organization_id"])
+
+
 def _parse_json(val: Any) -> Any:
     """Parse JSON from DB."""
     if val is None:
@@ -561,13 +574,18 @@ class PostgreSQLClient:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
+            org_row = await conn.fetchrow(
+                "SELECT organization_id FROM agents WHERE agent_id = $1",
+                binding.agent_id,
+            )
+            org_id = org_row["organization_id"] if org_row else None
             await conn.execute(
                 """
                 INSERT INTO channel_bindings (
                     binding_id, agent_id, channel_type, channel_account_id, channel_username,
                     secret_name, encrypted_access_token, is_active, is_verified,
-                    created_at, updated_at, created_by, metadata
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+                    created_at, updated_at, created_by, metadata, organization_id
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14)
                 """,
                 binding.binding_id,
                 binding.agent_id,
@@ -582,6 +600,7 @@ class PostgreSQLClient:
                 binding.updated_at,
                 binding.created_by,
                 meta,
+                org_id,
             )
         return binding
 

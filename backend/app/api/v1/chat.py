@@ -17,7 +17,7 @@ from app.models.agent_config import AgentConfig
 from app.models.conversation import Conversation, ConversationStatus, MarketingStatus
 from app.models.message import Message, MessageChannel, MessageRole
 from app.services.agent_reply_coordinator import cancel_timer_trigger, notify_user_message_saved
-from app.services.agent_service import create_agent_service
+from app.services.agent_service import create_agent_service, organization_id_from_agent_row
 from app.services.channel_sender import get_channel_sender
 from app.services.conversation_service import build_conversation_history_for_agent
 from app.services.channel_binding_service import ChannelBindingService
@@ -357,7 +357,12 @@ async def send_message(
         channel_enum, deps.dynamodb, instagram_service, telegram_service
     )
 
-    agent_service = create_agent_service(agent_config, deps.dynamodb, channel_sender)
+    agent_service = create_agent_service(
+        agent_config,
+        deps.dynamodb,
+        channel_sender,
+        organization_id=organization_id_from_agent_row(agent_data),
+    )
 
     # Cancel any pending inactivity timer — user is actively responding.
     await cancel_timer_trigger(conversation_id)

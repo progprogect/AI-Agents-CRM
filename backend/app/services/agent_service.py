@@ -30,6 +30,14 @@ from app.utils.enum_helpers import get_enum_value
 logger = logging.getLogger(__name__)
 
 
+def organization_id_from_agent_row(agent_data: Optional[dict]) -> Optional[str]:
+    """Extract tenant organization UUID string from a storage agent row, if present."""
+    if not agent_data:
+        return None
+    oid = agent_data.get("organization_id")
+    return str(oid) if oid is not None else None
+
+
 class AgentService:
     """Service for agent orchestration."""
 
@@ -42,6 +50,7 @@ class AgentService:
         rag_service: RAGService,
         dynamodb: Any,
         channel_sender: Optional[ChannelSender] = None,
+        organization_id: Optional[str] = None,
     ):
         self.agent_config = agent_config
         self.llm_factory = llm_factory
@@ -53,6 +62,7 @@ class AgentService:
         self.agent_chain = AgentChain(
             agent_config=agent_config,
             llm_factory=llm_factory,
+            organization_id=organization_id,
         )
 
     async def run_pre_moderation_guard(
@@ -297,10 +307,11 @@ def create_agent_service(
     agent_config: AgentConfig,
     dynamodb: Any,
     channel_sender: Optional[ChannelSender] = None,
+    organization_id: Optional[str] = None,
 ) -> AgentService:
     """Create agent service instance."""
     llm_factory = get_llm_factory()
-    escalation_service = create_escalation_service(agent_config)
+    escalation_service = create_escalation_service(agent_config, organization_id=organization_id)
     moderation_service = get_moderation_service()
     rag_service = get_rag_service()
 
@@ -312,4 +323,5 @@ def create_agent_service(
         rag_service=rag_service,
         dynamodb=dynamodb,
         channel_sender=channel_sender,
+        organization_id=organization_id,
     )

@@ -313,10 +313,16 @@ Analyze the latest user message and conversation context. Decide if a human must
 class EscalationChain:
     """LangChain chain for detecting escalation needs."""
 
-    def __init__(self, llm_factory: LLMFactory, agent_config: Optional[AgentConfig] = None):
+    def __init__(
+        self,
+        llm_factory: LLMFactory,
+        agent_config: Optional[AgentConfig] = None,
+        organization_id: Optional[str] = None,
+    ):
         """Initialize escalation chain."""
         self.llm_factory = llm_factory
         self.agent_config = agent_config
+        self._organization_id = organization_id
         self._chains: dict[str, Runnable] = {}
         self._chains_structured: dict[str, Runnable] = {}
 
@@ -376,7 +382,7 @@ class EscalationChain:
         config = agent_config or self.agent_config
         if config:
             llm_cfg = self._escalation_llm_config(config)
-            return await self.llm_factory.get_chat_model(llm_cfg)
+            return await self.llm_factory.get_chat_model(llm_cfg, org_id=self._organization_id)
         from langchain_openai import ChatOpenAI
 
         client = await self.llm_factory.get_client(agent_id)

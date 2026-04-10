@@ -61,7 +61,7 @@ async def create_agent(
     ctx: TenantContext = require_role("owner", "admin"),
 ):
     """Create a new agent."""
-    org_id = ctx.org_id if not ctx.is_platform_admin else ctx.org_id
+    org_id = ctx.org_id
 
     # Check if agent already exists
     existing_agent = await deps.dynamodb.get_agent(request.agent_id)

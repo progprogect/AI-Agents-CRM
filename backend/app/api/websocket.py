@@ -15,7 +15,7 @@ from app.models.conversation import ConversationStatus
 from app.models.message import Message, MessageChannel, MessageRole
 from app.config import get_settings
 from app.services.agent_reply_coordinator import notify_user_message_saved
-from app.services.agent_service import create_agent_service
+from app.services.agent_service import create_agent_service, organization_id_from_agent_row
 from app.services.conversation_service import ConversationService
 from app.storage.redis import get_redis_client
 from app.utils.datetime_utils import to_utc_iso_string, utc_now
@@ -306,7 +306,12 @@ async def _handle_message(
     from app.services.channel_sender import WebChatSender
     
     web_chat_sender = WebChatSender(dynamodb)
-    agent_service = create_agent_service(agent_config, dynamodb, web_chat_sender)
+    agent_service = create_agent_service(
+        agent_config,
+        dynamodb,
+        web_chat_sender,
+        organization_id=organization_id_from_agent_row(agent_data),
+    )
 
     settings = get_settings()
     if settings.agent_reply_debounce_seconds > 0:

@@ -178,7 +178,7 @@ async def patch_organization(
 
     params.append(org_id)
     await pool.execute(
-        f"UPDATE organizations SET {', '.join(updates)} WHERE id = ${ i}::uuid",
+        f"UPDATE organizations SET {', '.join(updates)} WHERE id = ${i}::uuid",
         *params,
     )
     updated = await pool.fetchrow("SELECT * FROM organizations WHERE id = $1::uuid", org_id)

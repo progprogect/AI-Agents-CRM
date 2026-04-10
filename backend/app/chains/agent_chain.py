@@ -155,9 +155,15 @@ class AgentChain:
 
     ATTACH_MEDIA_MARKER = ATTACH_MEDIA_MARKER
 
-    def __init__(self, agent_config: AgentConfig, llm_factory: Any) -> None:
+    def __init__(
+        self,
+        agent_config: AgentConfig,
+        llm_factory: Any,
+        organization_id: Optional[str] = None,
+    ) -> None:
         self.agent_config = agent_config
         self.llm_factory = llm_factory
+        self._organization_id = organization_id
 
     # ------------------------------------------------------------------
     # System-prompt construction
@@ -463,7 +469,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             llm = _get_service("llm")
             if llm is None:
                 from app.services.llm_factory import get_llm_factory
-                llm = await get_llm_factory().get_chat_model(agent_config)
+                llm = await get_llm_factory().get_chat_model(
+                    agent_config, org_id=self._organization_id
+                )
 
             system_text: str = state.get("step_system_prompt") or ""
             rag_context = state.get("rag_context")
@@ -615,7 +623,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         llm = _get_service("llm")
                         if llm is None:
                             from app.services.llm_factory import get_llm_factory
-                            llm = await get_llm_factory().get_chat_model(agent_config)
+                            llm = await get_llm_factory().get_chat_model(
+                                agent_config, org_id=self._organization_id
+                            )
                     if conversation_summary is None:
                         conversation_summary = "\n".join(
                             f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
@@ -831,7 +841,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         provided the LLM receives the image natively as a multimodal message
         (image_url block) rather than a text description.
         """
-        llm = await self.llm_factory.get_chat_model(self.agent_config)
+        llm = await self.llm_factory.get_chat_model(
+            self.agent_config, org_id=self._organization_id
+        )
         graph = self._get_compiled_graph()
 
         wf = self.agent_config.workflow

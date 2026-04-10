@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.models.agent_config import EmbeddingsConfig
 from app.services.image_processor_service import get_image_processor_service
 from app.services.llm_factory import get_llm_factory
+from app.storage.postgres import fetch_agent_organization_id
 from app.storage.postgres_rag import PostgresRAGClient, cosine_similarity
 from app.utils.llm_provider import get_rag_embeddings_config
 from app.utils.text_chunking import split_text_into_chunks
@@ -148,7 +149,8 @@ async def index_rag_document_core(
     embedding_failed = False
     embeddings = None
     try:
-        embeddings = await chain._get_embeddings(embeddings_config)
+        org_id = await fetch_agent_organization_id(agent_id)
+        embeddings = await chain._get_embeddings(embeddings_config, org_id=org_id)
         embedding = await embeddings.aembed_query(text_content)
     except Exception as e:
         embedding_failed = True

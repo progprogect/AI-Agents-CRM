@@ -63,11 +63,18 @@ def _coerce_type_when_escalating(decision: EscalationDecision) -> None:
 class EscalationService:
     """Service for detecting escalation needs."""
 
-    def __init__(self, llm_factory: LLMFactory, agent_config: Optional[AgentConfig] = None):
+    def __init__(
+        self,
+        llm_factory: LLMFactory,
+        agent_config: Optional[AgentConfig] = None,
+        organization_id: Optional[str] = None,
+    ):
         """Initialize escalation service."""
         self.llm_factory = llm_factory
         self.agent_config = agent_config
-        self.escalation_chain = EscalationChain(llm_factory, agent_config)
+        self.escalation_chain = EscalationChain(
+            llm_factory, agent_config, organization_id=organization_id
+        )
 
     async def detect_escalation(
         self,
@@ -179,10 +186,11 @@ class EscalationService:
 
 def create_escalation_service(
     agent_config: Optional[AgentConfig] = None,
+    organization_id: Optional[str] = None,
 ) -> EscalationService:
     """Create escalation service instance with optional agent config."""
     llm_factory = get_llm_factory()
-    return EscalationService(llm_factory, agent_config)
+    return EscalationService(llm_factory, agent_config, organization_id=organization_id)
 
 
 def get_escalation_service() -> EscalationService:

@@ -272,22 +272,22 @@ class LLMFactory:
             google_api_key=google_key,
         )
 
-    async def get_embeddings(self, embeddings_config: EmbeddingsConfig) -> Embeddings:
-        """Get embeddings model (OpenAI or Google), cached by (provider, model)."""
-        cache_key = (embeddings_config.provider or "openai", embeddings_config.model or "text-embedding-3-small")
+    async def get_embeddings(
+        self,
+        embeddings_config: EmbeddingsConfig,
+        org_id: Optional[str] = None,
+    ) -> Embeddings:
+        """Get embeddings model (OpenAI or Google), cached by org + provider + model."""
+        cache_key = (
+            org_id or "",
+            embeddings_config.provider or "openai",
+            embeddings_config.model or "text-embedding-3-small",
+        )
         if cache_key in self._embeddings_cache:
             return self._embeddings_cache[cache_key]
 
-        openai_key = self.settings.openai_api_key
-        if not openai_key:
-            try:
-                openai_key = await self.secrets_manager.get_openai_api_key()
-            except Exception as e:
-                logger.error(f"Failed to get OpenAI API key for embeddings: {e}")
-                raise RuntimeError("OpenAI API key not found") from e
-        openai_key = self._clean_api_key(openai_key)
-
-        google_key = _get_google_api_key_sync(self.settings)
+        openai_key = await self._resolve_openai_key(org_id)
+        google_key = await self._resolve_google_key(org_id)
 
         embeddings = create_embeddings_model(
             embeddings_config=embeddings_config,
@@ -306,7 +306,7 @@ class LLMFactory:
             keys_to_remove = [k for k in self._clients if str(k).startswith(f"org:{org_id}:")]
             for k in keys_to_remove:
                 self._clients.pop(k, None)
-            emb_keys = [k for k in self._embeddings_cache if k[0] == org_id]
+            emb_keys = [k for k in self._embeddings_cache if k and k[0] == org_id]
             for k in emb_keys:
                 self._embeddings_cache.pop(k, None)
         elif agent_id:

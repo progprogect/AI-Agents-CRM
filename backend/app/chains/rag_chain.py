@@ -21,9 +21,13 @@ class RAGChain:
         self.llm_factory = llm_factory
         self.rag_client = rag_client
 
-    async def _get_embeddings(self, embeddings_config: EmbeddingsConfig) -> Embeddings:
-        """Get embeddings client for config (cached by provider+model in factory)."""
-        return await self.llm_factory.get_embeddings(embeddings_config)
+    async def _get_embeddings(
+        self,
+        embeddings_config: EmbeddingsConfig,
+        org_id: Optional[str] = None,
+    ) -> Embeddings:
+        """Get embeddings client for config (cached by org+provider+model in factory)."""
+        return await self.llm_factory.get_embeddings(embeddings_config, org_id=org_id)
 
     async def retrieve(
         self,
@@ -33,9 +37,10 @@ class RAGChain:
         embeddings_config: EmbeddingsConfig,
         top_k: int = 6,
         score_threshold: float = 0.2,
+        org_id: Optional[str] = None,
     ) -> list[dict]:
         """Retrieve relevant documents for query."""
-        embeddings = await self._get_embeddings(embeddings_config)
+        embeddings = await self._get_embeddings(embeddings_config, org_id=org_id)
         query_embedding = await embeddings.aembed_query(query)
 
         results = await self.rag_client.search(
@@ -56,6 +61,7 @@ class RAGChain:
         embeddings_config: EmbeddingsConfig,
         top_k: int = 6,
         score_threshold: float = 0.2,
+        org_id: Optional[str] = None,
     ) -> str:
         """Get relevant context as formatted string."""
         results = await self.retrieve(
@@ -65,6 +71,7 @@ class RAGChain:
             embeddings_config=embeddings_config,
             top_k=top_k,
             score_threshold=score_threshold,
+            org_id=org_id,
         )
 
         if not results:
