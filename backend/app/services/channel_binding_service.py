@@ -144,7 +144,9 @@ class ChannelBindingService:
             # Update metadata without updating token
             current_metadata = binding.metadata.copy()
             current_metadata.update(metadata)
-            # Update metadata in secret as well
+            # Persist metadata to the DB column so reads via get_binding() see the update.
+            update_kwargs["metadata"] = current_metadata
+            # Also keep the Secrets Manager in sync (it stores token + metadata together).
             token = await self.secrets_manager.get_channel_token(binding.secret_name)
             await self.secrets_manager.update_channel_token(
                 secret_name=binding.secret_name,
