@@ -42,6 +42,7 @@ class AgentService:
         rag_service: RAGService,
         dynamodb: Any,
         channel_sender: Optional[ChannelSender] = None,
+        organization_id: Optional[str] = None,
     ):
         self.agent_config = agent_config
         self.llm_factory = llm_factory
@@ -53,6 +54,7 @@ class AgentService:
         self.agent_chain = AgentChain(
             agent_config=agent_config,
             llm_factory=llm_factory,
+            organization_id=organization_id,
         )
 
     async def run_pre_moderation_guard(
@@ -297,6 +299,7 @@ def create_agent_service(
     agent_config: AgentConfig,
     dynamodb: Any,
     channel_sender: Optional[ChannelSender] = None,
+    organization_id: Optional[str] = None,
 ) -> AgentService:
     """Create agent service instance."""
     llm_factory = get_llm_factory()
@@ -312,4 +315,5 @@ def create_agent_service(
         rag_service=rag_service,
         dynamodb=dynamodb,
         channel_sender=channel_sender,
+        organization_id=organization_id,
     )
