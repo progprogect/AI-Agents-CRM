@@ -602,7 +602,12 @@ class PostgreSQLClient:
         for i, (k, v) in enumerate(kwargs.items(), 1):
             if k == "channel_type":
                 v = get_enum_value(v)
-            sets.append(f'"{k}" = ${i}')
+            if k == "metadata" and v is not None:
+                # Match create_channel_binding: column is jsonb; asyncpg expects JSON text here.
+                v = json.dumps(v) if isinstance(v, dict) else v
+                sets.append(f'"{k}" = ${i}::jsonb')
+            else:
+                sets.append(f'"{k}" = ${i}')
             params.append(v)
         params.append(binding_id)
         pool = await get_pool()
