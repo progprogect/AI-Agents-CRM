@@ -599,9 +599,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     fire_at_ms = int(time.time() * 1000) + tt.delay_seconds * 1000
                     timer_to_schedule = {
                         "delay_seconds": tt.delay_seconds,
-                        "action_type": getattr(tt, "action_type", "static"),
+                        "action_type": tt.action_type,
                         "message_template": tt.message_template,
-                        "prompt": getattr(tt, "prompt", None),
+                        "prompt": tt.prompt,
                         "step_id": new_step_id,
                         "fire_at_ms": fire_at_ms,
                     }
@@ -622,9 +622,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     fire_at_ms = int(time.time() * 1000) + tt.delay_seconds * 1000
                     timer_to_schedule = {
                         "delay_seconds": tt.delay_seconds,
-                        "action_type": getattr(tt, "action_type", "static"),
+                        "action_type": tt.action_type,
                         "message_template": tt.message_template,
-                        "prompt": getattr(tt, "prompt", None),
+                        "prompt": tt.prompt,
                         "step_id": new_step_id,
                         "fire_at_ms": fire_at_ms,
                     }

@@ -553,41 +553,7 @@ async def _poll_due_once() -> None:
         finally:
             await redis.delete(lock_key)
 
-    # --- Poll timer trigger queue ---
-    try:
-        timer_due = await redis.zrangebyscore(KEY_TIMER_DUE, "-inf", now_ms, num=50)
-    except Exception as exc:
-        logger.debug("agent_reply timer poll zrangebyscore: %s", exc)
-        timer_due = []
-
-    for conversation_id in timer_due:
-        lock_key = f"{KEY_TIMER_LOCK_PREFIX}{conversation_id}"
-        acquired = await redis.set_nx_ex(lock_key, "1", LOCK_TTL_SECONDS)
-        if not acquired:
-            continue
-
-        try:
-            score = await redis.zscore(KEY_TIMER_DUE, conversation_id)
-            if score is None or score > now_ms:
-                continue
-
-            await redis.zrem(KEY_TIMER_DUE, conversation_id)
-
-            async def _run_timer(cid: str) -> None:
-                try:
-                    await execute_timer_trigger(cid)
-                except Exception as exc:
-                    logger.error(
-                        "Timer trigger task failed for %s: %s",
-                        cid,
-                        exc,
-                        exc_info=True,
-                        extra={"conversation_id": cid},
-                    )
-
-            asyncio.create_task(_run_timer(conversation_id))
-        finally:
-            await redis.delete(lock_key)
+    # Timer trigger queue is handled by run_timer_poll_loop / _poll_timers_once.
 
 
 async def _poll_timers_once() -> None:
