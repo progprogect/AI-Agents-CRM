@@ -1,9 +1,11 @@
 """Channel sender abstraction for sending messages through different channels."""
 
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional
 from app.models.message import MessageChannel
+from app.utils.datetime_utils import to_utc_iso_string, utc_now
 
 if TYPE_CHECKING:
     from app.services.instagram_service import InstagramService
@@ -43,12 +45,39 @@ class WebChatSender(ChannelSender):
         message_text: str,
         media_url: Optional[str] = None,
         media_type: Optional[str] = None,
+        message_id: Optional[str] = None,
         **kwargs,
     ) -> None:
-        """Send message via WebSocket."""
-        logger.info(
-            f"WebChat message prepared for conversation {conversation_id}: {message_text[:50]}..."
-        )
+        """Push message to the active WebSocket connection for this conversation.
+
+        If the user is not currently connected (browser closed, reconnect pending)
+        the message is already persisted in the DB — the client will pick it up
+        on the next poll/reconnect.  Not having an active socket is not an error.
+        """
+        from app.api.websocket import connection_manager
+
+        payload: dict = {
+            "type": "message",
+            "message_id": message_id or str(uuid.uuid4()),
+            "role": "agent",
+            "content": message_text,
+            "timestamp": to_utc_iso_string(utc_now()),
+        }
+        if media_url:
+            payload["media_url"] = media_url
+            payload["media_type"] = media_type
+
+        delivered = await connection_manager.send_message(conversation_id, payload)
+        if delivered:
+            logger.info(
+                "WebChatSender: WS push delivered for conversation %s", conversation_id
+            )
+        else:
+            logger.info(
+                "WebChatSender: no active WS for conversation %s "
+                "(message persisted in DB; client will receive on reconnect)",
+                conversation_id,
+            )
 
 
 class InstagramSender(ChannelSender):

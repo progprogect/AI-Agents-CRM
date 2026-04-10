@@ -155,9 +155,15 @@ class AgentChain:
 
     ATTACH_MEDIA_MARKER = ATTACH_MEDIA_MARKER
 
-    def __init__(self, agent_config: AgentConfig, llm_factory: Any) -> None:
+    def __init__(
+        self,
+        agent_config: AgentConfig,
+        llm_factory: Any,
+        organization_id: Optional[str] = None,
+    ) -> None:
         self.agent_config = agent_config
         self.llm_factory = llm_factory
+        self._organization_id = organization_id
 
     # ------------------------------------------------------------------
     # System-prompt construction
@@ -581,6 +587,99 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             if step is None:
                 return {}
 
+            # ----------------------------------------------------------------
+            # Structured collection gate (required steps with collect fields)
+            # When the current step is marked required and has fields to collect,
+            # we run a focused JSON-extraction call over the FULL conversation
+            # history to check whether the user has actually provided all of them.
+            # This is deterministic: if any field is missing we force-stay on the
+            # step WITHOUT evaluating any conditional or fallback transitions.
+            # Data is merged (not overwritten) so partial answers across turns
+            # accumulate correctly.
+            # ----------------------------------------------------------------
+            collected_update: dict | None = None  # non-None means we have updates to persist
+            if step.required and step.collect:
+                existing_collected: dict = dict(state.get("collected") or {})
+                missing_fields = [f for f in step.collect if not existing_collected.get(f)]
+
+                if missing_fields:
+                    # Full history (no truncation) for accurate extraction
+                    history_text = "\n".join(
+                        f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))}"
+                        for m in (state.get("messages") or [])
+                    )
+                    extraction_prompt = (
+                        "Extract the following fields from the conversation if mentioned by the user.\n"
+                        f"Fields to extract: {missing_fields}\n"
+                        "Return ONLY a JSON object with exactly those keys. "
+                        "Use null for any field not yet mentioned by the user.\n\n"
+                        f"Conversation:\n{history_text}"
+                    )
+                    try:
+                        _llm = _get_service("llm")
+                        if _llm is None:
+                            from app.services.llm_factory import get_llm_factory
+                            _llm = await get_llm_factory().get_chat_model(
+                                agent_config, org_id=self._organization_id
+                            )
+                        raw_extraction = await _llm.ainvoke(
+                            [HumanMessage(content=extraction_prompt)],
+                        )
+                        raw_text = _normalise_llm_text(raw_extraction.content)
+                        # Strip markdown code fences if present
+                        if raw_text.startswith("```"):
+                            raw_text = "\n".join(
+                                line for line in raw_text.splitlines()
+                                if not line.startswith("```")
+                            )
+                        extracted = json.loads(raw_text)
+                        new_data = {
+                            k: str(v)
+                            for k, v in extracted.items()
+                            if v is not None and str(v).lower() not in ("null", "none", "")
+                        }
+                        existing_collected.update(new_data)
+                        collected_update = existing_collected
+                        logger.debug(
+                            "Collect extraction for step %s: got %s, merged=%s",
+                            step_id, new_data, existing_collected,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Collect extraction LLM call failed for step %s: %s",
+                            step_id, exc,
+                        )
+
+                    still_missing = [f for f in step.collect if not existing_collected.get(f)]
+                    if still_missing:
+                        # Not all required fields collected — stay on step.
+                        # Fallback transitions are also blocked here (early return).
+                        logger.info(
+                            "Required step %s still missing fields %s — holding step "
+                            "(conversation %s)",
+                            step_id, still_missing, state.get("conversation_id", "?"),
+                            extra={"conversation_id": state.get("conversation_id", "?")},
+                        )
+                        timer_stay = state.get("pending_timer")
+                        current_step = step_map.get(step_id)
+                        if current_step and current_step.timer_trigger:
+                            tt = current_step.timer_trigger
+                            fire_at_ms = int(time.time() * 1000) + tt.delay_seconds * 1000
+                            timer_stay = {
+                                "delay_seconds": tt.delay_seconds,
+                                "action_type": tt.action_type,
+                                "message_template": tt.message_template,
+                                "prompt": tt.prompt,
+                                "step_id": step_id,
+                                "fire_at_ms": fire_at_ms,
+                            }
+                        return {
+                            "current_step_id": step_id,
+                            "pending_timer": timer_stay,
+                            **({"collected": existing_collected} if collected_update is not None else {}),
+                        }
+                # All required fields are present — fall through to normal transition eval.
+
             new_step_id = step_id
             timer_to_schedule = state.get("pending_timer")
 
@@ -615,7 +714,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         llm = _get_service("llm")
                         if llm is None:
                             from app.services.llm_factory import get_llm_factory
-                            llm = await get_llm_factory().get_chat_model(agent_config)
+                            llm = await get_llm_factory().get_chat_model(
+                                agent_config, org_id=self._organization_id
+                            )
                     if conversation_summary is None:
                         conversation_summary = "\n".join(
                             f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
@@ -713,11 +814,14 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 else:
                     timer_to_schedule = None
 
-            return {
+            result_state: dict = {
                 "current_step_id": new_step_id,
                 "step_history": history,
                 "pending_timer": timer_to_schedule,
             }
+            if collected_update is not None:
+                result_state["collected"] = collected_update
+            return result_state
 
         # ---- Node: output_collector ----
         async def node_output_collector(state: WorkflowState) -> dict:

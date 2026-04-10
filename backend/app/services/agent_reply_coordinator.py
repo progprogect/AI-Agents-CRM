@@ -25,7 +25,9 @@ KEY_DUE = "agent_reply:due"
 KEY_LOCK_PREFIX = "agent_reply:lock:"
 KEY_TIMER_DUE = "agent_reply:timer_due"
 KEY_TIMER_LOCK_PREFIX = "agent_reply:timer_lock:"
+KEY_TIMER_FAILED_PREFIX = "agent_reply:timer_failed:"
 LOCK_TTL_SECONDS = 120
+TIMER_DEAD_LETTER_TTL = 86400  # 24 h
 
 
 def _last_input_ttl_seconds(debounce_seconds: int) -> int:
@@ -466,7 +468,7 @@ async def execute_timer_trigger(conversation_id: str) -> None:
         message_id=str(_uuid.uuid4()),
         conversation_id=conversation_id,
         agent_id=conversation.agent_id,
-        role=MessageRole.ASSISTANT,
+        role=MessageRole.AGENT,
         content=message_text,
         channel=conversation.channel,
         timestamp=utc_now(),
@@ -477,11 +479,12 @@ async def execute_timer_trigger(conversation_id: str) -> None:
     except Exception as exc:
         logger.warning("Timer trigger: could not persist message for %s: %s", conversation_id, exc)
 
-    # Send via channel sender
+    # Send via channel sender — pass message_id so WebChatSender can include it in WS payload
     try:
         await channel_sender.send_message(
             conversation_id=conversation_id,
             message_text=message_text,
+            message_id=timer_msg.message_id,
         )
         logger.info(
             "Timer trigger (%s) message sent for conversation %s",
@@ -594,6 +597,18 @@ async def _poll_timers_once() -> None:
                         exc_info=True,
                         extra={"conversation_id": cid},
                     )
+                    # Write dead-letter entry so failures are observable and
+                    # can be replayed manually or via monitoring.
+                    import json as _dl_json
+                    _dl_redis = get_redis_client()
+                    try:
+                        await _dl_redis.set(
+                            f"{KEY_TIMER_FAILED_PREFIX}{cid}",
+                            _dl_json.dumps({"error": str(exc), "ts": time.time()}),
+                            ttl=TIMER_DEAD_LETTER_TTL,
+                        )
+                    except Exception:
+                        pass  # dead-letter write failure must never re-raise
 
             asyncio.create_task(_run_timer(conversation_id))
         finally:
