@@ -2,9 +2,9 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, type FileRejection } from "react-dropzone";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { FileText, Image as ImageIcon, X, Upload, FolderOpen, ChevronDown, ChevronUp, Cloud } from "lucide-react";
@@ -58,7 +58,7 @@ export default function AgentRAGPage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [isFolderPanelOpen, setIsFolderPanelOpen] = useState(false);
   const [cloudinaryImportOpen, setCloudinaryImportOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dropzoneRejections, setDropzoneRejections] = useState<string | null>(null);
 
   const loadFolders = useCallback(async () => {
     try {
@@ -176,11 +176,23 @@ export default function AgentRAGPage() {
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
+    setDropzoneRejections(null);
     const newPending: PendingFile[] = acceptedFiles.map((file) => ({
       file,
       preview: file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
     }));
     setPendingFiles((prev) => [...prev, ...newPending]);
+  }, []);
+
+  const onDropRejected = useCallback((rejections: FileRejection[]) => {
+    if (!rejections.length) return;
+    const msg = rejections
+      .map(
+        (r) =>
+          `${r.file.name}: ${r.errors.map((e) => e.message).join(", ")}`
+      )
+      .join("; ");
+    setDropzoneRejections(msg);
   }, []);
 
   const removePending = (index: number) => {
@@ -222,6 +234,7 @@ export default function AgentRAGPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected,
     accept: {
       "text/plain": [".txt"],
       "text/markdown": [".md"],
@@ -389,6 +402,19 @@ export default function AgentRAGPage() {
         {error && (
           <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-4 rounded-sm">
             <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
+
+        {dropzoneRejections && (
+          <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-4 rounded-sm">
+            <p className="text-sm text-amber-800">{dropzoneRejections}</p>
+            <button
+              type="button"
+              onClick={() => setDropzoneRejections(null)}
+              className="mt-2 text-xs text-amber-700 underline hover:text-amber-900"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 

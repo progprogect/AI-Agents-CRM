@@ -1,6 +1,6 @@
 /** API client for backend communication. */
 
-import { getAdminToken } from "./auth";
+import { getAdminToken, removeAdminToken } from "./auth";
 import type {
   Agent,
   CreateConversationRequest,
@@ -127,6 +127,41 @@ class ApiError extends Error {
   }
 }
 
+function clearAdminSessionIfUnauthorized(status: number): void {
+  if (status === 401 || status === 403) {
+    if (typeof window !== "undefined") {
+      removeAdminToken();
+    }
+  }
+}
+
+/** Normalize FastAPI / custom `{ error: { message } }` bodies for display. */
+function messageFromApiErrorPayload(data: unknown, fallback: string): string {
+  if (!data || typeof data !== "object") return fallback;
+  const o = data as Record<string, unknown>;
+  const errObj = o.error;
+  if (errObj && typeof errObj === "object" && errObj !== null) {
+    const msg = (errObj as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  const detail = o.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && item !== null) {
+          const msg = (item as { msg?: unknown }).msg;
+          if (typeof msg === "string" && msg.trim()) return msg;
+        }
+        return null;
+      })
+      .filter((s): s is string => Boolean(s));
+    if (parts.length) return parts.join("; ");
+  }
+  return fallback;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {},
@@ -196,18 +231,12 @@ async function request<T>(
       // FastAPI returns errors in format: { "detail": "message" }
       // Our custom errors use: { "error": { "code": "...", "message": "..." } }
       const error = data as ErrorResponse & { detail?: string };
-      
-      // Handle authentication errors
-      if (response.status === 401 || response.status === 403) {
-        // Clear token on auth failure
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("agent_admin_token");
-        }
-      }
-      
+
+      clearAdminSessionIfUnauthorized(response.status);
+
       // Use status code as error code if error.error.code is not available
       const errorCode = error.error?.code || response.status.toString();
-      const errorMessage = error.error?.message || error.detail || "An error occurred";
+      const errorMessage = messageFromApiErrorPayload(data, "An error occurred");
       
       throw new ApiError(
         errorCode,
@@ -487,8 +516,8 @@ export const api = {
 
   async uploadChatMedia(file: File): Promise<{ url: string; media_type: string; filename: string; size_bytes: number }> {
     const formData = new FormData();
-    formData.append("file", file);
-    const token = typeof window !== "undefined" ? localStorage.getItem("agent_admin_token") : null;
+    formData.append("file", file, file.name || "upload.bin");
+    const token = getAdminToken();
     const res = await fetch("/api/v1/media/upload", {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -496,7 +525,11 @@ export const api = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new ApiError(res.status.toString(), err.detail || "Media upload failed");
+      clearAdminSessionIfUnauthorized(res.status);
+      throw new ApiError(
+        res.status.toString(),
+        messageFromApiErrorPayload(err, "Media upload failed")
+      );
     }
     return res.json();
   },
@@ -795,9 +828,10 @@ export const api = {
     );
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      clearAdminSessionIfUnauthorized(res.status);
       throw new ApiError(
-        err.error?.code || res.status.toString(),
-        err.error?.message || err.detail || "Failed to create folder"
+        (err as { error?: { code?: string } }).error?.code || res.status.toString(),
+        messageFromApiErrorPayload(err, "Failed to create folder")
       );
     }
     return res.json();
@@ -853,7 +887,7 @@ export const api = {
     title?: string
   ): Promise<RagDocumentUploadResponse> {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", file, file.name || "upload.bin");
     if (folderId) formData.append("folder_id", folderId);
     if (title) formData.append("title", title);
     const API_BASE_URL = getApiBaseUrl();
@@ -868,9 +902,10 @@ export const api = {
     );
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      clearAdminSessionIfUnauthorized(res.status);
       throw new ApiError(
-        err.error?.code || res.status.toString(),
-        err.error?.message || err.detail || "Failed to upload document"
+        (err as { error?: { code?: string } }).error?.code || res.status.toString(),
+        messageFromApiErrorPayload(err, "Failed to upload document")
       );
     }
     return res.json();
