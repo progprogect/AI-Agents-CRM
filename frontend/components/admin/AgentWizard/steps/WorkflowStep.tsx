@@ -19,22 +19,25 @@ export function WorkflowStep({ config, errors, onUpdate }: WorkflowStepProps) {
   return (
     <div className="flex flex-col h-full space-y-4">
       {/* Master toggle */}
-      <div className="flex items-center justify-between p-4 border border-[#BEBAB7] rounded-lg bg-[#FAFAFA] flex-shrink-0">
-        <div>
+      <div className="flex items-start justify-between gap-4 p-4 border border-[#BEBAB7] rounded-lg bg-[#FAFAFA] flex-shrink-0">
+        <div className="min-w-0">
           <p className="font-medium text-[#251D1C]">Сценарный Workflow</p>
           <p className="text-sm text-[#9A9590] mt-0.5">
-            Если выключено — агент работает как обычный чат без шагов
+            Если выключено — агент работает как обычный чат без шагов. Чтобы открыть
+            редактор сценария, включите переключатель.
           </p>
         </div>
-        <Toggle
-          checked={workflowEnabled}
-          onChange={() => onUpdate({ workflow_enabled: !workflowEnabled })}
-        />
+        <div className="flex-shrink-0">
+          <Toggle
+            checked={workflowEnabled}
+            onChange={() => onUpdate({ workflow_enabled: !workflowEnabled })}
+          />
+        </div>
       </div>
 
-      {/* Canvas */}
+      {/* Canvas — fixed height avoids flex % height quirks (Chrome vs WebKit); matches XYFlow parent-size requirement */}
       {workflowEnabled && (
-        <div className="flex-1 min-h-0" style={{ height: "560px" }}>
+        <div className="h-[min(560px,70vh)] w-full min-h-[320px] shrink-0">
           <WorkflowCanvas config={config} errors={errors} onUpdate={onUpdate} />
         </div>
       )}

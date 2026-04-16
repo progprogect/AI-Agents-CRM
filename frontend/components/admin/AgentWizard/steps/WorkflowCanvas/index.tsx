@@ -130,7 +130,6 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
         workflow_start_step_id: newStartId,
       });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [steps, onUpdate]
   );
 
@@ -312,6 +311,7 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
   useEffect(() => {
     const t = setTimeout(() => fitView({ padding: 0.15, duration: 300 }), 80);
     return () => clearTimeout(t);
+    // Mount-only: re-running when fitView identity changes causes unnecessary refits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -340,6 +340,7 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
         </div>
 
         <ReactFlow
+          className="h-full w-full"
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -405,8 +406,10 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
 
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
   return (
-    <ReactFlowProvider>
-      <CanvasInner {...props} />
-    </ReactFlowProvider>
+    <div className="h-full w-full min-h-0">
+      <ReactFlowProvider>
+        <CanvasInner {...props} />
+      </ReactFlowProvider>
+    </div>
   );
 }
