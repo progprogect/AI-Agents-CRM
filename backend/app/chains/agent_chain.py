@@ -862,14 +862,19 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         if a.source_id == new_step_id
                     ]
 
-            final_step = step_map.get(new_step_id)
+            # quick_replies come from the step that *generated* the current response
+            # (step_id), not from the step we're transitioning to (new_step_id).
+            # Example: step_1 greets the user and offers buttons; after the response
+            # is sent the conversation moves to step_3, but the buttons shown to the
+            # user belong to step_1.
+            responding_step = step_map.get(step_id)
             result_state: dict = {
                 "current_step_id": new_step_id,
                 "step_history": history,
                 "pending_timer": timer_to_schedule,
                 "cancel_all_auto_steps": cancel_auto_steps if cancel_auto_steps else None,
                 "pending_auto_schedules": pending_auto if pending_auto else None,
-                "quick_replies": final_step.quick_replies if final_step and final_step.quick_replies else None,
+                "quick_replies": responding_step.quick_replies if responding_step and responding_step.quick_replies else None,
             }
             if collected_update is not None:
                 result_state["collected"] = collected_update
