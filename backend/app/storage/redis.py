@@ -143,12 +143,33 @@ class RedisClient:
             )
         )
 
-    async def zrem(self, key: str, member: str) -> int:
-        """ZREM one member."""
+    async def zrem(self, key: str, *members: str) -> int:
+        """ZREM one or more members."""
         await self.connect()
         if not self.client:
             return 0
-        return int(await self.client.zrem(key, member))
+        return int(await self.client.zrem(key, *members))
+
+    async def sadd(self, key: str, *members: str) -> int:
+        """SADD — add members to a set."""
+        await self.connect()
+        if not self.client:
+            return 0
+        return int(await self.client.sadd(key, *members))
+
+    async def smembers(self, key: str) -> set[str]:
+        """SMEMBERS — return all members of a set."""
+        await self.connect()
+        if not self.client:
+            return set()
+        return set(await self.client.smembers(key))
+
+    async def srem(self, key: str, *members: str) -> int:
+        """SREM — remove members from a set."""
+        await self.connect()
+        if not self.client:
+            return 0
+        return int(await self.client.srem(key, *members))
 
     async def zscore(self, key: str, member: str) -> Optional[float]:
         """ZSCORE."""

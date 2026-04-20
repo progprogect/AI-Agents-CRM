@@ -41,10 +41,27 @@ export interface WorkflowStep {
   timer_trigger?: WorkflowTimerTrigger | null;
 }
 
+export interface WorkflowAutoStep {
+  id: string;
+  name: string;
+  source_id: string;
+  delay_seconds: number;
+  action_type: "static" | "agent";
+  message_template: string;
+  prompt: string;
+  condition?: string | null;
+}
+
 export interface WorkflowFormStep extends WorkflowStep {
   // Local UI-only fields — not serialised to the API payload
   _localId?: string;
   _position?: { x: number; y: number };
+}
+
+export interface WorkflowFormAutoStep extends WorkflowAutoStep {
+  // Local UI-only fields — not serialised to the API payload
+  _position?: { x: number; y: number };
+  _delay_unit?: "seconds" | "minutes" | "hours" | "days";
 }
 
 // Standard examples (pre-filled)
@@ -149,6 +166,7 @@ export interface AgentConfigFormData {
   workflow_enabled?: boolean;
   workflow_start_step_id?: string;
   workflow_steps?: WorkflowFormStep[];
+  workflow_auto_steps?: WorkflowFormAutoStep[];
 }
 
 /**
@@ -192,6 +210,7 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     workflow_enabled: false,
     workflow_start_step_id: "step_1",
     workflow_steps: [],
+    workflow_auto_steps: [],
   };
 }
 
@@ -291,6 +310,16 @@ export function agentConfigToFormData(
           }
         : undefined,
     })) as WorkflowFormStep[],
+    workflow_auto_steps: (agentConfig.workflow?.auto_steps || []).map((a: any) => ({
+      id: a.id || "",
+      name: a.name || "",
+      source_id: a.source_id || "",
+      delay_seconds: a.delay_seconds || 60,
+      action_type: (a.action_type as "static" | "agent") || "static",
+      message_template: a.message_template || "",
+      prompt: a.prompt || "",
+      condition: a.condition ?? null,
+    })) as WorkflowFormAutoStep[],
   };
 
   return formData;
@@ -427,6 +456,16 @@ export function formDataToAgentConfig(
               prompt: s.timer_trigger.prompt || null,
             }
           : null,
+      })),
+      auto_steps: (formData.workflow_auto_steps || []).map((a) => ({
+        id: a.id,
+        name: a.name,
+        source_id: a.source_id,
+        delay_seconds: a.delay_seconds,
+        action_type: a.action_type || "static",
+        message_template: a.message_template || "",
+        prompt: a.prompt || "",
+        condition: a.condition ?? null,
       })),
     },
   };

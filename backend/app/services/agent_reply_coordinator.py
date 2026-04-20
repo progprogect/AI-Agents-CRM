@@ -660,6 +660,382 @@ async def run_timer_poll_loop(shutdown: asyncio.Event) -> None:
     logger.info("Workflow timer poll loop stopped")
 
 
+# ---------------------------------------------------------------------------
+# Auto-step: time-triggered follow-up actions (independent of user activity)
+# ---------------------------------------------------------------------------
+
+KEY_AUTO_DUE = "agent_reply:auto_step_due"
+KEY_AUTO_PAY = "agent_reply:auto_step_payload:"  # + "{conv_id}:{auto_step_id}"
+KEY_AUTO_IDX = "agent_reply:auto_step_idx:"      # SET per conversation — active members
+AUTO_STEP_LOCK_PREFIX = "agent_reply:auto_step_lock:"
+AUTO_STEP_DEAD_LETTER_TTL = 86400  # 24 h
+
+
+async def schedule_auto_step(
+    conversation_id: str,
+    auto_step: dict,
+    config_hash: str,
+    fire_at_ms: int,
+) -> None:
+    """Schedule a single auto-step to fire at ``fire_at_ms``."""
+    redis = get_redis_client()
+    if not await redis.ping():
+        logger.warning(
+            "Redis unavailable; auto-step %s not scheduled for %s",
+            auto_step.get("id"),
+            conversation_id,
+        )
+        return
+    import json as _json
+
+    auto_step_id = auto_step["id"]
+    member = f"{conversation_id}:{auto_step_id}"
+    payload = _json.dumps({**auto_step, "config_hash": config_hash, "conversation_id": conversation_id})
+    ttl = auto_step.get("delay_seconds", 3600) * 2 + 300
+
+    await redis.set(f"{KEY_AUTO_PAY}{member}", payload, ttl=ttl)
+    await redis.zadd(KEY_AUTO_DUE, {member: float(fire_at_ms)})
+    # Track active members per conversation for bulk cancellation.
+    await redis.sadd(f"{KEY_AUTO_IDX}{conversation_id}", member)
+    logger.info(
+        "Auto-step %s scheduled for %s at %d ms",
+        auto_step_id,
+        conversation_id,
+        fire_at_ms,
+        extra={"conversation_id": conversation_id},
+    )
+
+
+async def cancel_all_auto_steps(conversation_id: str) -> None:
+    """Cancel every pending auto-step for *conversation_id* (e.g. on step transition)."""
+    redis = get_redis_client()
+    try:
+        if not await redis.ping():
+            return
+        idx_key = f"{KEY_AUTO_IDX}{conversation_id}"
+        members = await redis.smembers(idx_key)
+        if members:
+            await redis.zrem(KEY_AUTO_DUE, *members)
+            for m in members:
+                await redis.delete(f"{KEY_AUTO_PAY}{m}")
+        await redis.delete(idx_key)
+    except Exception as exc:
+        logger.debug("cancel_all_auto_steps error for %s: %s", conversation_id, exc)
+
+
+async def _evaluate_auto_step_condition(
+    condition: str,
+    agent_config: "Any",
+    conversation_history: list[dict],
+    conversation_id: str,
+) -> bool:
+    """Return True if the LLM evaluates the condition as satisfied (yes)."""
+    try:
+        from app.services.llm_factory import get_llm_factory
+        from langchain_core.messages import HumanMessage as _HM, SystemMessage as _SM
+
+        llm = await get_llm_factory().get_chat_model(agent_config)
+        history_text = "\n".join(
+            f"{t.get('role', 'user').upper()}: {t.get('content', '')}"
+            for t in conversation_history[-10:]
+        )
+        system = (
+            "You are evaluating whether a condition is true based on the conversation so far.\n"
+            "Reply with exactly one word: YES or NO.\n\n"
+            f"Condition: {condition}\n\n"
+            f"Conversation:\n{history_text}"
+        )
+        result = await llm.ainvoke([_SM(content=system), _HM(content="Is the condition true?")])
+        text = result.content if hasattr(result, "content") else str(result)
+        if isinstance(text, list):
+            text = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in text)
+        return "yes" in str(text).strip().lower()
+    except Exception as exc:
+        logger.warning(
+            "Auto-step condition evaluation failed for %s: %s — defaulting to True",
+            conversation_id,
+            exc,
+        )
+        return True  # fail-open: send message if condition check fails
+
+
+async def execute_auto_step_trigger(member: str) -> None:
+    """Fire a scheduled auto-step for the given ZSET member ``{conv_id}:{auto_step_id}``."""
+    import json as _json
+    from app.dependencies import get_dynamodb
+
+    redis = get_redis_client()
+    dynamodb = get_dynamodb()
+    settings = get_settings()
+
+    raw = await redis.get(f"{KEY_AUTO_PAY}{member}")
+    if not raw:
+        logger.warning("Auto-step payload missing for member %s; skipping", member)
+        return
+    try:
+        payload = _json.loads(raw)
+    except Exception as exc:
+        logger.error("Failed to parse auto-step payload for %s: %s", member, exc)
+        return
+
+    conversation_id: str = payload.get("conversation_id", member.split(":")[0])
+    auto_step_id: str = payload.get("id", member.split(":", 1)[-1])
+
+    conversation = await dynamodb.get_conversation(conversation_id)
+    if not conversation:
+        return
+    status_value = get_enum_value(conversation.status)
+    if status_value in (ConversationStatus.CLOSED.value, ConversationStatus.NEEDS_HUMAN.value, ConversationStatus.HUMAN_ACTIVE.value):
+        return
+
+    agent_data = await dynamodb.get_agent(conversation.agent_id)
+    if not agent_data or "config" not in agent_data:
+        return
+
+    from app.models.agent_config import AgentConfig
+    from app.services.channel_binding_service import ChannelBindingService
+    from app.services.channel_sender import get_channel_sender
+    from app.services.instagram_service import InstagramService
+    from app.services.telegram_service import TelegramService
+    from app.storage.resolver import get_secrets_manager
+
+    agent_config = AgentConfig.from_dict(agent_data["config"])
+
+    # Guard: discard if workflow was changed after scheduling.
+    stored_hash = payload.get("config_hash")
+    if stored_hash:
+        from app.chains.agent_chain import workflow_config_hash
+        if stored_hash != workflow_config_hash(agent_config.workflow):
+            logger.info(
+                "Auto-step %s for %s discarded: workflow changed since scheduling",
+                auto_step_id,
+                conversation_id,
+                extra={"conversation_id": conversation_id},
+            )
+            await redis.delete(f"{KEY_AUTO_PAY}{member}")
+            return
+
+    conversation_channel = get_enum_value(conversation.channel)
+
+    instagram_service = None
+    telegram_service = None
+    if conversation_channel != MessageChannel.WEB_CHAT.value:
+        secrets_manager = get_secrets_manager()
+        binding_service = ChannelBindingService(dynamodb, secrets_manager)
+        if conversation_channel == MessageChannel.INSTAGRAM.value:
+            instagram_service = InstagramService(binding_service, dynamodb, settings)
+        elif conversation_channel == MessageChannel.TELEGRAM.value:
+            telegram_service = TelegramService(binding_service, dynamodb, settings)
+
+    from app.models.message import MessageChannel as MC
+    channel_enum = MC(conversation_channel) if conversation_channel else MC.WEB_CHAT
+    channel_sender = get_channel_sender(channel_enum, dynamodb, instagram_service, telegram_service)
+
+    action_type = payload.get("action_type", "static")
+
+    # Load conversation state for variable substitution and LLM context.
+    collected: dict = {}
+    conversation_history: list[dict] = []
+    try:
+        from app.storage.postgres_checkpointer import get_checkpointer
+        checkpointer = get_checkpointer()
+        state_snapshot = await checkpointer.aget({"configurable": {"thread_id": conversation_id}})
+        if state_snapshot:
+            collected = state_snapshot.values.get("collected") or {}
+            raw_messages = state_snapshot.values.get("messages") or []
+            for m in raw_messages[-20:]:
+                role = type(m).__name__.lower().replace("message", "").replace("ai", "assistant").replace("human", "user")
+                text = getattr(m, "content", "")
+                if isinstance(text, list):
+                    text = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in text)
+                if text:
+                    conversation_history.append({"role": role, "content": str(text)})
+    except Exception as exc:
+        logger.debug("Auto-step: could not load checkpointer state for %s: %s", conversation_id, exc)
+
+    # Optional condition check.
+    condition = payload.get("condition")
+    if condition:
+        should_send = await _evaluate_auto_step_condition(
+            condition, agent_config, conversation_history, conversation_id
+        )
+        if not should_send:
+            logger.info(
+                "Auto-step %s for %s skipped: condition not met",
+                auto_step_id,
+                conversation_id,
+                extra={"conversation_id": conversation_id},
+            )
+            await redis.delete(f"{KEY_AUTO_PAY}{member}")
+            try:
+                await redis.srem(f"{KEY_AUTO_IDX}{conversation_id}", member)
+            except Exception:
+                pass
+            # Schedule next auto-steps in chain even when this one is skipped.
+            await _schedule_chained_auto_steps(
+                conversation_id, auto_step_id, agent_config, stored_hash or ""
+            )
+            return
+
+    if action_type == "agent":
+        message_text = await _generate_agent_timer_message(
+            agent_config=agent_config,
+            prompt_instruction=payload.get("prompt", ""),
+            conversation_history=conversation_history,
+            conversation_id=conversation_id,
+        )
+    else:
+        message_text = payload.get("message_template", "")
+        for k, v in collected.items():
+            message_text = message_text.replace(f"{{{k}}}", str(v))
+
+    if not message_text:
+        logger.info(
+            "Auto-step %s for %s produced empty message; skipping send",
+            auto_step_id,
+            conversation_id,
+        )
+    else:
+        import uuid as _uuid
+        from app.models.message import Message, MessageRole
+        from app.utils.datetime_utils import utc_now
+
+        msg = Message(
+            message_id=str(_uuid.uuid4()),
+            conversation_id=conversation_id,
+            agent_id=conversation.agent_id,
+            role=MessageRole.AGENT,
+            content=message_text,
+            channel=conversation.channel,
+            timestamp=utc_now(),
+            metadata={"auto_step_trigger": True, "auto_step_id": auto_step_id},
+        )
+        try:
+            await dynamodb.create_message(msg)
+        except Exception as exc:
+            logger.warning("Auto-step: could not persist message for %s: %s", conversation_id, exc)
+
+        try:
+            await channel_sender.send_message(
+                conversation_id=conversation_id,
+                message_text=message_text,
+                message_id=msg.message_id,
+            )
+            logger.info(
+                "Auto-step %s (%s) sent for conversation %s",
+                auto_step_id,
+                action_type,
+                conversation_id,
+                extra={"conversation_id": conversation_id},
+            )
+        except Exception as exc:
+            logger.error(
+                "Auto-step send failed for %s: %s",
+                conversation_id,
+                exc,
+                exc_info=True,
+                extra={"conversation_id": conversation_id},
+            )
+
+    await redis.delete(f"{KEY_AUTO_PAY}{member}")
+    # Remove from conversation index.
+    try:
+        await redis.srem(f"{KEY_AUTO_IDX}{conversation_id}", member)
+    except Exception:
+        pass
+
+    # Schedule the next auto-steps in the chain (sourced from this auto-step).
+    await _schedule_chained_auto_steps(
+        conversation_id, auto_step_id, agent_config, stored_hash or ""
+    )
+
+
+async def _schedule_chained_auto_steps(
+    conversation_id: str,
+    fired_auto_step_id: str,
+    agent_config: "Any",
+    config_hash: str,
+) -> None:
+    """Schedule any auto-steps whose source_id matches the just-fired auto-step."""
+    next_steps = [
+        a for a in agent_config.workflow.auto_steps
+        if a.source_id == fired_auto_step_id
+    ]
+    for nxt in next_steps:
+        fire_at_ms = int(time.time() * 1000) + nxt.delay_seconds * 1000
+        await schedule_auto_step(
+            conversation_id,
+            auto_step=nxt.model_dump(),
+            config_hash=config_hash,
+            fire_at_ms=fire_at_ms,
+        )
+
+
+async def _poll_auto_steps_once() -> None:
+    """Poll the auto-step ZSET and fire any due triggers."""
+    redis = get_redis_client()
+    if not await redis.ping():
+        return
+
+    now_ms = int(time.time() * 1000)
+
+    try:
+        due_members = await redis.zrangebyscore(KEY_AUTO_DUE, "-inf", now_ms, num=50)
+    except Exception as exc:
+        logger.debug("auto-step poll zrangebyscore: %s", exc)
+        return
+
+    for member in due_members:
+        lock_key = f"{AUTO_STEP_LOCK_PREFIX}{member}"
+        acquired = await redis.set_nx_ex(lock_key, "1", LOCK_TTL_SECONDS)
+        if not acquired:
+            continue
+
+        try:
+            score = await redis.zscore(KEY_AUTO_DUE, member)
+            if score is None or score > now_ms:
+                continue
+
+            await redis.zrem(KEY_AUTO_DUE, member)
+
+            async def _run_auto(m: str) -> None:
+                try:
+                    await execute_auto_step_trigger(m)
+                except Exception as exc:
+                    logger.error(
+                        "Auto-step task failed for %s: %s",
+                        m,
+                        exc,
+                        exc_info=True,
+                    )
+                    import json as _dl_json
+                    _dl_redis = get_redis_client()
+                    try:
+                        await _dl_redis.set(
+                            f"agent_reply:auto_step_failed:{m}",
+                            _dl_json.dumps({"error": str(exc), "ts": time.time()}),
+                            ttl=AUTO_STEP_DEAD_LETTER_TTL,
+                        )
+                    except Exception:
+                        pass
+
+            asyncio.create_task(_run_auto(member))
+        finally:
+            await redis.delete(lock_key)
+
+
+async def run_auto_step_poll_loop(shutdown: asyncio.Event) -> None:
+    """Poll the auto-step queue every 5 s, started unconditionally at application startup."""
+    logger.info("Auto-step poll loop started")
+    while True:
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=5.0)
+            break
+        except asyncio.TimeoutError:
+            await _poll_auto_steps_once()
+    logger.info("Auto-step poll loop stopped")
+
+
 async def run_debounce_poll_loop(shutdown: asyncio.Event) -> None:
     """Poll Redis debounce due set periodically until shutdown is set."""
     settings = get_settings()

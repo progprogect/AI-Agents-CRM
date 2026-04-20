@@ -405,6 +405,45 @@ class WorkflowStep(BaseModel):
     )
 
 
+class WorkflowAutoStep(BaseModel):
+    """Automatically scheduled follow-up action attached to a workflow step or another auto-step.
+
+    Unlike ``WorkflowTimerTrigger`` (which resets on every user message), an auto-step
+    is scheduled once when the source step/auto-step fires and is NOT cancelled by
+    subsequent user messages.  It is only cancelled when the conversation transitions
+    to a different regular WorkflowStep.
+
+    ``source_id`` must reference either a ``WorkflowStep.id`` or another
+    ``WorkflowAutoStep.id`` within the same ``WorkflowConfig``.
+    """
+
+    id: str = Field(..., description="Unique auto-step identifier within the workflow")
+    name: str = Field(..., description="Human-readable display name shown on the canvas")
+    source_id: str = Field(
+        ...,
+        description="ID of the step or auto-step that directly precedes this one in the chain",
+    )
+    delay_seconds: int = Field(
+        ..., ge=1, description="Seconds to wait after the source event before firing"
+    )
+    action_type: Literal["static", "agent"] = Field(
+        default="static",
+        description="'static' sends message_template verbatim; 'agent' calls the LLM with prompt",
+    )
+    message_template: str = Field(
+        default="",
+        description="Message text for action_type='static'; supports {variable} substitution",
+    )
+    prompt: str = Field(
+        default="",
+        description="Instruction for the LLM when action_type='agent'",
+    )
+    condition: Optional[str] = Field(
+        default=None,
+        description="Natural-language condition evaluated by LLM (yes/no) before sending; None = always fire",
+    )
+
+
 class WorkflowConfig(BaseModel):
     """Conversation workflow definition for an agent."""
 
@@ -419,6 +458,10 @@ class WorkflowConfig(BaseModel):
     steps: list[WorkflowStep] = Field(
         default_factory=list,
         description="Ordered list of workflow steps",
+    )
+    auto_steps: list[WorkflowAutoStep] = Field(
+        default_factory=list,
+        description="Time-triggered follow-up actions that fire automatically regardless of user activity",
     )
 
 

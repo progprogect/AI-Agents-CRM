@@ -68,6 +68,12 @@ class WorkflowState(TypedDict):
     pending_timer: Optional[dict]
     """Scheduled timer: {delay_seconds, message_template, step_id, fire_at_ms}."""
 
+    cancel_all_auto_steps: Optional[bool]
+    """Signal to agent_service to cancel all pending auto-steps for this conversation."""
+
+    pending_auto_schedules: Optional[list[dict]]
+    """Auto-steps to schedule: [{auto_step_id, delay_seconds, auto_step: {...}}]."""
+
     rag_context: Optional[str]
     """Retrieved RAG context text for the current turn."""
 
@@ -590,6 +596,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             wf = agent_config.workflow
             if not wf.enabled or not wf.steps:
                 return {}
+            _is_first_turn = not state.get("current_step_id")
             step_id = state.get("current_step_id") or wf.start_step_id
             step_map = {s.id: s for s in wf.steps}
             step = step_map.get(step_id)
@@ -794,6 +801,18 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     )
                 else:
                     timer_to_schedule = None
+
+                # Cancel existing auto-steps and schedule new ones for the new step.
+                cancel_auto_steps = True
+                pending_auto = [
+                    {
+                        "auto_step_id": a.id,
+                        "delay_seconds": a.delay_seconds,
+                        "auto_step": a.model_dump(),
+                    }
+                    for a in agent_config.workflow.auto_steps
+                    if a.source_id == new_step_id
+                ]
             else:
                 # Staying on the same step.  Always recalculate fire_at_ms from *now* so
                 # the inactivity countdown resets with each user message.
@@ -823,10 +842,29 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 else:
                     timer_to_schedule = None
 
+                # Auto-steps are NOT cancelled when staying on the same step.
+                cancel_auto_steps = False
+                pending_auto = []
+
+                # On the very first turn, schedule auto-steps for the starting step.
+                if _is_first_turn:
+                    cancel_auto_steps = True
+                    pending_auto = [
+                        {
+                            "auto_step_id": a.id,
+                            "delay_seconds": a.delay_seconds,
+                            "auto_step": a.model_dump(),
+                        }
+                        for a in agent_config.workflow.auto_steps
+                        if a.source_id == new_step_id
+                    ]
+
             result_state: dict = {
                 "current_step_id": new_step_id,
                 "step_history": history,
                 "pending_timer": timer_to_schedule,
+                "cancel_all_auto_steps": cancel_auto_steps if cancel_auto_steps else None,
+                "pending_auto_schedules": pending_auto if pending_auto else None,
             }
             if collected_update is not None:
                 result_state["collected"] = collected_update

@@ -81,12 +81,19 @@ async def lifespan(app: FastAPI):
 
     logger.info("All caches cleared on startup")
 
-    from app.services.agent_reply_coordinator import run_debounce_poll_loop, run_timer_poll_loop
+    from app.services.agent_reply_coordinator import (
+        run_debounce_poll_loop,
+        run_timer_poll_loop,
+        run_auto_step_poll_loop,
+    )
 
     shutdown_event = asyncio.Event()
 
     # Workflow timer poll loop — always started, independent of debounce.
     timer_task = asyncio.create_task(run_timer_poll_loop(shutdown_event))
+
+    # Auto-step poll loop — always started, fires scheduled auto-steps.
+    auto_step_task = asyncio.create_task(run_auto_step_poll_loop(shutdown_event))
 
     debounce_task: Optional[asyncio.Task] = None
     if settings.agent_reply_debounce_seconds > 0:
@@ -96,6 +103,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     shutdown_event.set()
     await timer_task
+    await auto_step_task
     if debounce_task is not None:
         await debounce_task
     from app.storage.postgres_checkpointer import close_checkpointer

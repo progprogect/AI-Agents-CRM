@@ -2,10 +2,9 @@
  * Visual workflow canvas editor.
  *
  * Architecture:
- *  - ReactFlow renders step nodes and transition edges on a pan/zoom canvas
- *  - Right-side panel shows step / edge settings when something is selected
- *  - All mutations flow back into the parent via onUpdate (same API as the
- *    old linear WorkflowStep)
+ *  - ReactFlow renders step nodes, auto-step nodes and transition/timed edges
+ *  - Right-side panel shows step / edge / auto-step settings when something is selected
+ *  - All mutations flow back into the parent via onUpdate
  */
 
 "use client";
@@ -33,18 +32,24 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { Plus } from "lucide-react";
+import { Plus, Zap } from "lucide-react";
 
-import type { AgentConfigFormData, WorkflowFormStep } from "@/lib/utils/agentConfig";
+import type {
+  AgentConfigFormData,
+  WorkflowFormAutoStep,
+  WorkflowFormStep,
+} from "@/lib/utils/agentConfig";
 import type { ValidationError } from "@/lib/utils/validation";
 
 import { nodeTypes } from "./nodeTypes";
 import { StepPanel } from "./StepPanel";
+import { AutoStepPanel } from "./AutoStepPanel";
 import {
   START_NODE_ID,
+  configToFlow,
   deriveStartStepId,
+  flowToAutoSteps,
   flowToSteps,
-  stepsToFlow,
 } from "./edgeHelpers";
 
 // ── Props ──────────────────────────────────────────────────────────────────────
@@ -61,6 +66,10 @@ function makeStepId(): string {
   return `step_${Date.now()}`;
 }
 
+function makeAutoStepId(): string {
+  return `auto_${Date.now()}`;
+}
+
 function makeDefaultStep(id: string, index: number): WorkflowFormStep {
   return {
     id,
@@ -73,18 +82,33 @@ function makeDefaultStep(id: string, index: number): WorkflowFormStep {
   };
 }
 
+function makeDefaultAutoStep(id: string, sourceId: string): WorkflowFormAutoStep {
+  return {
+    id,
+    name: "Авто-шаг",
+    source_id: sourceId,
+    delay_seconds: 86400, // 1 day default
+    action_type: "static",
+    message_template: "",
+    prompt: "",
+    condition: null,
+    _delay_unit: "days",
+  };
+}
+
 // ── Inner canvas (has access to useReactFlow) ──────────────────────────────────
 
 function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
   const { fitView } = useReactFlow();
 
   const steps: WorkflowFormStep[] = config.workflow_steps ?? [];
+  const autoSteps: WorkflowFormAutoStep[] = config.workflow_auto_steps ?? [];
   const startStepId = config.workflow_start_step_id ?? steps[0]?.id ?? "";
 
   // ── React Flow state ───────────────────────────────────────────────────────
 
   const { nodes: initNodes, edges: initEdges } = useMemo(
-    () => stepsToFlow(steps, startStepId),
+    () => configToFlow(steps, autoSteps, startStepId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [] // initialise once; subsequent updates come through onNodesChange/onEdgesChange
   );
@@ -94,19 +118,24 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
 
   // Track whether the canvas was updated from parent (e.g. undo / external change)
   const lastStepsRef = useRef(steps);
+  const lastAutoStepsRef = useRef(autoSteps);
   useEffect(() => {
-    if (JSON.stringify(lastStepsRef.current) !== JSON.stringify(steps)) {
-      const { nodes: n, edges: e } = stepsToFlow(steps, startStepId);
+    const stepsChanged = JSON.stringify(lastStepsRef.current) !== JSON.stringify(steps);
+    const autoChanged = JSON.stringify(lastAutoStepsRef.current) !== JSON.stringify(autoSteps);
+    if (stepsChanged || autoChanged) {
+      const { nodes: n, edges: e } = configToFlow(steps, autoSteps, startStepId);
       setNodes(n);
       setEdges(e);
       lastStepsRef.current = steps;
+      lastAutoStepsRef.current = autoSteps;
     }
-  }, [steps, startStepId]);
+  }, [steps, autoSteps, startStepId]);
 
   // ── Selection state ────────────────────────────────────────────────────────
 
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [selectedAutoStepId, setSelectedAutoStepId] = useState<string | null>(null);
 
   const selectedStep = useMemo(
     () => steps.find((s) => s.id === selectedStepId) ?? null,
@@ -116,21 +145,28 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
     () => edges.find((e) => e.id === selectedEdgeId) ?? null,
     [edges, selectedEdgeId]
   );
+  const selectedAutoStep = useMemo(
+    () => autoSteps.find((a) => a.id === selectedAutoStepId) ?? null,
+    [autoSteps, selectedAutoStepId]
+  );
 
   // ── Flush canvas state → form data ────────────────────────────────────────
 
   const flush = useCallback(
     (nextNodes: Node[], nextEdges: Edge[]) => {
       const nextSteps = flowToSteps(nextNodes, nextEdges, steps);
+      const nextAutoSteps = flowToAutoSteps(nextNodes, nextEdges, autoSteps);
       const newStartId = deriveStartStepId(nextEdges) || nextSteps[0]?.id || "";
       // Mark as canvas-originated so the sync useEffect doesn't rebuild nodes/edges.
       lastStepsRef.current = nextSteps;
+      lastAutoStepsRef.current = nextAutoSteps;
       onUpdate({
         workflow_steps: nextSteps,
+        workflow_auto_steps: nextAutoSteps,
         workflow_start_step_id: newStartId,
       });
     },
-    [steps, onUpdate]
+    [steps, autoSteps, onUpdate]
   );
 
   // ── React Flow change handlers ─────────────────────────────────────────────
@@ -139,7 +175,6 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
     (changes) => {
       const next = applyNodeChanges(changes, nodes);
       setNodes(next);
-      // Only flush on drag-stop (not on selection or add changes)
       const hasPositionChange = changes.some(
         (c) => c.type === "position" && c.dragging === false
       );
@@ -164,14 +199,40 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
-      const newEdge: Edge = {
-        ...connection,
-        id: `${connection.source}→${connection.target}__${Date.now()}`,
-        type: "smoothstep",
-        label: "",
-        style: { stroke: "#251D1C", strokeWidth: 1.5 },
-        data: { condition: "", is_forced: false, is_fallback: false, next_step_id: connection.target },
-      };
+      // Detect if the target is an auto-step node — create a timed edge.
+      const targetNode = nodes.find((n) => n.id === connection.target);
+      const isTimedEdge = targetNode?.type === "autoStepNode";
+
+      const newEdge: Edge = isTimedEdge
+        ? {
+            ...connection,
+            id: `timed:${connection.source}→${connection.target}__${Date.now()}`,
+            type: "smoothstep",
+            animated: true,
+            label: "⏱",
+            labelStyle: { fontSize: 11, fill: "#7C3AED", fontWeight: 600 },
+            labelBgStyle: { fill: "#F5F3FF", fillOpacity: 0.9, stroke: "#C4B5FD" },
+            style: { stroke: "#7C3AED", strokeWidth: 1.5, strokeDasharray: "6 3" },
+            data: {
+              isTimed: true,
+              autoStepId: connection.target,
+              sourceId: connection.source,
+            },
+          }
+        : {
+            ...connection,
+            id: `${connection.source}→${connection.target}__${Date.now()}`,
+            type: "smoothstep",
+            label: "",
+            style: { stroke: "#251D1C", strokeWidth: 1.5 },
+            data: {
+              condition: "",
+              is_forced: false,
+              is_fallback: false,
+              next_step_id: connection.target,
+            },
+          };
+
       const next = addEdge(newEdge, edges);
       setEdges(next);
       flush(nodes, next);
@@ -183,19 +244,29 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
 
   const onNodeClick: NodeMouseHandler = useCallback((_, node) => {
     if (node.id === START_NODE_ID) return;
-    setSelectedStepId(node.id);
-    setSelectedEdgeId(null);
+    if (node.type === "autoStepNode") {
+      setSelectedAutoStepId(node.id);
+      setSelectedStepId(null);
+      setSelectedEdgeId(null);
+    } else {
+      setSelectedStepId(node.id);
+      setSelectedAutoStepId(null);
+      setSelectedEdgeId(null);
+    }
   }, []);
 
   const onEdgeClick: EdgeMouseHandler = useCallback((_, edge) => {
     if (edge.source === START_NODE_ID) return;
+    if ((edge.data as { isTimed?: boolean })?.isTimed) return; // timed edges not editable via click
     setSelectedEdgeId(edge.id);
     setSelectedStepId(null);
+    setSelectedAutoStepId(null);
   }, []);
 
   const onPaneClick = useCallback(() => {
     setSelectedStepId(null);
     setSelectedEdgeId(null);
+    setSelectedAutoStepId(null);
   }, []);
 
   // ── Step mutations ─────────────────────────────────────────────────────────
@@ -205,7 +276,6 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
     const idx = nodes.filter((n) => n.type === "stepNode").length;
     const newStep = makeDefaultStep(id, idx);
 
-    // Position right of the last step node
     const stepNodes = nodes.filter((n) => n.type === "stepNode");
     const lastX = stepNodes.reduce((max, n) => Math.max(max, n.position.x), 160);
     const position = { x: lastX + 340, y: 140 };
@@ -220,23 +290,22 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
     const nextNodes = [...nodes, newNode];
     const nextSteps = [...steps, { ...newStep, _position: position }];
     setNodes(nextNodes);
-    // Mark as canvas-originated to prevent useEffect from rebuilding canvas
     lastStepsRef.current = nextSteps;
+    lastAutoStepsRef.current = autoSteps;
     onUpdate({
       workflow_steps: nextSteps,
+      workflow_auto_steps: autoSteps,
       workflow_start_step_id: config.workflow_start_step_id || id,
     });
-  }, [nodes, steps, onUpdate, config.workflow_start_step_id]);
+  }, [nodes, steps, autoSteps, onUpdate, config.workflow_start_step_id]);
 
   const handleUpdateStep = useCallback(
     (stepId: string, patch: Partial<WorkflowFormStep>) => {
       const nextSteps = steps.map((s) => (s.id === stepId ? { ...s, ...patch } : s));
       const updatedStep = nextSteps.find((s) => s.id === stepId);
-      // Update node data so StepNode re-renders immediately
       setNodes((prev) =>
         prev.map((n) => (n.id === stepId ? { ...n, data: { step: updatedStep } } : n))
       );
-      // Mark as canvas-originated to prevent useEffect from rebuilding canvas
       lastStepsRef.current = nextSteps;
       onUpdate({ workflow_steps: nextSteps });
     },
@@ -306,16 +375,82 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
     [edges, nodes, flush]
   );
 
+  // ── Auto-step mutations ────────────────────────────────────────────────────
+
+  const handleAddAutoStep = useCallback(() => {
+    const id = makeAutoStepId();
+    // Attach to the first step by default, or empty string if no steps yet.
+    const sourceId = steps[0]?.id ?? "";
+    const newAutoStep = makeDefaultAutoStep(id, sourceId);
+
+    // Position to the right of the last step node (or auto-step node).
+    const allStepNodes = nodes.filter(
+      (n) => n.type === "stepNode" || n.type === "autoStepNode"
+    );
+    const lastX = allStepNodes.reduce((max, n) => Math.max(max, n.position.x), 160);
+    const position = { x: lastX + 340, y: 280 };
+    const newAutoStepWithPos = { ...newAutoStep, _position: position };
+
+    const newNode: Node = {
+      id,
+      type: "autoStepNode",
+      position,
+      data: { autoStep: newAutoStepWithPos },
+    };
+
+    const nextNodes = [...nodes, newNode];
+    const nextAutoSteps = [...autoSteps, newAutoStepWithPos];
+    setNodes(nextNodes);
+    lastStepsRef.current = steps;
+    lastAutoStepsRef.current = nextAutoSteps;
+    onUpdate({
+      workflow_auto_steps: nextAutoSteps,
+    });
+    setSelectedAutoStepId(id);
+    setSelectedStepId(null);
+    setSelectedEdgeId(null);
+  }, [nodes, steps, autoSteps, onUpdate]);
+
+  const handleUpdateAutoStep = useCallback(
+    (autoStepId: string, patch: Partial<WorkflowFormAutoStep>) => {
+      const nextAutoSteps = autoSteps.map((a) =>
+        a.id === autoStepId ? { ...a, ...patch } : a
+      );
+      const updated = nextAutoSteps.find((a) => a.id === autoStepId);
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === autoStepId ? { ...n, data: { autoStep: updated } } : n
+        )
+      );
+      lastAutoStepsRef.current = nextAutoSteps;
+      onUpdate({ workflow_auto_steps: nextAutoSteps });
+    },
+    [autoSteps, onUpdate]
+  );
+
+  const handleDeleteAutoStep = useCallback(
+    (autoStepId: string) => {
+      const nextNodes = nodes.filter((n) => n.id !== autoStepId);
+      const nextEdges = edges.filter(
+        (e) => e.source !== autoStepId && e.target !== autoStepId
+      );
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      setSelectedAutoStepId(null);
+      flush(nextNodes, nextEdges);
+    },
+    [nodes, edges, flush]
+  );
+
   // ── Fit view on mount ──────────────────────────────────────────────────────
 
   useEffect(() => {
     const t = setTimeout(() => fitView({ padding: 0.15, duration: 300 }), 80);
     return () => clearTimeout(t);
-    // Mount-only: re-running when fitView identity changes causes unnecessary refits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const panelOpen = !!(selectedStep || selectedEdge);
+  const panelOpen = !!(selectedStep || selectedEdge || selectedAutoStep);
 
   return (
     <div className="flex h-full w-full overflow-hidden rounded-lg border border-[#BEBAB7]">
@@ -332,7 +467,16 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
             Добавить шаг
           </button>
 
-          {steps.length > 0 && (
+          <button
+            type="button"
+            onClick={handleAddAutoStep}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#7C3AED] text-white rounded-md hover:bg-[#6D28D9] transition-colors shadow"
+          >
+            <Zap size={13} />
+            Авто-шаг
+          </button>
+
+          {(steps.length > 0 || autoSteps.length > 0) && (
             <span className="text-xs text-[#9A9590] bg-white/80 backdrop-blur-sm px-2 py-1 rounded border border-[#EEEAE7]">
               Перетаскивайте узлы · Соединяйте хэндлы · Кликайте для настройки
             </span>
@@ -365,14 +509,18 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
           />
           <Controls showInteractive={false} className="[&>button]:border-[#BEBAB7]" />
           <MiniMap
-            nodeColor={(n) => (n.type === "startNode" ? "#16a34a" : "#251D1C")}
+            nodeColor={(n) => {
+              if (n.type === "startNode") return "#16a34a";
+              if (n.type === "autoStepNode") return "#7C3AED";
+              return "#251D1C";
+            }}
             maskColor="rgba(238,234,231,0.6)"
             className="border border-[#BEBAB7] rounded"
           />
         </ReactFlow>
 
         {/* Empty state */}
-        {steps.length === 0 && (
+        {steps.length === 0 && autoSteps.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
             <p className="text-[#9A9590] text-sm">Нажмите «Добавить шаг», чтобы начать</p>
           </div>
@@ -381,21 +529,30 @@ function CanvasInner({ config, onUpdate }: WorkflowCanvasProps) {
 
       {/* Right panel */}
       {panelOpen && (
-        <div className="w-80 flex-shrink-0 overflow-hidden">
-          <StepPanel
-            selectedStep={selectedStep}
-            selectedEdge={selectedEdge}
-            steps={steps}
-            edges={edges}
-            onUpdateStep={handleUpdateStep}
-            onDeleteStep={handleDeleteStep}
-            onUpdateEdge={handleUpdateEdge}
-            onDeleteEdge={handleDeleteEdge}
-            onClose={() => {
-              setSelectedStepId(null);
-              setSelectedEdgeId(null);
-            }}
-          />
+        <div className="w-80 flex-shrink-0 overflow-hidden border-l border-[#EEEAE7]">
+          {selectedAutoStep ? (
+            <AutoStepPanel
+              autoStep={selectedAutoStep}
+              onUpdate={(patch) => handleUpdateAutoStep(selectedAutoStep.id, patch)}
+              onDelete={() => handleDeleteAutoStep(selectedAutoStep.id)}
+              onClose={() => setSelectedAutoStepId(null)}
+            />
+          ) : (
+            <StepPanel
+              selectedStep={selectedStep}
+              selectedEdge={selectedEdge}
+              steps={steps}
+              edges={edges}
+              onUpdateStep={handleUpdateStep}
+              onDeleteStep={handleDeleteStep}
+              onUpdateEdge={handleUpdateEdge}
+              onDeleteEdge={handleDeleteEdge}
+              onClose={() => {
+                setSelectedStepId(null);
+                setSelectedEdgeId(null);
+              }}
+            />
+          )}
         </div>
       )}
     </div>

@@ -194,10 +194,22 @@ export interface WorkflowStep {
   timer_trigger?: WorkflowTimerTrigger | null;
 }
 
+export interface WorkflowAutoStep {
+  id: string;
+  name: string;
+  source_id: string;
+  delay_seconds: number;
+  action_type: "static" | "agent";
+  message_template: string;
+  prompt: string;
+  condition?: string | null;
+}
+
 export interface WorkflowConfig {
   enabled: boolean;
   start_step_id: string;
   steps: WorkflowStep[];
+  auto_steps: WorkflowAutoStep[];
 }
 
 

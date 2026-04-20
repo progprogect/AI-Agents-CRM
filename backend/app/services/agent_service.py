@@ -10,6 +10,7 @@ responsible for:
 """
 
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, Optional
@@ -205,6 +206,33 @@ class AgentService:
                 )
             except Exception as exc:
                 logger.warning("Failed to schedule timer trigger: %s", exc)
+
+        # --- Handle auto-step scheduling/cancellation ---
+        if graph_result.get("cancel_all_auto_steps"):
+            try:
+                from app.services.agent_reply_coordinator import cancel_all_auto_steps
+                await cancel_all_auto_steps(conversation_id)
+            except Exception as exc:
+                logger.warning("Failed to cancel auto-steps for %s: %s", conversation_id, exc)
+
+        for sched in graph_result.get("pending_auto_schedules") or []:
+            try:
+                from app.chains.agent_chain import workflow_config_hash
+                from app.services.agent_reply_coordinator import schedule_auto_step
+                fire_at_ms = int(time.time() * 1000) + sched["delay_seconds"] * 1000
+                await schedule_auto_step(
+                    conversation_id,
+                    auto_step=sched["auto_step"],
+                    config_hash=workflow_config_hash(self.agent_config.workflow),
+                    fire_at_ms=fire_at_ms,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to schedule auto-step %s for %s: %s",
+                    sched.get("auto_step_id"),
+                    conversation_id,
+                    exc,
+                )
 
         # --- Format response text for channel ---
         conversation = await self.dynamodb.get_conversation(conversation_id)
