@@ -249,6 +249,8 @@ export function flowToSteps(
 
   edges.forEach((edge) => {
     if (edge.source === START_NODE_ID) return;
+    // Timed edges (step → auto_step) are encoded via auto_step.source_id — not as transitions.
+    if ((edge.data as { isTimed?: boolean })?.isTimed) return;
     const list = transitionsBySource.get(edge.source) ?? [];
     list.push({
       condition: (edge.data as { condition?: string })?.condition ?? (edge.label as string) ?? "",

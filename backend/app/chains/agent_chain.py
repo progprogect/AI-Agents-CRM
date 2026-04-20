@@ -756,7 +756,15 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         answer = "NO"
 
                     if answer.startswith("YES"):
-                        new_step_id = transition.next_step_id
+                        if step_map.get(transition.next_step_id) is not None:
+                            new_step_id = transition.next_step_id
+                        else:
+                            logger.warning(
+                                "Transition target %s not found in steps (step %s) — staying",
+                                transition.next_step_id,
+                                step_id,
+                                extra={"conversation_id": state["conversation_id"]},
+                            )
                         break
                     elif transition.is_forced:
                         logger.debug(
@@ -770,13 +778,21 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     # Loop exhausted without a break — no conditional transition matched.
                     # Apply the fallback branch if one was configured.
                     if fallback_transition is not None and new_step_id == step_id:
-                        logger.debug(
-                            "No condition matched for step %s — applying fallback → %s",
-                            step_id,
-                            fallback_transition.next_step_id,
-                            extra={"conversation_id": state["conversation_id"]},
-                        )
-                        new_step_id = fallback_transition.next_step_id
+                        if step_map.get(fallback_transition.next_step_id) is not None:
+                            logger.debug(
+                                "No condition matched for step %s — applying fallback → %s",
+                                step_id,
+                                fallback_transition.next_step_id,
+                                extra={"conversation_id": state["conversation_id"]},
+                            )
+                            new_step_id = fallback_transition.next_step_id
+                        else:
+                            logger.warning(
+                                "Fallback transition target %s not found in steps (step %s) — staying",
+                                fallback_transition.next_step_id,
+                                step_id,
+                                extra={"conversation_id": state["conversation_id"]},
+                            )
 
             history = list(state.get("step_history") or [])
             if not history or history[-1] != new_step_id:
