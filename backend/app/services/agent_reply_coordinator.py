@@ -225,6 +225,18 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
     if result.get("aborted"):
         return
 
+    # Race-condition guard: a new user message can arrive *while* process_message
+    # was running (the LLM call is slow).  notify_user_message_saved would have
+    # cancelled the old timer, but process_message scheduled a *new* one after
+    # that cancellation.  Cancel it now so stale inactivity timers don't fire.
+    if await is_reply_stale():
+        await cancel_timer_trigger(conversation_id)
+        logger.info(
+            "Post-processing timer cancelled for %s: new user message arrived during LLM call",
+            conversation_id,
+            extra={"conversation_id": conversation_id},
+        )
+
     if get_enum_value(conversation.channel) == MessageChannel.WEB_CHAT.value:
         from app.api.websocket import connection_manager
 
