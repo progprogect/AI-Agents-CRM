@@ -46,6 +46,8 @@ export interface WorkflowAutoStep {
   id: string;
   name: string;
   source_id: string;
+  /** Default on_step_enter when omitted (matches backend). */
+  schedule_anchor?: "on_step_enter" | "on_step_exit";
   delay_seconds: number;
   action_type: "static" | "agent";
   message_template: string;
@@ -316,6 +318,7 @@ export function agentConfigToFormData(
       id: a.id || "",
       name: a.name || "",
       source_id: a.source_id || "",
+      schedule_anchor: (a.schedule_anchor as "on_step_enter" | "on_step_exit") || "on_step_enter",
       delay_seconds: a.delay_seconds || 60,
       action_type: (a.action_type as "static" | "agent") || "static",
       message_template: a.message_template || "",
@@ -464,6 +467,7 @@ export function formDataToAgentConfig(
         id: a.id,
         name: a.name,
         source_id: a.source_id,
+        schedule_anchor: a.schedule_anchor ?? "on_step_enter",
         delay_seconds: a.delay_seconds,
         action_type: a.action_type || "static",
         message_template: a.message_template || "",

@@ -88,6 +88,7 @@ function makeDefaultAutoStep(id: string, sourceId: string): WorkflowFormAutoStep
     id,
     name: "Авто-шаг",
     source_id: sourceId,
+    schedule_anchor: "on_step_enter",
     delay_seconds: 86400, // 1 day default
     action_type: "static",
     message_template: "",

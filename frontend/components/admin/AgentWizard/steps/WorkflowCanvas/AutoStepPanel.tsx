@@ -127,6 +127,33 @@ export function AutoStepPanel({ autoStep, onUpdate, onDelete, onClose }: AutoSte
           </p>
         </Section>
 
+        {/* When delay starts (source_id must be a workflow step id for on_step_exit) */}
+        <Section title="Когда начинать отсчёт">
+          <div className="flex gap-2">
+            {(["on_step_enter", "on_step_exit"] as const).map((anchor) => (
+              <button
+                key={anchor}
+                type="button"
+                onClick={() => onUpdate({ schedule_anchor: anchor })}
+                className={`
+                  flex-1 py-2 text-xs rounded-lg border font-medium transition-all leading-tight
+                  ${(autoStep.schedule_anchor ?? "on_step_enter") === anchor
+                    ? "bg-[#7C3AED] text-white border-[#7C3AED]"
+                    : "bg-white text-[#443C3C] border-[#BEBAB7] hover:border-[#7C3AED]"}
+                `}
+              >
+                {anchor === "on_step_enter"
+                  ? "При входе на шаг"
+                  : "При выходе с шага"}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-[#9A9590]">
+            «При входе» — задержка от перехода на шаг, указанный связью на канвасе (как раньше).
+            «При выходе» — от перехода с этого шага на другой; для цепочек auto→auto оставьте «При входе».
+          </p>
+        </Section>
+
         {/* Action type */}
         <Section title="Тип действия">
           <div className="flex gap-2">

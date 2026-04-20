@@ -419,6 +419,10 @@ class WorkflowAutoStep(BaseModel):
 
     ``source_id`` must reference either a ``WorkflowStep.id`` or another
     ``WorkflowAutoStep.id`` within the same ``WorkflowConfig``.
+
+    ``schedule_anchor`` controls when ``delay_seconds`` starts: on entering the
+    referenced step (default) or on leaving that step (``on_step_exit`` applies only
+    when ``source_id`` is a regular step id, not another auto-step).
     """
 
     id: str = Field(..., description="Unique auto-step identifier within the workflow")
@@ -426,6 +430,14 @@ class WorkflowAutoStep(BaseModel):
     source_id: str = Field(
         ...,
         description="ID of the step or auto-step that directly precedes this one in the chain",
+    )
+    schedule_anchor: Literal["on_step_enter", "on_step_exit"] = Field(
+        default="on_step_enter",
+        description=(
+            "on_step_enter: start delay when transitioning TO source_id (step or prior auto). "
+            "on_step_exit: start delay when transitioning FROM source_id to another step "
+            "(source_id must be a WorkflowStep id)."
+        ),
     )
     delay_seconds: int = Field(
         ..., ge=1, description="Seconds to wait after the source event before firing"
@@ -467,6 +479,26 @@ class WorkflowConfig(BaseModel):
         default_factory=list,
         description="Time-triggered follow-up actions that fire automatically regardless of user activity",
     )
+
+    @model_validator(mode="after")
+    def validate_auto_step_schedule_anchors(self) -> "WorkflowConfig":
+        """on_step_exit requires source_id to be a regular workflow step, not an auto-step."""
+        step_ids = {s.id for s in self.steps}
+        auto_ids = {a.id for a in self.auto_steps}
+        for a in self.auto_steps:
+            if a.schedule_anchor != "on_step_exit":
+                continue
+            if a.source_id not in step_ids:
+                raise ValueError(
+                    f"workflow.auto_steps[{a.id!r}]: schedule_anchor 'on_step_exit' requires "
+                    f"source_id to be a step id; {a.source_id!r} is not in workflow.steps"
+                )
+            if a.source_id in auto_ids:
+                raise ValueError(
+                    f"workflow.auto_steps[{a.id!r}]: schedule_anchor 'on_step_exit' cannot use "
+                    f"another auto_step as source_id ({a.source_id!r})"
+                )
+        return self
 
 
 class AgentConfig(BaseModel):

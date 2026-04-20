@@ -831,17 +831,29 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 else:
                     timer_to_schedule = None
 
-                # Cancel existing auto-steps and schedule new ones for the new step.
+                # Cancel existing auto-steps and schedule new ones for this transition:
+                # - on_step_enter: delay starts when entering new_step_id (source_id == new_step_id)
+                # - on_step_exit: delay starts when leaving step_id (source_id == previous step)
                 cancel_auto_steps = True
-                pending_auto = [
+                enter_autos = [
                     {
                         "auto_step_id": a.id,
                         "delay_seconds": a.delay_seconds,
                         "auto_step": a.model_dump(),
                     }
                     for a in agent_config.workflow.auto_steps
-                    if a.source_id == new_step_id
+                    if a.source_id == new_step_id and a.schedule_anchor == "on_step_enter"
                 ]
+                exit_autos = [
+                    {
+                        "auto_step_id": a.id,
+                        "delay_seconds": a.delay_seconds,
+                        "auto_step": a.model_dump(),
+                    }
+                    for a in agent_config.workflow.auto_steps
+                    if a.source_id == step_id and a.schedule_anchor == "on_step_exit"
+                ]
+                pending_auto = enter_autos + exit_autos
             else:
                 # Staying on the same step.  Always recalculate fire_at_ms from *now* so
                 # the inactivity countdown resets with each user message.
@@ -878,6 +890,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 # On the very first turn, schedule auto-steps for the starting step.
                 if _is_first_turn:
                     cancel_auto_steps = True
+                    # First graph turn: only enter-anchored autos (no "exit from virtual step").
                     pending_auto = [
                         {
                             "auto_step_id": a.id,
@@ -885,7 +898,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                             "auto_step": a.model_dump(),
                         }
                         for a in agent_config.workflow.auto_steps
-                        if a.source_id == new_step_id
+                        if a.source_id == new_step_id and a.schedule_anchor == "on_step_enter"
                     ]
 
             # quick_replies come from the step that *generated* the current response

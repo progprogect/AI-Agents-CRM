@@ -199,6 +199,8 @@ export interface WorkflowAutoStep {
   id: string;
   name: string;
   source_id: string;
+  /** When delay starts: entering source step (default) or leaving that step (source must be a regular step). */
+  schedule_anchor?: "on_step_enter" | "on_step_exit";
   delay_seconds: number;
   action_type: "static" | "agent";
   message_template: string;
