@@ -314,18 +314,36 @@ async def _generate_agent_timer_message(
 
         llm = await get_llm_factory().get_chat_model(agent_config)
 
-        # Build system context from agent base system prompt.
+        # Build base system prompt from agent config fields
+        # (mirrors AgentChain._build_base_system_prompt without heavy sections like
+        #  escalation rules and examples that are not needed for a timer message).
         base_prompt = ""
         try:
-            base_prompt = getattr(getattr(agent_config, "prompts", None), "system_prompt", "") or ""
+            sys_dict: dict = agent_config.prompts.system or {}
+            profile = agent_config.profile
+            persona = sys_dict.get("persona", "")
+            if persona:
+                try:
+                    persona = persona.format(
+                        agent_display_name=getattr(profile, "agent_display_name", ""),
+                        doctor_display_name=getattr(profile, "agent_display_name", ""),
+                        company_display_name=getattr(profile, "company_display_name", ""),
+                        specialty=getattr(profile, "specialty", "") or "",
+                    )
+                except (KeyError, IndexError, ValueError):
+                    pass  # persona template has unknown/malformed placeholders — use as-is
+            hard_rules = sys_dict.get("hard_rules", "")
+            goal = sys_dict.get("goal", "")
+            parts = [p for p in [persona, hard_rules, goal] if p.strip()]
+            base_prompt = "\n\n".join(parts)
         except Exception:
             pass
 
         system_content = (
             f"{base_prompt}\n\n"
-            "--- TIMER TRIGGER ---\n"
+            "--- ТАЙМЕР ---\n"
             f"{prompt_instruction}\n\n"
-            "Write only the message text. Do not add any explanations or preamble."
+            "Напиши только текст сообщения. Без пояснений и предисловий."
         ).strip()
 
         messages = [_SystemMessage(content=system_content)]
