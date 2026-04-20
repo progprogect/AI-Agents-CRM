@@ -1,6 +1,6 @@
 """Contract tests for AgentService and AgentChain workflow integration.
 
-Storage: PostgreSQL (primary) + Redis.  DynamoDB is NOT supported.
+Storage: PostgreSQL (primary) + Redis.
 """
 
 import unittest

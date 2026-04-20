@@ -25,10 +25,6 @@ def get_db() -> PostgreSQLClient:
     return get_postgres_client()
 
 
-# Keep legacy alias so any external code that still imports get_db doesn't crash.
-get_db = get_db
-
-
 def get_cache() -> PostgresCacheClient:
     """Get the PostgreSQL-backed cache client."""
     return get_postgres_cache_client()
