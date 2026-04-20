@@ -79,6 +79,7 @@ function makeDefaultStep(id: string, index: number): WorkflowFormStep {
     required: false,
     transitions: [],
     timer_trigger: undefined,
+    quick_replies: [],
   };
 }
 

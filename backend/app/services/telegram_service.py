@@ -514,8 +514,13 @@ class TelegramService:
         message_text: str,
         media_url: Optional[str] = None,
         media_type: Optional[str] = None,
+        reply_markup: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
-        """Send text and/or media message via Telegram Bot API."""
+        """Send text and/or media message via Telegram Bot API.
+
+        Pass ``reply_markup`` to attach a ReplyKeyboardMarkup (quick-reply buttons)
+        or remove an existing keyboard (``{"remove_keyboard": True}``).
+        """
         bot_token = await self.channel_binding_service.get_access_token(binding_id)
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -542,14 +547,20 @@ class TelegramService:
                     if message_text:
                         payload["caption"] = message_text
 
+                if reply_markup:
+                    payload["reply_markup"] = reply_markup
+
                 resp = await client.post(endpoint, json=payload)
                 if resp.status_code != 200 or not resp.json().get("ok"):
                     logger.error(f"Telegram media send failed: {resp.text}")
                     # Fall through to send text separately if caption failed
                     if message_text:
+                        text_payload: dict[str, Any] = {"chat_id": chat_id, "text": message_text}
+                        if reply_markup:
+                            text_payload["reply_markup"] = reply_markup
                         text_resp = await client.post(
                             f"{self.TELEGRAM_API_BASE_URL}{bot_token}/sendMessage",
-                            json={"chat_id": chat_id, "text": message_text},
+                            json=text_payload,
                         )
                         return text_resp.json()
                 else:
@@ -558,9 +569,12 @@ class TelegramService:
 
             # Text-only message
             if message_text:
+                text_only_payload: dict[str, Any] = {"chat_id": chat_id, "text": message_text}
+                if reply_markup:
+                    text_only_payload["reply_markup"] = reply_markup
                 resp = await client.post(
                     f"{self.TELEGRAM_API_BASE_URL}{bot_token}/sendMessage",
-                    json={"chat_id": chat_id, "text": message_text},
+                    json=text_only_payload,
                 )
                 if resp.status_code != 200 or not resp.json().get("ok"):
                     logger.error(f"Telegram send failed: {resp.text}")

@@ -16,6 +16,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _build_reply_markup(quick_replies: list[str]) -> dict:
+    """Build a Telegram ReplyKeyboardMarkup or remove-keyboard dict.
+
+    Buttons are grouped into rows of two. An empty list produces
+    ``remove_keyboard: true`` to dismiss any previously shown keyboard.
+    """
+    if quick_replies:
+        rows = [quick_replies[i:i + 2] for i in range(0, len(quick_replies), 2)]
+        return {
+            "keyboard": [[{"text": btn} for btn in row] for row in rows],
+            "one_time_keyboard": True,
+            "resize_keyboard": True,
+        }
+    return {"remove_keyboard": True}
+
+
 class ChannelSender(ABC):
     """Abstract base class for channel senders."""
 
@@ -174,6 +190,7 @@ class TelegramSender(ChannelSender):
         external_user_id: Optional[str] = None,
         media_url: Optional[str] = None,
         media_type: Optional[str] = None,
+        quick_replies: Optional[list[str]] = None,
         **kwargs,
     ) -> None:
         """Send message (text and/or media) via Telegram Bot API."""
@@ -215,6 +232,12 @@ class TelegramSender(ChannelSender):
         if not external_user_id:
             raise ValueError("external_user_id (chat_id) is required for Telegram messages")
 
+        # Build reply_markup only when quick_replies was explicitly provided.
+        # None → no keyboard change (e.g. timer messages).
+        # []  → remove any existing keyboard.
+        # [...] → show the keyboard.
+        reply_markup = _build_reply_markup(quick_replies) if quick_replies is not None else None
+
         # Send message via Telegram service
         await self.telegram_service.send_message(
             binding_id=binding_id,
@@ -222,6 +245,7 @@ class TelegramSender(ChannelSender):
             message_text=message_text,
             media_url=media_url,
             media_type=media_type,
+            reply_markup=reply_markup,
         )
 
         # Note: Agent message is already saved in AgentService.process_message

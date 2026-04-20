@@ -17,6 +17,7 @@ export function useChat(conversationId: string | null) {
   const [handoffNotice, setHandoffNotice] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [quickReplies, setQuickReplies] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsClientRef = useRef<WebSocketClient | null>(null);
 
@@ -103,6 +104,8 @@ export function useChat(conversationId: string | null) {
             }
             return prev;
           });
+          // Update quick-reply buttons from the latest agent message
+          setQuickReplies(message.quick_replies ?? []);
         }
       } else if (message.type === "typing") {
         setIsTyping(true);
@@ -178,6 +181,7 @@ export function useChat(conversationId: string | null) {
       };
 
       setMessages((prev) => [...prev, userMessage]);
+      setQuickReplies([]);
 
       try {
         if (uploaded) {
@@ -220,6 +224,7 @@ export function useChat(conversationId: string | null) {
     handoffNotice,
     isTyping,
     isConnected,
+    quickReplies,
     sendMessage,
     messagesEndRef,
   };

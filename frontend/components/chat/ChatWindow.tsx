@@ -26,6 +26,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     handoffNotice,
     isTyping,
     isConnected,
+    quickReplies,
     sendMessage,
     messagesEndRef,
   } = useChat(conversationId);
@@ -113,6 +114,21 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
       {/* Typing indicator */}
       <TypingIndicator isTyping={isTyping} agentName={agentName} />
+
+      {/* Quick-reply chips */}
+      {quickReplies.length > 0 && (
+        <div className="px-4 pb-2 flex flex-wrap gap-2">
+          {quickReplies.map((label) => (
+            <button
+              key={label}
+              onClick={() => void sendMessage({ content: label })}
+              className="px-3 py-1.5 text-sm rounded-full border border-[#251D1C]/40 bg-white hover:bg-gray-50 text-gray-800 transition-colors"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Input */}
       <MessageInput

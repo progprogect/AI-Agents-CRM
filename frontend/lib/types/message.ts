@@ -48,6 +48,7 @@ export interface WebSocketMessage {
   message?: string;
   media_url?: string | null;
   media_type?: string | null;
+  quick_replies?: string[];
 }
 
 

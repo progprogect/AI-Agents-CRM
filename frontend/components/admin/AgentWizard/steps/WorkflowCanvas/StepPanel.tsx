@@ -2,8 +2,9 @@
 
 "use client";
 
+import { useState, type KeyboardEvent } from "react";
 import type { Edge } from "@xyflow/react";
-import { Clock, Trash2, X } from "lucide-react";
+import { Clock, Plus, Trash2, X } from "lucide-react";
 import type { WorkflowFormStep, WorkflowTimerTrigger } from "@/lib/utils/agentConfig";
 import { Input } from "@/components/shared/Input";
 import { Textarea } from "@/components/shared/Textarea";
@@ -37,6 +38,98 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       </p>
       {children}
     </div>
+  );
+}
+
+// ── Quick-replies sub-panel ────────────────────────────────────────────────────
+
+const MAX_QUICK_REPLIES = 8;
+
+function QuickRepliesSection({
+  quickReplies,
+  onUpdate,
+}: {
+  quickReplies: string[];
+  onUpdate: (value: string[]) => void;
+}) {
+  const [inputValue, setInputValue] = useState("");
+
+  const addReply = () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed || quickReplies.includes(trimmed) || quickReplies.length >= MAX_QUICK_REPLIES) {
+      return;
+    }
+    onUpdate([...quickReplies, trimmed]);
+    setInputValue("");
+  };
+
+  const removeReply = (label: string) => {
+    onUpdate(quickReplies.filter((r) => r !== label));
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addReply();
+    }
+  };
+
+  return (
+    <Section title="Быстрые ответы">
+      <div className="space-y-3">
+        <p className="text-xs text-[#9A9590]">
+          Необязательно. Кнопки отобразятся в чате и Telegram после ответа агента на этом шаге. Пользователь может нажать кнопку или написать свой ответ.
+        </p>
+
+        {quickReplies.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {quickReplies.map((label) => (
+              <span
+                key={label}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-[#251D1C]/8 border border-[#251D1C]/20 text-[#251D1C]"
+              >
+                {label}
+                <button
+                  type="button"
+                  onClick={() => removeReply(label)}
+                  className="hover:text-red-500 transition-colors"
+                  aria-label={`Удалить кнопку "${label}"`}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {quickReplies.length < MAX_QUICK_REPLIES && (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Текст кнопки..."
+              maxLength={40}
+              className="flex-1 text-sm px-3 py-1.5 border border-[#251D1C]/30 rounded-sm focus:outline-none focus:border-[#251D1C]/60 bg-white text-[#251D1C] placeholder:text-[#9A9590]"
+            />
+            <button
+              type="button"
+              onClick={addReply}
+              disabled={!inputValue.trim()}
+              className="px-2.5 py-1.5 rounded-sm border border-[#251D1C]/30 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              aria-label="Добавить кнопку"
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        )}
+
+        {quickReplies.length >= MAX_QUICK_REPLIES && (
+          <p className="text-xs text-[#9A9590]">Максимум {MAX_QUICK_REPLIES} кнопок.</p>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -295,6 +388,11 @@ export function StepPanel({
                 onUpdate={(t) =>
                   onUpdateStep(selectedStep.id, { timer_trigger: t ?? undefined })
                 }
+              />
+
+              <QuickRepliesSection
+                quickReplies={selectedStep.quick_replies ?? []}
+                onUpdate={(qr) => onUpdateStep(selectedStep.id, { quick_replies: qr })}
               />
 
               {/* ── Outgoing transitions ── */}

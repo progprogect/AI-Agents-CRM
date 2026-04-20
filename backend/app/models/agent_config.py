@@ -403,6 +403,10 @@ class WorkflowStep(BaseModel):
         default=None,
         description="Optional timer-based follow-up message scheduled after entering this step",
     )
+    quick_replies: list[str] = Field(
+        default_factory=list,
+        description="Optional quick-reply button labels shown to the user after this step's message",
+    )
 
 
 class WorkflowAutoStep(BaseModel):

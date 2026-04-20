@@ -377,6 +377,8 @@ async def _handle_message(
             if result.get("rag_media_url"):
                 ws_payload["media_url"] = result["rag_media_url"]
                 ws_payload["media_type"] = result.get("rag_media_type")
+            if result.get("quick_replies"):
+                ws_payload["quick_replies"] = result["quick_replies"]
             await connection_manager.send_message(conversation_id, ws_payload)
         elif agent_response:
             # If message wasn't created in agent_service (shouldn't happen, but handle gracefully)

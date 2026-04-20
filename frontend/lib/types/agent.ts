@@ -192,6 +192,7 @@ export interface WorkflowStep {
   required: boolean;
   transitions: WorkflowTransition[];
   timer_trigger?: WorkflowTimerTrigger | null;
+  quick_replies: string[];
 }
 
 export interface WorkflowAutoStep {

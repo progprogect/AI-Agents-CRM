@@ -74,6 +74,9 @@ class WorkflowState(TypedDict):
     pending_auto_schedules: Optional[list[dict]]
     """Auto-steps to schedule: [{auto_step_id, delay_seconds, auto_step: {...}}]."""
 
+    quick_replies: Optional[list[str]]
+    """Quick-reply button labels for the current step, attached to the agent's response."""
+
     rag_context: Optional[str]
     """Retrieved RAG context text for the current turn."""
 
@@ -859,12 +862,14 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         if a.source_id == new_step_id
                     ]
 
+            final_step = step_map.get(new_step_id)
             result_state: dict = {
                 "current_step_id": new_step_id,
                 "step_history": history,
                 "pending_timer": timer_to_schedule,
                 "cancel_all_auto_steps": cancel_auto_steps if cancel_auto_steps else None,
                 "pending_auto_schedules": pending_auto if pending_auto else None,
+                "quick_replies": final_step.quick_replies if final_step and final_step.quick_replies else None,
             }
             if collected_update is not None:
                 result_state["collected"] = collected_update

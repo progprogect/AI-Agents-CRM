@@ -39,6 +39,7 @@ export interface WorkflowStep {
   required: boolean;
   transitions: WorkflowTransition[];
   timer_trigger?: WorkflowTimerTrigger | null;
+  quick_replies: string[];
 }
 
 export interface WorkflowAutoStep {
@@ -309,6 +310,7 @@ export function agentConfigToFormData(
             prompt: s.timer_trigger.prompt ?? null,
           }
         : undefined,
+      quick_replies: Array.isArray(s.quick_replies) ? s.quick_replies : [],
     })) as WorkflowFormStep[],
     workflow_auto_steps: (agentConfig.workflow?.auto_steps || []).map((a: any) => ({
       id: a.id || "",
@@ -456,6 +458,7 @@ export function formDataToAgentConfig(
               prompt: s.timer_trigger.prompt || null,
             }
           : null,
+        quick_replies: Array.isArray(s.quick_replies) ? s.quick_replies : [],
       })),
       auto_steps: (formData.workflow_auto_steps || []).map((a) => ({
         id: a.id,

@@ -291,6 +291,8 @@ class AgentService:
             agent_message_ts = to_utc_iso_string(agent_message.timestamp)
 
         # --- Send via channel sender (non-web channels) ---
+        quick_replies: list[str] = graph_result.get("quick_replies") or []
+
         if self.channel_sender:
             try:
                 if channel_val and channel_val != MessageChannel.WEB_CHAT.value:
@@ -299,6 +301,7 @@ class AgentService:
                         message_text=response,
                         media_url=rag_media_url,
                         media_type=rag_media_type,
+                        quick_replies=quick_replies,
                     )
                     logger.info(
                         "Sent agent message for conversation %s (media=%s)",
@@ -322,6 +325,7 @@ class AgentService:
             "rag_media_type": rag_media_type,
             "agent_message_id": agent_message_id,
             "agent_message_timestamp": agent_message_ts,
+            "quick_replies": quick_replies,
         }
 
 

@@ -256,6 +256,8 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
             if result.get("rag_media_url"):
                 ws_payload["media_url"] = result["rag_media_url"]
                 ws_payload["media_type"] = result.get("rag_media_type")
+            if result.get("quick_replies"):
+                ws_payload["quick_replies"] = result["quick_replies"]
             await connection_manager.send_message(conversation_id, ws_payload)
     elif result.get("escalate"):
         return
