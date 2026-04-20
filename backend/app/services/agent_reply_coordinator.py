@@ -423,16 +423,27 @@ async def _load_conversation_history_from_db(db: Any, conversation_id: str) -> l
 async def _load_current_step_from_graph(agent_config: Any, conversation_id: str) -> Optional[str]:
     """Try to load current_step_id from the LangGraph checkpoint.
 
-    Used only for the stale-timer guard. Returns None if unavailable so the
-    caller can skip the guard rather than fail noisily.
+    Reads directly from the PostgreSQL checkpointer so the result is reliable
+    even after a server restart (graph cache may be empty). Returns None only
+    when the checkpointer itself is unavailable, in which case the stale-timer
+    guard is skipped to avoid silently dropping legitimate timers.
     """
     try:
+        from app.storage.postgres_checkpointer import get_checkpointer
+        checkpointer = get_checkpointer()
+        config = {"configurable": {"thread_id": conversation_id}}
+        checkpoint_tuple = await checkpointer.aget_tuple(config)
+        if checkpoint_tuple and checkpoint_tuple.checkpoint:
+            channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
+            step_id = channel_values.get("current_step_id")
+            if step_id:
+                return step_id
+        # Fallback: try the in-memory graph cache (less reliable but available)
         from app.chains.agent_chain import _graph_cache, _graph_cache_key
         cache_key = _graph_cache_key(agent_config.agent_id, agent_config.workflow)
         graph = _graph_cache.get(cache_key)
         if graph is None:
             return None
-        config = {"configurable": {"thread_id": conversation_id}}
         state_snapshot = await graph.aget_state(config)
         if state_snapshot and isinstance(getattr(state_snapshot, "values", None), dict):
             return state_snapshot.values.get("current_step_id")
