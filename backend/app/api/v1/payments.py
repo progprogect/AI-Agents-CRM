@@ -408,7 +408,7 @@ async def refund_transaction_endpoint(
         from app.services.payment.factory import get_payment_provider
         from app.storage.resolver import get_secrets_manager
 
-        binding_service = ChannelBindingService(deps.dynamodb, get_secrets_manager())
+        binding_service = ChannelBindingService(deps.db, get_secrets_manager())
         binding = await binding_service.get_binding(txn.binding_id)
         if not binding:
             raise HTTPException(status_code=404, detail="Binding not found")

@@ -36,8 +36,8 @@ async def simulate_instagram_webhook(
         
         settings = get_settings()
         secrets_manager = get_secrets_manager()
-        binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
-        instagram_service = InstagramService(binding_service, deps.dynamodb, settings)
+        binding_service = ChannelBindingService(deps.db, secrets_manager)
+        instagram_service = InstagramService(binding_service, deps.db, settings)
         
         # Process webhook event
         await instagram_service.handle_webhook_event(payload)

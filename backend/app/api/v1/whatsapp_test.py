@@ -45,9 +45,9 @@ async def list_whatsapp_bindings(
 ):
     """Return all active WhatsApp channel bindings for the test UI."""
     secrets_manager = get_secrets_manager()
-    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+    binding_service = ChannelBindingService(deps.db, secrets_manager)
 
-    all_agents = await deps.dynamodb.list_agents()
+    all_agents = await deps.db.list_agents()
     results = []
     for agent in all_agents:
         agent_id = agent.get("agent_id") or agent.get("pk", "")
@@ -86,7 +86,7 @@ async def send_whatsapp_test_message(
     and routes to the appropriate API.
     """
     secrets_manager = get_secrets_manager()
-    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+    binding_service = ChannelBindingService(deps.db, secrets_manager)
 
     binding = await binding_service.get_binding(request.binding_id)
     if not binding:

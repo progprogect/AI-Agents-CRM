@@ -1,4 +1,4 @@
-"""PostgreSQL-based cache client (replacement for DynamoDB cache)."""
+"""PostgreSQL-based cache client (replacement for PostgreSQL cache)."""
 
 import json
 import logging

@@ -73,7 +73,7 @@ def get_notification_service(
 ) -> tuple[Any, SecretsManager]:
     """Get dependencies for notification service."""
     secrets_manager = get_secrets_manager()
-    return deps.dynamodb, secrets_manager
+    return deps.db, secrets_manager
 
 
 @router.get(
@@ -87,7 +87,7 @@ async def list_notification_configs(
 ):
     """List all notification configs."""
     try:
-        configs = await deps.dynamodb.list_notification_configs(active_only=active_only)
+        configs = await deps.db.list_notification_configs(active_only=active_only)
         return [NotificationConfigResponse.from_config(config) for config in configs]
     except Exception as e:
         logger.error(f"Failed to list notification configs: {e}", exc_info=True)
@@ -129,10 +129,10 @@ async def create_notification_config(
         try:
             settings = get_settings()
             secrets_manager = get_secrets_manager()
-            channel_binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+            channel_binding_service = ChannelBindingService(deps.db, secrets_manager)
             telegram_service = TelegramService(
                 channel_binding_service=channel_binding_service,
-                dynamodb=deps.dynamodb,
+                db=deps.db,
                 settings=settings,
             )
             is_valid = await telegram_service.verify_bot_token(request.bot_token)
@@ -161,7 +161,7 @@ async def create_notification_config(
             bot_token=request.bot_token,
         )
 
-        # Create config record in DynamoDB
+        # Create config record in the database
         config = NotificationConfig(
             config_id=config_id,
             notification_type=NotificationType(request.notification_type),
@@ -172,7 +172,7 @@ async def create_notification_config(
             created_by=_admin,
         )
 
-        await deps.dynamodb.create_notification_config(config)
+        await deps.db.create_notification_config(config)
 
         logger.info(
             f"Created notification config: {config_id}, type: {request.notification_type}"
@@ -201,7 +201,7 @@ async def get_notification_config(
     _admin: str = require_admin(),
 ):
     """Get notification config by ID."""
-    config = await deps.dynamodb.get_notification_config(config_id)
+    config = await deps.db.get_notification_config(config_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -221,7 +221,7 @@ async def update_notification_config(
     _admin: str = require_admin(),
 ):
     """Update notification config."""
-    config = await deps.dynamodb.get_notification_config(config_id)
+    config = await deps.db.get_notification_config(config_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -252,11 +252,11 @@ async def update_notification_config(
             try:
                 settings = get_settings()
                 channel_binding_service = ChannelBindingService(
-                    deps.dynamodb, secrets_manager
+                    deps.db, secrets_manager
                 )
                 telegram_service = TelegramService(
                     channel_binding_service=channel_binding_service,
-                    dynamodb=deps.dynamodb,
+                    db=deps.db,
                     settings=settings,
                 )
                 is_valid = await telegram_service.verify_bot_token(request.bot_token)
@@ -282,7 +282,7 @@ async def update_notification_config(
         )
 
     if update_kwargs:
-        updated_config = await deps.dynamodb.update_notification_config(
+        updated_config = await deps.db.update_notification_config(
             config_id, **update_kwargs
         )
         if not updated_config:
@@ -293,7 +293,7 @@ async def update_notification_config(
         return NotificationConfigResponse.from_config(updated_config)
 
     # If only bot_token was updated (no other fields), still return updated config
-    # to reflect the change (even though DynamoDB record wasn't updated)
+    # to reflect the change (even though database record wasn't updated)
     return NotificationConfigResponse.from_config(config)
 
 
@@ -307,7 +307,7 @@ async def delete_notification_config(
     _admin: str = require_admin(),
 ):
     """Delete notification config and its secret."""
-    config = await deps.dynamodb.get_notification_config(config_id)
+    config = await deps.db.get_notification_config(config_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -326,7 +326,7 @@ async def delete_notification_config(
             )
 
         # Delete config from storage
-        await deps.dynamodb.delete_notification_config(config_id)
+        await deps.db.delete_notification_config(config_id)
 
         logger.info(f"Deleted notification config: {config_id}")
     except Exception as e:
@@ -347,7 +347,7 @@ async def test_notification(
     _admin: str = require_admin(),
 ):
     """Send a test notification."""
-    config = await deps.dynamodb.get_notification_config(config_id)
+    config = await deps.db.get_notification_config(config_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -367,10 +367,10 @@ async def test_notification(
         )
 
         settings = get_settings()
-        channel_binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+        channel_binding_service = ChannelBindingService(deps.db, secrets_manager)
         telegram_service = TelegramService(
             channel_binding_service=channel_binding_service,
-            dynamodb=deps.dynamodb,
+            db=deps.db,
             settings=settings,
         )
 

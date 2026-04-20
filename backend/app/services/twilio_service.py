@@ -40,8 +40,8 @@ class TwilioWhatsAppService:
       metadata.account_sid → Twilio Account SID (ACxxx...)
     """
 
-    def __init__(self, dynamodb: Any) -> None:
-        self.dynamodb = dynamodb
+    def __init__(self, db: Any) -> None:
+        self.db = db
 
     # ── Signature validation ──────────────────────────────────────────────────
 
@@ -182,7 +182,7 @@ class TwilioWhatsAppService:
     ) -> None:
         """Create/update conversation and call the agent."""
         conversation_id = f"twilio_wa_{binding.binding_id}_{sender_phone}"
-        conversation = await self.dynamodb.get_conversation(conversation_id)
+        conversation = await self.db.get_conversation(conversation_id)
 
         if not conversation:
             conversation = Conversation(
@@ -196,7 +196,7 @@ class TwilioWhatsAppService:
                 created_at=utc_now(),
                 updated_at=utc_now(),
             )
-            await self.dynamodb.create_conversation(conversation)
+            await self.db.create_conversation(conversation)
 
         final_media_url = media_url
         agent_user_message = body
@@ -208,7 +208,7 @@ class TwilioWhatsAppService:
             if account_sid:
                 try:
                     auth_token = await binding_service.get_access_token(binding.binding_id)
-                    agent_row = await self.dynamodb.get_agent(binding.agent_id)
+                    agent_row = await self.db.get_agent(binding.agent_id)
                     if agent_row and agent_row.get("config"):
                         from app.services.inbound_media_pipeline import (
                             compose_user_message_for_agent,
@@ -255,7 +255,7 @@ class TwilioWhatsAppService:
             media_url=final_media_url,
             media_type=media_type,
         )
-        try_create = getattr(self.dynamodb, "try_create_message", None)
+        try_create = getattr(self.db, "try_create_message", None)
         if callable(try_create):
             inserted = await try_create(message)
             if not inserted:
@@ -266,7 +266,7 @@ class TwilioWhatsAppService:
                 )
                 return
         else:
-            await self.dynamodb.create_message(message)
+            await self.db.create_message(message)
 
         # Skip AI if human is handling
         from app.utils.enum_helpers import get_enum_value
@@ -286,7 +286,7 @@ class TwilioWhatsAppService:
             from app.services.channel_sender import WhatsAppSender
             from app.services.conversation_service import build_conversation_history_for_agent
 
-            agent_data = agent_row or await self.dynamodb.get_agent(binding.agent_id)
+            agent_data = agent_row or await self.db.get_agent(binding.agent_id)
             if not agent_data or "config" not in agent_data:
                 logger.error(f"Agent {binding.agent_id} not found or has no config")
                 return
@@ -294,14 +294,14 @@ class TwilioWhatsAppService:
             agent_config = AgentConfig.from_dict(agent_data["config"])
 
             conversation_history = await build_conversation_history_for_agent(
-                self.dynamodb,
+                self.db,
                 conversation_id,
                 body,
                 agent_context_reset_at=conversation.agent_context_reset_at,
             )
 
-            wa_sender = WhatsAppSender(None, self.dynamodb, twilio_service=self)
-            agent_service = create_agent_service(agent_config, self.dynamodb, wa_sender)
+            wa_sender = WhatsAppSender(None, self.db, twilio_service=self)
+            agent_service = create_agent_service(agent_config, self.db, wa_sender)
 
             settings = get_settings()
             if settings.agent_reply_debounce_seconds > 0:

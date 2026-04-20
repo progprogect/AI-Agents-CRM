@@ -48,7 +48,7 @@ class Message(BaseModel):
         default_factory=dict, description="Additional metadata"
     )
     ttl: Optional[int] = Field(
-        None, description="TTL timestamp for DynamoDB (timestamp + 48h)"
+        None, description="TTL timestamp (timestamp + 48h)"
     )
     # Media fields — stored in metadata for DB compatibility, exposed as top-level fields.
     # When reading from DB, the model_validator populates these from metadata automatically.

@@ -29,12 +29,12 @@ class InstagramService:
     def __init__(
         self,
         channel_binding_service: ChannelBindingService,
-        dynamodb: Any,
+        db: Any,
         settings: Settings,
     ):
         """Initialize Instagram service."""
         self.channel_binding_service = channel_binding_service
-        self.dynamodb = dynamodb
+        self.db = db
         self.settings = settings
 
     def verify_webhook(self, mode: str, token: str, challenge: str) -> Optional[str]:
@@ -268,7 +268,7 @@ class InstagramService:
             media_type=media_type,
         )
 
-        await self.dynamodb.create_message(user_message)
+        await self.db.create_message(user_message)
 
         # Check if conversation is handled by human - don't process with agent
         from app.utils.enum_helpers import get_enum_value
@@ -285,7 +285,7 @@ class InstagramService:
         # Process message through agent
         try:
             # Get agent configuration
-            agent_data = await self.dynamodb.get_agent(binding.agent_id)
+            agent_data = await self.db.get_agent(binding.agent_id)
             if not agent_data or "config" not in agent_data:
                 logger.error(f"Agent {binding.agent_id} not found or invalid configuration")
                 return
@@ -297,7 +297,7 @@ class InstagramService:
             from app.services.conversation_service import build_conversation_history_for_agent
 
             conversation_history = await build_conversation_history_for_agent(
-                self.dynamodb,
+                self.db,
                 conversation.conversation_id,
                 message_text,
                 agent_context_reset_at=conversation.agent_context_reset_at,
@@ -307,10 +307,10 @@ class InstagramService:
             from app.services.channel_sender import InstagramSender
             from app.services.agent_service import create_agent_service
 
-            instagram_sender = InstagramSender(self, self.dynamodb)
+            instagram_sender = InstagramSender(self, self.db)
 
             # Create agent service with channel sender
-            agent_service = create_agent_service(agent_config, self.dynamodb, instagram_sender)
+            agent_service = create_agent_service(agent_config, self.db, instagram_sender)
 
             settings = get_settings()
             if settings.agent_reply_debounce_seconds > 0:
@@ -363,14 +363,14 @@ class InstagramService:
         # Try to find existing conversation by external_user_id and agent_id
         # This prevents creating multiple conversations for the same user
         try:
-            all_conversations = await self.dynamodb.list_conversations(
+            all_conversations = await self.db.list_conversations(
                 agent_id=agent_id,
                 limit=100,
             )
             
             # Find conversation with matching external_user_id
             for conv in all_conversations:
-                # Handle both enum and string channel (from DynamoDB)
+                # Handle both enum and string channel (from the database)
                 conv_channel = get_enum_value(conv.channel)
                 if (
                     conv_channel == MessageChannel.INSTAGRAM.value
@@ -399,7 +399,7 @@ class InstagramService:
             updated_at=utc_now(),
         )
 
-        await self.dynamodb.create_conversation(conversation)
+        await self.db.create_conversation(conversation)
         logger.info(
             f"Created new conversation {conversation_id} for user {external_user_id}"
         )
@@ -550,7 +550,7 @@ class InstagramService:
     async def refresh_user_profile(
         self, external_user_id: str, binding_id: str
     ) -> Optional[InstagramUserProfile]:
-        """Refresh Instagram user profile and save to DynamoDB.
+        """Refresh Instagram user profile and save to the database.
         
         Args:
             external_user_id: Instagram-scoped ID (IGSID) of the user
@@ -567,7 +567,7 @@ class InstagramService:
         
         if profile:
             # Profile already has correct TTL from get_user_profile, just save it
-            await self.dynamodb.create_or_update_instagram_profile(profile)
+            await self.db.create_or_update_instagram_profile(profile)
             logger.info(f"Refreshed and saved Instagram profile for user {external_user_id}")
             return profile
         else:

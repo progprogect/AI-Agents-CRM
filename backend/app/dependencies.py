@@ -1,7 +1,6 @@
 """Dependency injection for FastAPI.
 
 Storage backend: PostgreSQL (primary) + Redis (cache / debounce).
-DynamoDB is NOT supported — see storage/dynamodb.py for the historical reference.
 """
 
 from fastapi import Depends
@@ -21,13 +20,13 @@ def get_config() -> Settings:
 
 # Storage dependencies — PostgreSQL only
 
-def get_dynamodb() -> PostgreSQLClient:
-    """Get the PostgreSQL database client.
-
-    Named get_dynamodb() for backward compatibility with existing call sites,
-    but always returns the PostgreSQL client.  DynamoDB is not supported.
-    """
+def get_db() -> PostgreSQLClient:
+    """Get the PostgreSQL database client."""
     return get_postgres_client()
+
+
+# Keep legacy alias so any external code that still imports get_db doesn't crash.
+get_db = get_db
 
 
 def get_cache() -> PostgresCacheClient:
@@ -59,9 +58,9 @@ class CommonDependencies:
     def __init__(
         self,
         config: Settings = Depends(get_config),
-        dynamodb: PostgreSQLClient = Depends(get_dynamodb),
+        db: PostgreSQLClient = Depends(get_db),
         cache: PostgresCacheClient = Depends(get_cache),
     ):
         self.config = config
-        self.dynamodb = dynamodb
+        self.db = db
         self.cache = cache

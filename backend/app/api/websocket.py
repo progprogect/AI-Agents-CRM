@@ -124,14 +124,14 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
 
     try:
         # Get dependencies (simplified - in production use proper DI)
-        from app.dependencies import get_dynamodb
+        from app.dependencies import get_db
 
         settings = get_settings()
-        dynamodb = get_dynamodb()
-        conversation_service = ConversationService(dynamodb)
+        db = get_db()
+        conversation_service = ConversationService(db)
 
         # Verify conversation exists
-        conversation = await dynamodb.get_conversation(conversation_id)
+        conversation = await db.get_conversation(conversation_id)
         if not conversation:
             await connection_manager.send_error(
                 conversation_id, "Conversation not found"
@@ -150,7 +150,7 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
             return
 
         # Send initial status
-        # Handle both enum and string status (from DynamoDB)
+        # Handle both enum and string status (from the database)
         status_value = get_enum_value(conversation.status)
         await connection_manager.send_message(
             conversation_id,
@@ -191,7 +191,7 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str):
                     conversation_id,
                     message_data,
                     conversation_service,
-                    dynamodb,
+                    db,
                 )
             elif message_type == "ping":
                 await connection_manager.send_message(
@@ -223,7 +223,7 @@ async def _handle_message(
     conversation_id: str,
     message_data: dict,
     conversation_service: ConversationService,
-    dynamodb: Any,
+    db: Any,
 ) -> None:
     """Handle incoming message from client."""
     content = message_data.get("content", "").strip()
@@ -234,7 +234,7 @@ async def _handle_message(
         return
 
     # Get conversation
-    conversation = await dynamodb.get_conversation(conversation_id)
+    conversation = await db.get_conversation(conversation_id)
     if not conversation:
         await connection_manager.send_error(
             conversation_id, "Conversation not found"
@@ -242,7 +242,7 @@ async def _handle_message(
         return
 
     # Check if conversation is active
-    # Handle both enum and string status (from DynamoDB)
+    # Handle both enum and string status (from the database)
     status_value = get_enum_value(conversation.status)
     if status_value == ConversationStatus.CLOSED.value:
         await connection_manager.send_error(
@@ -262,7 +262,7 @@ async def _handle_message(
         timestamp=utc_now(),
     )
 
-    await dynamodb.create_message(user_message)
+    await db.create_message(user_message)
 
     # Send user message confirmation
     await connection_manager.send_message(
@@ -285,7 +285,7 @@ async def _handle_message(
         return
 
     # Get agent configuration
-    agent_data = await dynamodb.get_agent(conversation.agent_id)
+    agent_data = await db.get_agent(conversation.agent_id)
     if not agent_data or "config" not in agent_data:
         await connection_manager.send_error(
             conversation_id, "Agent configuration not found"
@@ -305,8 +305,8 @@ async def _handle_message(
     # WebSocket is only for web_chat, so create WebChatSender
     from app.services.channel_sender import WebChatSender
     
-    web_chat_sender = WebChatSender(dynamodb)
-    agent_service = create_agent_service(agent_config, dynamodb, web_chat_sender)
+    web_chat_sender = WebChatSender(db)
+    agent_service = create_agent_service(agent_config, db, web_chat_sender)
 
     settings = get_settings()
     if settings.agent_reply_debounce_seconds > 0:

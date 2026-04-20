@@ -17,7 +17,7 @@ def _to_utc_aware(dt: datetime) -> datetime:
 
 
 async def build_conversation_history_for_agent(
-    dynamodb: Any,
+    db: Any,
     conversation_id: str,
     last_user_message_for_dedup: str,
     *,
@@ -28,7 +28,7 @@ async def build_conversation_history_for_agent(
 
     If agent_context_reset_at is set, only messages strictly after that instant are included.
     """
-    history_messages = await dynamodb.list_messages(
+    history_messages = await db.list_messages(
         conversation_id=conversation_id,
         limit=limit,
         reverse=True,
@@ -58,9 +58,9 @@ async def build_conversation_history_for_agent(
 class ConversationService:
     """Service for managing conversations and processing messages."""
 
-    def __init__(self, dynamodb: Any):
+    def __init__(self, db: Any):
         """Initialize conversation service."""
-        self.dynamodb = dynamodb
+        self.db = db
 
     async def process_message(
         self,
@@ -70,12 +70,12 @@ class ConversationService:
     ) -> dict:
         """Process user message and return agent response."""
         # Get conversation
-        conversation = await self.dynamodb.get_conversation(conversation_id)
+        conversation = await self.db.get_conversation(conversation_id)
         if not conversation:
             raise ValueError(f"Conversation {conversation_id} not found")
 
         conversation_history = await build_conversation_history_for_agent(
-            self.dynamodb,
+            self.db,
             conversation_id,
             user_message,
             agent_context_reset_at=conversation.agent_context_reset_at,
@@ -100,7 +100,7 @@ class ConversationService:
         import uuid
 
         # Get conversation to get agent_id
-        conversation = await self.dynamodb.get_conversation(conversation_id)
+        conversation = await self.db.get_conversation(conversation_id)
         if not conversation:
             raise ValueError(f"Conversation {conversation_id} not found")
 
@@ -118,13 +118,13 @@ class ConversationService:
             metadata=metadata or {},
         )
 
-        await self.dynamodb.create_message(agent_message)
+        await self.db.create_message(agent_message)
 
         # Update conversation status if needed
-        # Handle both enum and string status (from DynamoDB)
+        # Handle both enum and string status (from the database)
         status_value = get_enum_value(conversation.status)
         if status_value != ConversationStatus.AI_ACTIVE.value:
-            await self.dynamodb.update_conversation(
+            await self.db.update_conversation(
                 conversation_id=conversation_id,
                 status=ConversationStatus.AI_ACTIVE,
             )

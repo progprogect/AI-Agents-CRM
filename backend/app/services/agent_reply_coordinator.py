@@ -114,13 +114,13 @@ async def _current_reply_version(redis, conversation_id: str) -> int:
 
 async def execute_agent_reply(conversation_id: str, expected_version: int) -> None:
     """Load context and run the agent once; skip if conversation state or version is stale."""
-    from app.dependencies import get_dynamodb
+    from app.dependencies import get_db
 
-    dynamodb = get_dynamodb()
+    db = get_db()
     settings = get_settings()
     redis = get_redis_client()
 
-    conversation = await dynamodb.get_conversation(conversation_id)
+    conversation = await db.get_conversation(conversation_id)
     if not conversation:
         logger.debug("execute_agent_reply: conversation missing %s", conversation_id)
         return
@@ -145,7 +145,7 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
         plain = agent_input
 
     if not agent_input.strip() and not plain.strip():
-        msgs = await dynamodb.list_messages(conversation_id, limit=50, reverse=True)
+        msgs = await db.list_messages(conversation_id, limit=50, reverse=True)
         for m in msgs:
             if get_enum_value(m.role) == "user":
                 plain = m.content
@@ -161,13 +161,13 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
 
     last_plain_for_history = plain.strip() if plain else agent_input.strip()
     conversation_history = await build_conversation_history_for_agent(
-        dynamodb,
+        db,
         conversation_id,
         last_plain_for_history,
         agent_context_reset_at=conversation.agent_context_reset_at,
     )
 
-    agent_data = await dynamodb.get_agent(conversation.agent_id)
+    agent_data = await db.get_agent(conversation.agent_id)
     if not agent_data or "config" not in agent_data:
         logger.error("execute_agent_reply: agent %s missing", conversation.agent_id)
         return
@@ -186,11 +186,11 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
     telegram_service = None
     if conversation_channel != MessageChannel.WEB_CHAT.value:
         secrets_manager = get_secrets_manager()
-        binding_service = ChannelBindingService(dynamodb, secrets_manager)
+        binding_service = ChannelBindingService(db, secrets_manager)
         if conversation_channel == MessageChannel.INSTAGRAM.value:
-            instagram_service = InstagramService(binding_service, dynamodb, settings)
+            instagram_service = InstagramService(binding_service, db, settings)
         elif conversation_channel == MessageChannel.TELEGRAM.value:
-            telegram_service = TelegramService(binding_service, dynamodb, settings)
+            telegram_service = TelegramService(binding_service, db, settings)
 
     channel_enum = (
         MessageChannel(conversation_channel)
@@ -198,14 +198,14 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
         else conversation.channel
     )
     channel_sender = get_channel_sender(
-        channel_enum, dynamodb, instagram_service, telegram_service
+        channel_enum, db, instagram_service, telegram_service
     )
 
     async def is_reply_stale() -> bool:
         cur = await _current_reply_version(redis, conversation_id)
         return cur != expected_version
 
-    agent_service = create_agent_service(agent_config, dynamodb, channel_sender)
+    agent_service = create_agent_service(agent_config, db, channel_sender)
     try:
         result = await agent_service.process_message(
             user_message=agent_input,
@@ -263,9 +263,9 @@ async def execute_agent_reply(conversation_id: str, expected_version: int) -> No
         return
 
     if not result.get("escalate"):
-        conv_after = await dynamodb.get_conversation(conversation_id)
+        conv_after = await db.get_conversation(conversation_id)
         if conv_after and get_enum_value(conv_after.status) != ConversationStatus.AI_ACTIVE.value:
-            await dynamodb.update_conversation(
+            await db.update_conversation(
                 conversation_id=conversation_id,
                 status=ConversationStatus.AI_ACTIVE,
             )
@@ -377,18 +377,18 @@ async def _generate_agent_timer_message(
         return ""
 
 
-async def _load_conversation_history_from_db(dynamodb: Any, conversation_id: str) -> list[dict]:
-    """Load conversation history from DynamoDB (the canonical source of sent messages).
+async def _load_conversation_history_from_db(db: Any, conversation_id: str) -> list[dict]:
+    """Load conversation history from the database (canonical source of sent messages).
 
     This is preferred over reading from the LangGraph checkpoint because:
     - LangGraph writes intermediate checkpoints mid-run (router sets step before
       the AI response node runs), so aget_state() can return a snapshot that is
       missing the latest AI message.
-    - DynamoDB contains every message that was actually *sent* to the user.
+    - The database contains every message that was actually *sent* to the user.
     """
     try:
         return await build_conversation_history_for_agent(
-            dynamodb,
+            db,
             conversation_id,
             last_user_message_for_dedup="",  # no dedup needed here
         )
@@ -430,10 +430,10 @@ async def _load_current_step_from_graph(agent_config: Any, conversation_id: str)
 async def execute_timer_trigger(conversation_id: str) -> None:
     """Fire a scheduled workflow timer trigger for a conversation."""
     import json as _json
-    from app.dependencies import get_dynamodb
+    from app.dependencies import get_db
 
     redis = get_redis_client()
-    dynamodb = get_dynamodb()
+    db = get_db()
     settings = get_settings()
 
     # Load timer payload from Redis
@@ -447,14 +447,14 @@ async def execute_timer_trigger(conversation_id: str) -> None:
         logger.error("Failed to parse timer payload for %s: %s", conversation_id, exc)
         return
 
-    conversation = await dynamodb.get_conversation(conversation_id)
+    conversation = await db.get_conversation(conversation_id)
     if not conversation:
         return
     status_value = get_enum_value(conversation.status)
     if status_value in (ConversationStatus.CLOSED.value, ConversationStatus.NEEDS_HUMAN.value, ConversationStatus.HUMAN_ACTIVE.value):
         return
 
-    agent_data = await dynamodb.get_agent(conversation.agent_id)
+    agent_data = await db.get_agent(conversation.agent_id)
     if not agent_data or "config" not in agent_data:
         return
 
@@ -486,23 +486,23 @@ async def execute_timer_trigger(conversation_id: str) -> None:
     telegram_service = None
     if conversation_channel != MessageChannel.WEB_CHAT.value:
         secrets_manager = get_secrets_manager()
-        binding_service = ChannelBindingService(dynamodb, secrets_manager)
+        binding_service = ChannelBindingService(db, secrets_manager)
         if conversation_channel == MessageChannel.INSTAGRAM.value:
-            instagram_service = InstagramService(binding_service, dynamodb, settings)
+            instagram_service = InstagramService(binding_service, db, settings)
         elif conversation_channel == MessageChannel.TELEGRAM.value:
-            telegram_service = TelegramService(binding_service, dynamodb, settings)
+            telegram_service = TelegramService(binding_service, db, settings)
 
     from app.models.message import MessageChannel as MC
     channel_enum = MC(conversation_channel) if conversation_channel else MC.WEB_CHAT
-    channel_sender = get_channel_sender(channel_enum, dynamodb, instagram_service, telegram_service)
+    channel_sender = get_channel_sender(channel_enum, db, instagram_service, telegram_service)
 
     action_type = timer.get("action_type", "static")
 
-    # Load conversation history from DynamoDB (the canonical source of sent messages).
+    # Load conversation history from the database (the canonical source of sent messages).
     # LangGraph checkpoints may contain intermediate states (mid-run snapshots) that
     # are missing the latest AI response, making them unreliable for history.
     collected: dict = {}
-    conversation_history = await _load_conversation_history_from_db(dynamodb, conversation_id)
+    conversation_history = await _load_conversation_history_from_db(db, conversation_id)
 
     # Guard: discard timer if the conversation has already moved past the
     # step that originally scheduled it (e.g. user replied mid-timer).
@@ -579,7 +579,7 @@ async def execute_timer_trigger(conversation_id: str) -> None:
         metadata={"timer_trigger": True, "step_id": timer.get("step_id")},
     )
     try:
-        await dynamodb.create_message(timer_msg)
+        await db.create_message(timer_msg)
     except Exception as exc:
         logger.warning("Timer trigger: could not persist message for %s: %s", conversation_id, exc)
 
@@ -837,10 +837,10 @@ async def _evaluate_auto_step_condition(
 async def execute_auto_step_trigger(member: str) -> None:
     """Fire a scheduled auto-step for the given ZSET member ``{conv_id}:{auto_step_id}``."""
     import json as _json
-    from app.dependencies import get_dynamodb
+    from app.dependencies import get_db
 
     redis = get_redis_client()
-    dynamodb = get_dynamodb()
+    db = get_db()
     settings = get_settings()
 
     raw = await redis.get(f"{KEY_AUTO_PAY}{member}")
@@ -856,14 +856,14 @@ async def execute_auto_step_trigger(member: str) -> None:
     conversation_id: str = payload.get("conversation_id", member.split(":")[0])
     auto_step_id: str = payload.get("id", member.split(":", 1)[-1])
 
-    conversation = await dynamodb.get_conversation(conversation_id)
+    conversation = await db.get_conversation(conversation_id)
     if not conversation:
         return
     status_value = get_enum_value(conversation.status)
     if status_value in (ConversationStatus.CLOSED.value, ConversationStatus.NEEDS_HUMAN.value, ConversationStatus.HUMAN_ACTIVE.value):
         return
 
-    agent_data = await dynamodb.get_agent(conversation.agent_id)
+    agent_data = await db.get_agent(conversation.agent_id)
     if not agent_data or "config" not in agent_data:
         return
 
@@ -896,21 +896,21 @@ async def execute_auto_step_trigger(member: str) -> None:
     telegram_service = None
     if conversation_channel != MessageChannel.WEB_CHAT.value:
         secrets_manager = get_secrets_manager()
-        binding_service = ChannelBindingService(dynamodb, secrets_manager)
+        binding_service = ChannelBindingService(db, secrets_manager)
         if conversation_channel == MessageChannel.INSTAGRAM.value:
-            instagram_service = InstagramService(binding_service, dynamodb, settings)
+            instagram_service = InstagramService(binding_service, db, settings)
         elif conversation_channel == MessageChannel.TELEGRAM.value:
-            telegram_service = TelegramService(binding_service, dynamodb, settings)
+            telegram_service = TelegramService(binding_service, db, settings)
 
     from app.models.message import MessageChannel as MC
     channel_enum = MC(conversation_channel) if conversation_channel else MC.WEB_CHAT
-    channel_sender = get_channel_sender(channel_enum, dynamodb, instagram_service, telegram_service)
+    channel_sender = get_channel_sender(channel_enum, db, instagram_service, telegram_service)
 
     action_type = payload.get("action_type", "static")
 
-    # Load conversation history from DynamoDB (reliable canonical source).
+    # Load conversation history from the database (reliable canonical source).
     collected: dict = {}
-    conversation_history = await _load_conversation_history_from_db(dynamodb, conversation_id)
+    conversation_history = await _load_conversation_history_from_db(db, conversation_id)
 
     # Optional condition check.
     condition = payload.get("condition")
@@ -970,7 +970,7 @@ async def execute_auto_step_trigger(member: str) -> None:
             metadata={"auto_step_trigger": True, "auto_step_id": auto_step_id},
         )
         try:
-            await dynamodb.create_message(msg)
+            await db.create_message(msg)
         except Exception as exc:
             logger.warning("Auto-step: could not persist message for %s: %s", conversation_id, exc)
 

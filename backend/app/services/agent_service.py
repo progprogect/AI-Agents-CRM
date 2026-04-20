@@ -41,7 +41,7 @@ class AgentService:
         escalation_service: EscalationService,
         moderation_service: ModerationService,
         rag_service: RAGService,
-        dynamodb: Any,
+        db: Any,
         channel_sender: Optional[ChannelSender] = None,
         organization_id: Optional[str] = None,
     ):
@@ -50,7 +50,7 @@ class AgentService:
         self.escalation_service = escalation_service
         self.moderation_service = moderation_service
         self.rag_service = rag_service
-        self.dynamodb = dynamodb
+        self.db = db
         self.channel_sender = channel_sender
         self.agent_chain = AgentChain(
             agent_config=agent_config,
@@ -70,7 +70,7 @@ class AgentService:
             user_message, self.agent_config
         )
         if flagged:
-            await self.dynamodb.update_conversation(
+            await self.db.update_conversation(
                 conversation_id=conversation_id,
                 status=ConversationStatus.NEEDS_HUMAN,
                 handoff_reason="Content moderation violation",
@@ -164,7 +164,7 @@ class AgentService:
         # --- Escalation or moderation flagged from within the graph ---
         if graph_result.get("escalate"):
             escalation_type = graph_result.get("escalation_type")
-            await self.dynamodb.update_conversation(
+            await self.db.update_conversation(
                 conversation_id=conversation_id,
                 status=ConversationStatus.NEEDS_HUMAN,
                 handoff_reason=graph_result.get("escalation_reason", "Escalation"),
@@ -235,7 +235,7 @@ class AgentService:
                 )
 
         # --- Format response text for channel ---
-        conversation = await self.dynamodb.get_conversation(conversation_id)
+        conversation = await self.db.get_conversation(conversation_id)
         channel_val = get_enum_value(conversation.channel) if conversation else None
 
         try:
@@ -287,7 +287,7 @@ class AgentService:
                 timestamp=utc_now(),
                 metadata=msg_metadata,
             )
-            await self.dynamodb.create_message(agent_message)
+            await self.db.create_message(agent_message)
             agent_message_ts = to_utc_iso_string(agent_message.timestamp)
 
         # --- Send via channel sender (non-web channels) ---
@@ -331,7 +331,7 @@ class AgentService:
 
 def create_agent_service(
     agent_config: AgentConfig,
-    dynamodb: Any,
+    db: Any,
     channel_sender: Optional[ChannelSender] = None,
     organization_id: Optional[str] = None,
 ) -> AgentService:
@@ -347,7 +347,7 @@ def create_agent_service(
         escalation_service=escalation_service,
         moderation_service=moderation_service,
         rag_service=rag_service,
-        dynamodb=dynamodb,
+        db=db,
         channel_sender=channel_sender,
         organization_id=organization_id,
     )

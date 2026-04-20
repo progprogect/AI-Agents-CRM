@@ -94,7 +94,7 @@ async def _test_timer_delivery() -> dict:
     smoke_conv_id = f"smoke-timer-{uuid.uuid4().hex[:8]}"
 
     try:
-        from app.dependencies import get_dynamodb
+        from app.dependencies import get_db
         from app.storage.redis import get_redis_client
         from app.services.agent_reply_coordinator import (
             schedule_timer_trigger,
@@ -104,7 +104,7 @@ async def _test_timer_delivery() -> dict:
         from app.models.message import MessageChannel
         from app.utils.datetime_utils import utc_now
 
-        dynamodb = get_dynamodb()
+        db = get_db()
         redis = get_redis_client()
 
         # Check Redis availability first
@@ -137,7 +137,7 @@ async def _test_timer_delivery() -> dict:
             created_at=utc_now(),
             updated_at=utc_now(),
         )
-        await dynamodb.create_conversation(conv)
+        await db.create_conversation(conv)
 
         # Schedule a 10-second static timer
         timer_payload = {
@@ -162,7 +162,7 @@ async def _test_timer_delivery() -> dict:
             }
 
         # Check that the message was persisted in DB
-        messages = await dynamodb.list_messages(smoke_conv_id, limit=5)
+        messages = await db.list_messages(smoke_conv_id, limit=5)
         timer_msgs = [
             m for m in messages
             if getattr(m, "metadata", None) and m.metadata.get("timer_trigger")

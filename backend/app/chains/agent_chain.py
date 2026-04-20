@@ -1,7 +1,7 @@
 """Main LangGraph agent chain.
 
 Storage stack: PostgreSQL (primary) + Redis (cache).
-DynamoDB is NOT supported — see backend/docs/storage_stack.md.
+Storage: PostgreSQL only — see backend/docs/storage_stack.md.
 
 Architecture:
 - The compiled StateGraph is built once per (agent_id, workflow_config_hash) and

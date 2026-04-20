@@ -61,7 +61,7 @@ async def create_agent(
 ):
     """Create a new agent."""
     # Check if agent already exists
-    existing_agent = await deps.dynamodb.get_agent(request.agent_id)
+    existing_agent = await deps.db.get_agent(request.agent_id)
     if existing_agent:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -88,7 +88,7 @@ async def create_agent(
         )
 
     # Create agent
-    agent_data = await deps.dynamodb.create_agent(request.agent_id, request.config)
+    agent_data = await deps.db.create_agent(request.agent_id, request.config)
 
     # Index RAG documents if enabled
     if agent_config.rag.enabled and agent_config.rag.sources:
@@ -150,7 +150,7 @@ async def get_agent(
     deps: CommonDependencies = Depends(),
 ):
     """Get agent by ID."""
-    agent = await deps.dynamodb.get_agent(agent_id)
+    agent = await deps.db.get_agent(agent_id)
     if not agent:
         raise AgentNotFoundError(agent_id)
     return AgentResponse(**agent)
@@ -162,7 +162,7 @@ async def list_agents(
     deps: CommonDependencies = Depends(),
 ):
     """List all agents."""
-    agents = await deps.dynamodb.list_agents(active_only=active_only)
+    agents = await deps.db.list_agents(active_only=active_only)
     return [AgentResponse(**agent) for agent in agents]
 
 
@@ -175,7 +175,7 @@ async def update_agent(
 ):
     """Update agent configuration."""
     # Get existing agent
-    existing = await deps.dynamodb.get_agent(agent_id)
+    existing = await deps.db.get_agent(agent_id)
     if not existing:
         raise AgentNotFoundError(agent_id)
 
@@ -198,7 +198,7 @@ async def update_agent(
             validation_errors={"parse_error": str(e)},
         )
 
-    agent_data = await deps.dynamodb.create_agent(agent_id, updated_config)
+    agent_data = await deps.db.create_agent(agent_id, updated_config)
     return AgentResponse(**agent_data)
 
 
@@ -209,12 +209,12 @@ async def delete_agent(
     _admin: str = require_admin(),
 ):
     """Delete agent (soft delete by setting is_active=False)."""
-    existing = await deps.dynamodb.get_agent(agent_id)
+    existing = await deps.db.get_agent(agent_id)
     if not existing:
         raise AgentNotFoundError(agent_id)
 
     # Soft delete - update is_active status atomically
-    updated = await deps.dynamodb.update_agent_status(agent_id, is_active=False)
+    updated = await deps.db.update_agent_status(agent_id, is_active=False)
     if not updated:
         raise AgentNotFoundError(agent_id)
 

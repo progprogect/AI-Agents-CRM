@@ -24,8 +24,8 @@ def get_instagram_service(
     """Get Instagram service instance."""
     settings = get_settings()
     secrets_manager = get_secrets_manager()
-    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
-    return InstagramService(binding_service, deps.dynamodb, settings)
+    binding_service = ChannelBindingService(deps.db, secrets_manager)
+    return InstagramService(binding_service, deps.db, settings)
 
 
 async def _get_instagram_verify_token() -> str:

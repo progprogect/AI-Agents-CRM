@@ -17,11 +17,11 @@ class ChannelBindingService:
 
     def __init__(
         self,
-        dynamodb: Any,
+        db: Any,
         secrets_manager: SecretsManager,
     ):
         """Initialize channel binding service."""
-        self.dynamodb = dynamodb
+        self.db = db
         self.secrets_manager = secrets_manager
 
     async def create_binding(
@@ -46,7 +46,7 @@ class ChannelBindingService:
             metadata=metadata,
         )
 
-        # Create binding record in DynamoDB
+        # Create binding record in the database
         binding = ChannelBinding(
             binding_id=binding_id,
             agent_id=agent_id,
@@ -62,7 +62,7 @@ class ChannelBindingService:
             updated_at=utc_now(),
         )
 
-        await self.dynamodb.create_channel_binding(binding)
+        await self.db.create_channel_binding(binding)
 
         logger.info(
             f"Created channel binding: {binding_id} for agent {agent_id}, channel {channel_type}"
@@ -71,7 +71,7 @@ class ChannelBindingService:
 
     async def get_binding(self, binding_id: str) -> Optional[ChannelBinding]:
         """Get channel binding by ID."""
-        return await self.dynamodb.get_channel_binding(binding_id)
+        return await self.db.get_channel_binding(binding_id)
 
     async def get_bindings_by_agent(
         self,
@@ -80,7 +80,7 @@ class ChannelBindingService:
         active_only: bool = True,
     ) -> list[ChannelBinding]:
         """Get all channel bindings for an agent."""
-        return await self.dynamodb.get_channel_bindings_by_agent(
+        return await self.db.get_channel_bindings_by_agent(
             agent_id=agent_id,
             channel_type=channel_type,
             active_only=active_only,
@@ -90,7 +90,7 @@ class ChannelBindingService:
         self, channel_type: str, account_id: str
     ) -> Optional[ChannelBinding]:
         """Get channel binding by channel account ID."""
-        return await self.dynamodb.get_channel_binding_by_account_id(
+        return await self.db.get_channel_binding_by_account_id(
             channel_type=channel_type, account_id=account_id
         )
 
@@ -155,7 +155,7 @@ class ChannelBindingService:
             )
 
         if update_kwargs:
-            await self.dynamodb.update_channel_binding(binding_id, **update_kwargs)
+            await self.db.update_channel_binding(binding_id, **update_kwargs)
 
         # Return updated binding
         updated_binding = await self.get_binding(binding_id)
@@ -177,8 +177,8 @@ class ChannelBindingService:
         except Exception as e:
             logger.warning(f"Failed to delete secret for binding {binding_id}: {e}")
 
-        # Delete binding from DynamoDB
-        await self.dynamodb.delete_channel_binding(binding_id)
+        # Delete binding from the database
+        await self.db.delete_channel_binding(binding_id)
 
         logger.info(f"Deleted channel binding: {binding_id}")
 
@@ -213,7 +213,7 @@ class ChannelBindingService:
                 from app.services.telegram_service import TelegramService
 
                 settings = get_settings()
-                telegram_service = TelegramService(self, self.dynamodb, settings)
+                telegram_service = TelegramService(self, self.db, settings)
                 bot_token = await self.get_access_token(binding_id)
                 
                 is_valid = await telegram_service.verify_bot_token(bot_token)
@@ -266,7 +266,7 @@ class ChannelBindingService:
                         logger.error(f"Twilio binding {binding_id} missing metadata.account_sid")
                         return False
                     auth_token = await self.get_access_token(binding_id)
-                    twilio_service = TwilioWhatsAppService(self.dynamodb)
+                    twilio_service = TwilioWhatsAppService(self.db)
                     is_valid = await twilio_service.verify_credentials(account_sid, auth_token)
                     await self.update_binding(binding_id, is_verified=is_valid)
                     return is_valid

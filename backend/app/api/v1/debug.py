@@ -14,9 +14,9 @@ async def get_recent_instagram_conversations(
     deps: CommonDependencies = Depends(),
 ):
     """Get recent Instagram conversations for debugging."""
-    dynamodb = deps.dynamodb
+    db = deps.db
     
-    all_conversations = await dynamodb.list_conversations(limit=20)
+    all_conversations = await db.list_conversations(limit=20)
     
     instagram_convos = [
         conv for conv in all_conversations
@@ -30,7 +30,7 @@ async def get_recent_instagram_conversations(
     
     result = []
     for conv in instagram_convos[:5]:
-        messages = await dynamodb.list_messages(
+        messages = await db.list_messages(
             conversation_id=conv.conversation_id,
             limit=3,
             reverse=True

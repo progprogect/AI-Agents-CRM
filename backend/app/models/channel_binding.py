@@ -62,7 +62,7 @@ class ChannelBinding(BaseModel):
     )
 
     ttl: Optional[int] = Field(
-        None, description="TTL timestamp for DynamoDB (if auto-deletion needed)"
+        None, description="TTL timestamp (if auto-deletion needed)"
     )
 
     class Config:

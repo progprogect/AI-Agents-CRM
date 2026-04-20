@@ -143,12 +143,12 @@ async def handle_webhook(
 
     # Route each entry to the matching channel binding
     secrets_manager = get_secrets_manager()
-    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+    binding_service = ChannelBindingService(deps.db, secrets_manager)
 
     try:
         from app.services.whatsapp_service import WhatsAppService
         from app.config import get_settings
-        wa_service = WhatsAppService(binding_service, deps.dynamodb, get_settings())
+        wa_service = WhatsAppService(binding_service, deps.db, get_settings())
         await wa_service.handle_webhook_event(payload)
     except Exception as exc:
         logger.error(f"WhatsApp webhook handling error: {exc}", exc_info=True)

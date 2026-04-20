@@ -40,12 +40,12 @@ class TelegramService:
     def __init__(
         self,
         channel_binding_service: ChannelBindingService,
-        dynamodb: Any,
+        db: Any,
         settings: Settings,
     ):
         """Initialize Telegram service."""
         self.channel_binding_service = channel_binding_service
-        self.dynamodb = dynamodb
+        self.db = db
         self.settings = settings
 
     def _get_invoice_signing_key(self) -> str:
@@ -241,7 +241,7 @@ class TelegramService:
                         chat_id=chat_id,
                         binding=binding,
                         bot_token=bot_token,
-                        dynamodb=self.dynamodb,
+                        db=self.db,
                     )
                     if handled:
                         return  # command was processed; do not pass to agent
@@ -268,7 +268,7 @@ class TelegramService:
                 media_url=media_url,
                 media_type=media_type,
             )
-            await self.dynamodb.create_message(user_message)
+            await self.db.create_message(user_message)
 
             # Skip AI for media-only messages (no text to process) OR if human is handling
             status_value = get_enum_value(conversation.status)
@@ -322,7 +322,7 @@ class TelegramService:
                     except Exception as pay_exc:
                         logger.warning("Payment guard error (allowing through): %s", pay_exc)
 
-                agent_data = await self.dynamodb.get_agent(binding.agent_id)
+                agent_data = await self.db.get_agent(binding.agent_id)
                 if not agent_data or "config" not in agent_data:
                     return
 
@@ -333,14 +333,14 @@ class TelegramService:
 
                 agent_config = AgentConfig.from_dict(agent_data["config"])
                 conversation_history = await build_conversation_history_for_agent(
-                    self.dynamodb,
+                    self.db,
                     conversation.conversation_id,
                     message_text,
                     agent_context_reset_at=conversation.agent_context_reset_at,
                 )
 
-                telegram_sender = TelegramSender(self, self.dynamodb)
-                agent_service = create_agent_service(agent_config, self.dynamodb, telegram_sender)
+                telegram_sender = TelegramSender(self, self.db)
+                agent_service = create_agent_service(agent_config, self.db, telegram_sender)
 
                 settings = get_settings()
                 # Same as web chat: debounce would drop user_media_url on the delayed process_message path.
@@ -470,7 +470,7 @@ class TelegramService:
     ) -> Conversation:
         """Find existing conversation or create new one. Updates user info if changed."""
         try:
-            all_conversations = await self.dynamodb.list_conversations(agent_id=agent_id, limit=100)
+            all_conversations = await self.db.list_conversations(agent_id=agent_id, limit=100)
             for conv in all_conversations:
                 if (
                     get_enum_value(conv.channel) == MessageChannel.TELEGRAM.value
@@ -483,7 +483,7 @@ class TelegramService:
                     if external_user_username and not conv.external_user_username:
                         updates["external_user_username"] = external_user_username
                     if updates:
-                        await self.dynamodb.update_conversation(conv.conversation_id, **updates)
+                        await self.db.update_conversation(conv.conversation_id, **updates)
                         conv.external_user_name = external_user_name or conv.external_user_name
                         conv.external_user_username = external_user_username or conv.external_user_username
                     return conv
@@ -504,7 +504,7 @@ class TelegramService:
             created_at=utc_now(),
             updated_at=utc_now(),
         )
-        await self.dynamodb.create_conversation(conversation)
+        await self.db.create_conversation(conversation)
         return conversation
 
     async def send_message(

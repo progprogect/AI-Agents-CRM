@@ -1,7 +1,7 @@
 """Amazon S3 storage backend.
 
 Used when STORAGE_BACKEND=s3 (AWS deployments).
-boto3 is already a project dependency (used for DynamoDB/Secrets Manager).
+boto3 is already a project dependency (used for Secrets Manager).
 
 Required config:
     STORAGE_BACKEND=s3

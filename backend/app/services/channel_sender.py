@@ -51,9 +51,9 @@ class ChannelSender(ABC):
 class WebChatSender(ChannelSender):
     """Sender for web chat channel (WebSocket)."""
 
-    def __init__(self, dynamodb: Any):
+    def __init__(self, db: Any):
         """Initialize web chat sender."""
-        self.dynamodb = dynamodb
+        self.db = db
 
     async def send_message(
         self,
@@ -102,11 +102,11 @@ class InstagramSender(ChannelSender):
     def __init__(
         self,
         instagram_service: "InstagramService",
-        dynamodb: Any,
+        db: Any,
     ):
         """Initialize Instagram sender."""
         self.instagram_service = instagram_service
-        self.dynamodb = dynamodb
+        self.db = db
 
     async def send_message(
         self,
@@ -121,11 +121,11 @@ class InstagramSender(ChannelSender):
         """Send message (text and/or media) via Instagram Graph API."""
         if not binding_id or not external_user_id:
             # Try to get from conversation
-            conversation = await self.dynamodb.get_conversation(conversation_id)
+            conversation = await self.db.get_conversation(conversation_id)
             if not conversation:
                 raise ValueError(f"Conversation {conversation_id} not found")
 
-            # Handle both enum and string channel (from DynamoDB)
+            # Handle both enum and string channel (from the database)
             from app.utils.enum_helpers import get_enum_value
             conversation_channel = get_enum_value(conversation.channel)
             if conversation_channel != MessageChannel.INSTAGRAM.value:
@@ -138,7 +138,7 @@ class InstagramSender(ChannelSender):
             from app.storage.resolver import get_secrets_manager
 
             secrets_manager = get_secrets_manager()
-            binding_service = ChannelBindingService(self.dynamodb, secrets_manager)
+            binding_service = ChannelBindingService(self.db, secrets_manager)
 
             bindings = await binding_service.get_bindings_by_agent(
                 agent_id=conversation.agent_id,
@@ -176,11 +176,11 @@ class TelegramSender(ChannelSender):
     def __init__(
         self,
         telegram_service: "TelegramService",
-        dynamodb: Any,
+        db: Any,
     ):
         """Initialize Telegram sender."""
         self.telegram_service = telegram_service
-        self.dynamodb = dynamodb
+        self.db = db
 
     async def send_message(
         self,
@@ -196,11 +196,11 @@ class TelegramSender(ChannelSender):
         """Send message (text and/or media) via Telegram Bot API."""
         if not binding_id or not external_user_id:
             # Try to get from conversation
-            conversation = await self.dynamodb.get_conversation(conversation_id)
+            conversation = await self.db.get_conversation(conversation_id)
             if not conversation:
                 raise ValueError(f"Conversation {conversation_id} not found")
 
-            # Handle both enum and string channel (from DynamoDB)
+            # Handle both enum and string channel (from the database)
             from app.utils.enum_helpers import get_enum_value
             conversation_channel = get_enum_value(conversation.channel)
             if conversation_channel != MessageChannel.TELEGRAM.value:
@@ -213,7 +213,7 @@ class TelegramSender(ChannelSender):
             from app.storage.resolver import get_secrets_manager
 
             secrets_manager = get_secrets_manager()
-            binding_service = ChannelBindingService(self.dynamodb, secrets_manager)
+            binding_service = ChannelBindingService(self.db, secrets_manager)
 
             bindings = await binding_service.get_bindings_by_agent(
                 agent_id=conversation.agent_id,
@@ -258,12 +258,12 @@ class WhatsAppSender(ChannelSender):
     def __init__(
         self,
         whatsapp_service: Optional["WhatsAppService"],
-        dynamodb: Any,
+        db: Any,
         twilio_service: Optional["TwilioWhatsAppService"] = None,
     ):
         self.whatsapp_service = whatsapp_service
         self.twilio_service = twilio_service
-        self.dynamodb = dynamodb
+        self.db = db
 
     async def send_message(
         self,
@@ -280,10 +280,10 @@ class WhatsAppSender(ChannelSender):
         from app.storage.resolver import get_secrets_manager
 
         secrets_manager = get_secrets_manager()
-        binding_service = ChannelBindingService(self.dynamodb, secrets_manager)
+        binding_service = ChannelBindingService(self.db, secrets_manager)
 
         if not external_user_id or not binding_id:
-            conversation = await self.dynamodb.get_conversation(conversation_id)
+            conversation = await self.db.get_conversation(conversation_id)
             if not conversation:
                 raise ValueError(f"Conversation {conversation_id} not found")
             external_user_id = external_user_id or conversation.external_user_id
@@ -325,7 +325,7 @@ class WhatsAppSender(ChannelSender):
         if provider == "twilio":
             from app.services.twilio_service import TwilioWhatsAppService
 
-            twilio_svc = self.twilio_service or TwilioWhatsAppService(self.dynamodb)
+            twilio_svc = self.twilio_service or TwilioWhatsAppService(self.db)
             # For Twilio bindings:
             #   channel_account_id = from_number (WhatsApp-enabled Twilio number)
             #   metadata.account_sid = Twilio Account SID
@@ -363,8 +363,8 @@ class WhatsAppSender(ChannelSender):
                 from app.storage.resolver import get_secrets_manager as _gsm
 
                 _sm = _gsm()
-                _bs = ChannelBindingService(self.dynamodb, _sm)
-                self.whatsapp_service = WhatsAppService(_bs, self.dynamodb, get_settings())
+                _bs = ChannelBindingService(self.db, _sm)
+                self.whatsapp_service = WhatsAppService(_bs, self.db, get_settings())
 
             try:
                 await self.whatsapp_service.send_message(
@@ -390,7 +390,7 @@ class WhatsAppSender(ChannelSender):
 
 def get_channel_sender(
     channel: MessageChannel,
-    dynamodb: Any,
+    db: Any,
     instagram_service: Optional["InstagramService"] = None,
     telegram_service: Optional["TelegramService"] = None,
     whatsapp_service: Optional["WhatsAppService"] = None,
@@ -398,17 +398,17 @@ def get_channel_sender(
 ) -> ChannelSender:
     """Get appropriate channel sender for the given channel."""
     if channel == MessageChannel.WEB_CHAT:
-        return WebChatSender(dynamodb)
+        return WebChatSender(db)
     elif channel == MessageChannel.INSTAGRAM:
         if not instagram_service:
             raise ValueError("InstagramService is required for Instagram channel")
-        return InstagramSender(instagram_service, dynamodb)
+        return InstagramSender(instagram_service, db)
     elif channel == MessageChannel.TELEGRAM:
         if not telegram_service:
             raise ValueError("TelegramService is required for Telegram channel")
-        return TelegramSender(telegram_service, dynamodb)
+        return TelegramSender(telegram_service, db)
     elif channel == MessageChannel.WHATSAPP:
-        return WhatsAppSender(whatsapp_service, dynamodb, twilio_service=twilio_service)
+        return WhatsAppSender(whatsapp_service, db, twilio_service=twilio_service)
     else:
         raise ValueError(f"Unsupported channel: {channel}")
 

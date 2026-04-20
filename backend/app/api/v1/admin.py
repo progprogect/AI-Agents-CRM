@@ -117,7 +117,7 @@ async def list_conversations(
                 detail=f"Invalid marketing_status: {marketing_status}. Valid values: {', '.join(valid_marketing_statuses)}",
             )
 
-    conversations = await deps.dynamodb.list_conversations(
+    conversations = await deps.db.list_conversations(
         agent_id=agent_id,
         status=status_enum,
         marketing_status=marketing_status,
@@ -139,14 +139,14 @@ async def get_conversation(
 ):
     """Get conversation by ID (admin view)."""
 
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
     
     # If this is an Instagram conversation, try to fetch profile data
     conversation_channel = get_enum_value(conversation.channel)
     if conversation_channel == MessageChannel.INSTAGRAM.value and conversation.external_user_id:
-        profile = await deps.dynamodb.get_instagram_profile(conversation.external_user_id)
+        profile = await deps.db.get_instagram_profile(conversation.external_user_id)
         if profile:
             conversation.external_user_name = profile.name
             conversation.external_user_username = profile.username
@@ -168,20 +168,20 @@ async def handoff_conversation(
 ):
     """Handoff conversation to human admin."""
 
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
     try:
         # Update conversation status
-        updated = await deps.dynamodb.update_conversation(
+        updated = await deps.db.update_conversation(
             conversation_id=conversation_id,
             status=ConversationStatus.HUMAN_ACTIVE,
             handoff_reason=request.reason or "Manual handoff",
         )
 
         # Create audit log
-        await deps.dynamodb.create_audit_log(
+        await deps.db.create_audit_log(
             admin_id=request.admin_id,
             action="handoff",
             resource_type="conversation",
@@ -222,19 +222,19 @@ async def return_to_ai(
 ):
     """Return conversation to AI."""
 
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
     try:
         # Update conversation status
-        updated = await deps.dynamodb.update_conversation(
+        updated = await deps.db.update_conversation(
             conversation_id=conversation_id,
             status=ConversationStatus.AI_ACTIVE,
         )
 
         # Create audit log
-        await deps.dynamodb.create_audit_log(
+        await deps.db.create_audit_log(
             admin_id=request.admin_id,
             action="return_to_ai",
             resource_type="conversation",
@@ -273,17 +273,17 @@ async def reset_agent_context(
     _admin: str = require_admin(),
 ):
     """Mark now as agent context reset: messages at or before this time are not sent to the agent."""
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
     now = utc_now()
     try:
-        updated = await deps.dynamodb.update_conversation(
+        updated = await deps.db.update_conversation(
             conversation_id=conversation_id,
             agent_context_reset_at=now,
         )
-        await deps.dynamodb.create_audit_log(
+        await deps.db.create_audit_log(
             admin_id=request.admin_id,
             action="reset_agent_context",
             resource_type="conversation",
@@ -350,7 +350,7 @@ async def get_audit_logs(
                     detail="Invalid end_date format. Use ISO format (e.g., 2024-01-01T00:00:00Z)",
                 )
         
-        logs = await deps.dynamodb.list_audit_logs(
+        logs = await deps.db.list_audit_logs(
             admin_id=admin_id,
             resource_type=resource_type,
             action=action,
@@ -410,7 +410,7 @@ async def send_admin_message(
 ):
     """Send a message as admin in a conversation."""
 
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
@@ -456,7 +456,7 @@ async def send_admin_message(
             media_type=request.media_type,
         )
 
-        await deps.dynamodb.create_message(admin_message)
+        await deps.db.create_message(admin_message)
 
         # Determine channel and send message accordingly
         conversation_channel = get_enum_value(conversation.channel)
@@ -488,17 +488,17 @@ async def send_admin_message(
             # Message is already persisted; channel send errors are non-fatal.
             settings = get_settings()
             secrets_manager = get_secrets_manager()
-            binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+            binding_service = ChannelBindingService(deps.db, secrets_manager)
 
             instagram_service = None
             telegram_service = None
             if conversation_channel == MessageChannel.INSTAGRAM.value:
-                instagram_service = InstagramService(binding_service, deps.dynamodb, settings)
+                instagram_service = InstagramService(binding_service, deps.db, settings)
             elif conversation_channel == MessageChannel.TELEGRAM.value:
-                telegram_service = TelegramService(binding_service, deps.dynamodb, settings)
+                telegram_service = TelegramService(binding_service, deps.db, settings)
 
             channel_sender = get_channel_sender(
-                channel_enum, deps.dynamodb, instagram_service, telegram_service
+                channel_enum, deps.db, instagram_service, telegram_service
             )
 
             try:
@@ -525,7 +525,7 @@ async def send_admin_message(
                 )
 
         # Create audit log
-        await deps.dynamodb.create_audit_log(
+        await deps.db.create_audit_log(
             admin_id=request.admin_id,
             action="send_message",
             resource_type="conversation",
@@ -533,7 +533,7 @@ async def send_admin_message(
             metadata={"message_id": message_id},
         )
 
-        # Handle both enum and string role (from DynamoDB)
+        # Handle both enum and string role (from the database)
         role_value = get_enum_value(admin_message.role)
         return SendAdminMessageResponse(
             message_id=message_id,
@@ -592,7 +592,7 @@ async def refresh_instagram_profile(
     """Refresh Instagram user profile information."""
 
     # Get conversation
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
@@ -612,7 +612,7 @@ async def refresh_instagram_profile(
 
     # Find active binding for agent
     secrets_manager = get_secrets_manager()
-    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+    binding_service = ChannelBindingService(deps.db, secrets_manager)
     
     bindings = await binding_service.get_bindings_by_agent(
         agent_id=conversation.agent_id,
@@ -630,7 +630,7 @@ async def refresh_instagram_profile(
 
     # Get Instagram service
     instagram_service = InstagramService(
-        binding_service, deps.dynamodb, get_settings()
+        binding_service, deps.db, get_settings()
     )
 
     # Refresh profile
@@ -686,7 +686,7 @@ async def update_marketing_status(
             )
 
     # Get current conversation
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
@@ -706,7 +706,7 @@ async def update_marketing_status(
             # Clear rejection_reason when status is not REJECTED
             update_kwargs["rejection_reason"] = None
 
-        updated = await deps.dynamodb.update_conversation(
+        updated = await deps.db.update_conversation(
             conversation_id=conversation_id,
             **update_kwargs,
         )
@@ -718,7 +718,7 @@ async def update_marketing_status(
             )
 
         # Create audit log entry
-        await deps.dynamodb.create_audit_log(
+        await deps.db.create_audit_log(
             admin_id=request.admin_id,
             action="update_marketing_status",
             resource_type="conversation",
@@ -794,7 +794,7 @@ async def get_stats(
         end_date = now
 
     # Get conversations for the period
-    all_conversations = await deps.dynamodb.list_conversations(limit=1000)
+    all_conversations = await deps.db.list_conversations(limit=1000)
     
     # Filter conversations by date range (handle both datetime and string formats)
     period_conversations = []

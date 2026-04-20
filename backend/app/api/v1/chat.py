@@ -96,7 +96,7 @@ async def create_conversation(
 ):
     """Create a new conversation."""
     # Verify agent exists
-    agent_data = await deps.dynamodb.get_agent(request.agent_id)
+    agent_data = await deps.db.get_agent(request.agent_id)
     if not agent_data:
         raise AgentNotFoundError(request.agent_id)
 
@@ -111,9 +111,9 @@ async def create_conversation(
         updated_at=utc_now(),
     )
 
-    await deps.dynamodb.create_conversation(conversation)
+    await deps.db.create_conversation(conversation)
 
-    # Handle both enum and string status (from DynamoDB)
+    # Handle both enum and string status (from the database)
     status_value = get_enum_value(conversation.status)
     return CreateConversationResponse(
         conversation_id=conversation_id,
@@ -129,7 +129,7 @@ async def get_conversation(
 ):
     """Get conversation by ID."""
 
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
     return conversation
@@ -145,7 +145,7 @@ async def close_conversation(
     deps: CommonDependencies = Depends(),
 ):
     """Close a web chat conversation (public). Idempotent if already closed."""
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
@@ -163,7 +163,7 @@ async def close_conversation(
             status=ConversationStatus.CLOSED.value,
         )
 
-    await deps.dynamodb.update_conversation(
+    await deps.db.update_conversation(
         conversation_id=conversation_id,
         status=ConversationStatus.CLOSED,
         closed_at=utc_now(),
@@ -190,7 +190,7 @@ async def transcribe_voice_message(
     The client then places the transcript in the message input and sends
     it as a regular text message — same pipeline as Telegram voice notes.
     """
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
@@ -222,7 +222,7 @@ async def upload_web_chat_media(
     deps: CommonDependencies = Depends(),
 ):
     """Upload chat media for a web_chat conversation (no admin token; same CDN as /media/upload)."""
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
@@ -255,12 +255,12 @@ async def send_message(
     """Send a message in a conversation."""
 
     # Verify conversation exists
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
     # Check if conversation is active
-    # Handle both enum and string status (from DynamoDB)
+    # Handle both enum and string status (from the database)
     status_value = get_enum_value(conversation.status)
     if status_value == ConversationStatus.CLOSED.value:
         raise HTTPException(status_code=400, detail="Conversation is closed")
@@ -304,7 +304,7 @@ async def send_message(
         media_type=request.media_type,
     )
 
-    await deps.dynamodb.create_message(user_message)
+    await deps.db.create_message(user_message)
 
     # Check if conversation is handled by human - don't process with agent
     if status_value in [
@@ -321,21 +321,21 @@ async def send_message(
         )
 
     # Get agent configuration
-    agent_data = await deps.dynamodb.get_agent(conversation.agent_id)
+    agent_data = await deps.db.get_agent(conversation.agent_id)
     if not agent_data or "config" not in agent_data:
         raise HTTPException(status_code=404, detail="Agent not found or invalid configuration")
 
     agent_config = AgentConfig.from_dict(agent_data["config"])
 
     conversation_history = await build_conversation_history_for_agent(
-        deps.dynamodb,
+        deps.db,
         conversation_id,
         content_stripped,
         agent_context_reset_at=conversation.agent_context_reset_at,
     )
 
     # Get channel sender for the conversation's channel
-    # Handle both enum and string channel (from DynamoDB)
+    # Handle both enum and string channel (from the database)
     conversation_channel = get_enum_value(conversation.channel)
     
     instagram_service = None
@@ -344,20 +344,20 @@ async def send_message(
         # Create channel-specific service if needed
         settings = get_settings()
         secrets_manager = get_secrets_manager()
-        binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+        binding_service = ChannelBindingService(deps.db, secrets_manager)
         
         if conversation_channel == MessageChannel.INSTAGRAM.value:
-            instagram_service = InstagramService(binding_service, deps.dynamodb, settings)
+            instagram_service = InstagramService(binding_service, deps.db, settings)
         elif conversation_channel == MessageChannel.TELEGRAM.value:
-            telegram_service = TelegramService(binding_service, deps.dynamodb, settings)
+            telegram_service = TelegramService(binding_service, deps.db, settings)
     
     # Convert string back to enum for get_channel_sender
     channel_enum = MessageChannel(conversation_channel) if isinstance(conversation_channel, str) else conversation.channel
     channel_sender = get_channel_sender(
-        channel_enum, deps.dynamodb, instagram_service, telegram_service
+        channel_enum, deps.db, instagram_service, telegram_service
     )
 
-    agent_service = create_agent_service(agent_config, deps.dynamodb, channel_sender)
+    agent_service = create_agent_service(agent_config, deps.db, channel_sender)
 
     # Cancel any pending inactivity timer — user is actively responding.
     await cancel_timer_trigger(conversation_id)
@@ -408,7 +408,7 @@ async def send_message(
     if result.get("escalate"):
         # Status already updated in agent_service, just return user message
         # Return user message with escalation notice
-        # Handle both enum and string role (from DynamoDB)
+        # Handle both enum and string role (from the database)
         role_value = get_enum_value(user_message.role)
         return SendMessageResponse(
             message_id=message_id,
@@ -441,14 +441,14 @@ async def send_message(
             timestamp=agent_message_timestamp,
             metadata=fallback_meta,
         )
-        await deps.dynamodb.create_message(agent_message)
+        await deps.db.create_message(agent_message)
         agent_message_timestamp = agent_message.timestamp
 
     # Update conversation status if needed
-    # Handle both enum and string status (from DynamoDB)
+    # Handle both enum and string status (from the database)
     status_value = get_enum_value(conversation.status)
     if status_value != ConversationStatus.AI_ACTIVE.value:
-        await deps.dynamodb.update_conversation(
+        await deps.db.update_conversation(
             conversation_id=conversation_id,
             status=ConversationStatus.AI_ACTIVE,
         )
@@ -470,10 +470,10 @@ async def get_messages(
     """Get messages for a conversation."""
 
     # Verify conversation exists
-    conversation = await deps.dynamodb.get_conversation(conversation_id)
+    conversation = await deps.db.get_conversation(conversation_id)
     if not conversation:
         raise ConversationNotFoundError(conversation_id)
 
-    messages = await deps.dynamodb.list_messages(conversation_id, limit=limit, reverse=False)
+    messages = await deps.db.list_messages(conversation_id, limit=limit, reverse=False)
     return messages
 

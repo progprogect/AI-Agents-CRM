@@ -36,8 +36,8 @@ async def twilio_whatsapp_webhook(
     add_webhook_event("twilio_whatsapp", form_data)
 
     secrets_manager = get_secrets_manager()
-    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
-    twilio_service = TwilioWhatsAppService(deps.dynamodb)
+    binding_service = ChannelBindingService(deps.db, secrets_manager)
+    twilio_service = TwilioWhatsAppService(deps.db)
 
     # Optional signature validation — log only, never block.
     # Rejecting on signature mismatch is unsafe behind a reverse-proxy (Railway, nginx)

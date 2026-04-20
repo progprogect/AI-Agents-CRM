@@ -42,7 +42,7 @@ def _ensure_postgres() -> None:
 
 async def _ensure_agent_exists(deps: CommonDependencies, agent_id: str) -> dict | None:
     """Ensure agent exists. Returns agent dict or None if not found."""
-    agent = await deps.dynamodb.get_agent(agent_id)
+    agent = await deps.db.get_agent(agent_id)
     if not agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

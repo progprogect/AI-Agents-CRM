@@ -33,7 +33,7 @@ def _make_test_client(settings_obj) -> TestClient:
         mock_db = MagicMock()
         mock_db.get_agent = AsyncMock(return_value={"id": "agent1", "config": {}})
         mock_cache = MagicMock()
-        return CommonDependencies(config=settings_obj, dynamodb=mock_db, cache=mock_cache)
+        return CommonDependencies(config=settings_obj, db=mock_db, cache=mock_cache)
 
     app.dependency_overrides[get_current_admin] = override_admin
     app.dependency_overrides[CommonDependencies] = override_common

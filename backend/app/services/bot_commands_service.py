@@ -104,7 +104,7 @@ def get_commands_status(binding: ChannelBinding) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 async def handle_restart(
-    dynamodb: Any,
+    db: Any,
     chat_id: str,
     binding: ChannelBinding,
     bot_token: str,
@@ -122,7 +122,7 @@ async def handle_restart(
         # list_conversations does not support external_user_id filtering,
         # so we fetch by agent_id + status and filter client-side — same
         # pattern as _find_or_create_conversation in telegram_service.py.
-        all_conversations = await dynamodb.list_conversations(
+        all_conversations = await db.list_conversations(
             agent_id=binding.agent_id,
             status=ConversationStatus.AI_ACTIVE,
             limit=200,
@@ -135,7 +135,7 @@ async def handle_restart(
         # Close all active conversations for this chat_id and cancel any
         # pending timers / auto-steps so they don't fire on the closed conv.
         for conv in existing_conversations:
-            await dynamodb.update_conversation(
+            await db.update_conversation(
                 conversation_id=conv.conversation_id,
                 status=ConversationStatus.CLOSED,
                 closed_at=utc_now(),
@@ -170,7 +170,7 @@ async def handle_restart(
             created_at=utc_now(),
             updated_at=utc_now(),
         )
-        await dynamodb.create_conversation(new_conversation)
+        await db.create_conversation(new_conversation)
         logger.info(
             "Created new conversation %s for chat_id=%s via /restart",
             new_conv_id,
@@ -195,7 +195,7 @@ async def handle_restart(
 
 
 async def handle_paysupport(
-    dynamodb: Any,
+    db: Any,
     chat_id: str,
     binding: ChannelBinding,
     bot_token: str,
@@ -247,7 +247,7 @@ async def dispatch_command(
     chat_id: str,
     binding: ChannelBinding,
     bot_token: str,
-    dynamodb: Any,
+    db: Any,
 ) -> bool:
     """Try to handle a bot command.  Returns True if command was handled.
 
@@ -256,7 +256,7 @@ async def dispatch_command(
         chat_id: Telegram chat_id (string).
         binding: The ChannelBinding for this bot.
         bot_token: Bot access token.
-        dynamodb: Database client.
+        db: Database client.
 
     Returns:
         True if the command was recognised and handled; False otherwise.
@@ -279,7 +279,7 @@ async def dispatch_command(
         binding.binding_id,
     )
     await handler(
-        dynamodb=dynamodb,
+        db=db,
         chat_id=chat_id,
         binding=binding,
         bot_token=bot_token,

@@ -91,7 +91,7 @@ def _make_agent_service(cfg, db, mod=None, esc=None, rag=None):
         escalation_service=esc,
         moderation_service=mod,
         rag_service=rag,
-        dynamodb=db,
+        db=db,
         channel_sender=None,
     )
 

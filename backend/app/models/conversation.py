@@ -55,7 +55,7 @@ class Conversation(BaseModel):
         None, description="Type of request: info, booking, escalation"
     )
     ttl: Optional[int] = Field(
-        None, description="TTL timestamp for DynamoDB (created_at + 48h)"
+        None, description="TTL timestamp (created_at + 48h)"
     )
     # Instagram user profile fields (populated from profile table when fetching)
     external_user_name: Optional[str] = Field(

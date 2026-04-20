@@ -16,12 +16,12 @@ class NotificationService:
 
     def __init__(
         self,
-        dynamodb: Any,
+        db: Any,
         secrets_manager: SecretsManager,
         telegram_service: TelegramService,
     ):
         """Initialize notification service."""
-        self.dynamodb = dynamodb
+        self.db = db
         self.secrets_manager = secrets_manager
         self.telegram_service = telegram_service
 
@@ -42,7 +42,7 @@ class NotificationService:
         """
         try:
             # Get all active notification configs
-            configs = await self.dynamodb.list_notification_configs(active_only=True)
+            configs = await self.db.list_notification_configs(active_only=True)
 
             if not configs:
                 logger.debug("No active notification configs found, skipping notifications")

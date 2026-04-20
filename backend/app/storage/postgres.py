@@ -243,11 +243,11 @@ class PostgreSQLClient:
                         channel_binding_service = ChannelBindingService(self, secrets_manager)
                         telegram_service = TelegramService(
                             channel_binding_service=channel_binding_service,
-                            dynamodb=self,
+                            db=self,
                             settings=settings,
                         )
                         notification_service = NotificationService(
-                            dynamodb=self,
+                            db=self,
                             secrets_manager=secrets_manager,
                             telegram_service=telegram_service,
                         )

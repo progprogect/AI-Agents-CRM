@@ -35,11 +35,11 @@ class WhatsAppService:
     def __init__(
         self,
         channel_binding_service: ChannelBindingService,
-        dynamodb: Any,
+        db: Any,
         settings: Settings,
     ):
         self.channel_binding_service = channel_binding_service
-        self.dynamodb = dynamodb
+        self.db = db
         self.settings = settings
 
     async def handle_webhook_event(self, payload: dict[str, Any]) -> None:
@@ -142,7 +142,7 @@ class WhatsAppService:
 
         # Get or create conversation
         conversation_id = f"wa_{binding.binding_id}_{sender_phone}"
-        conversation = await self.dynamodb.get_conversation(conversation_id)
+        conversation = await self.db.get_conversation(conversation_id)
 
         if not conversation:
             conversation = Conversation(
@@ -156,7 +156,7 @@ class WhatsAppService:
                 created_at=utc_now(),
                 updated_at=utc_now(),
             )
-            await self.dynamodb.create_conversation(conversation)
+            await self.db.create_conversation(conversation)
 
         # Build metadata
         msg_metadata: dict = {"whatsapp_message_id": wa_message_id}
@@ -180,7 +180,7 @@ class WhatsAppService:
             media_url=media_url,
             media_type=media_type,
         )
-        await self.dynamodb.create_message(message)
+        await self.db.create_message(message)
 
         # Skip if conversation is handled by a human operator
         from app.utils.enum_helpers import get_enum_value
@@ -200,7 +200,7 @@ class WhatsAppService:
             from app.services.channel_sender import WhatsAppSender
             from app.services.conversation_service import build_conversation_history_for_agent
 
-            agent_data = await self.dynamodb.get_agent(binding.agent_id)
+            agent_data = await self.db.get_agent(binding.agent_id)
             if not agent_data or "config" not in agent_data:
                 logger.error(f"Agent {binding.agent_id} not found or has no config")
                 return
@@ -208,14 +208,14 @@ class WhatsAppService:
             agent_config = AgentConfig.from_dict(agent_data["config"])
 
             conversation_history = await build_conversation_history_for_agent(
-                self.dynamodb,
+                self.db,
                 conversation_id,
                 text_body,
                 agent_context_reset_at=conversation.agent_context_reset_at,
             )
 
-            wa_sender = WhatsAppSender(self, self.dynamodb, twilio_service=None)
-            agent_service = create_agent_service(agent_config, self.dynamodb, wa_sender)
+            wa_sender = WhatsAppSender(self, self.db, twilio_service=None)
+            agent_service = create_agent_service(agent_config, self.db, wa_sender)
 
             settings = get_settings()
             if settings.agent_reply_debounce_seconds > 0:

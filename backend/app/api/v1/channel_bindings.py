@@ -101,7 +101,7 @@ def get_channel_binding_service(
 ) -> ChannelBindingService:
     """Get channel binding service instance."""
     secrets_manager = get_secrets_manager()
-    return ChannelBindingService(deps.dynamodb, secrets_manager)
+    return ChannelBindingService(deps.db, secrets_manager)
 
 
 @router.post(
@@ -118,7 +118,7 @@ async def create_channel_binding(
 ):
     """Create a new channel binding for an agent."""
     # Verify agent exists
-    agent_data = await deps.dynamodb.get_agent(agent_id)
+    agent_data = await deps.db.get_agent(agent_id)
     if not agent_data:
         raise AgentNotFoundError(agent_id)
 
@@ -169,7 +169,7 @@ async def list_channel_bindings(
 ):
     """Get all channel bindings for an agent."""
     # Verify agent exists
-    agent_data = await deps.dynamodb.get_agent(agent_id)
+    agent_data = await deps.db.get_agent(agent_id)
     if not agent_data:
         raise AgentNotFoundError(agent_id)
 

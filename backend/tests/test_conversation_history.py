@@ -28,16 +28,16 @@ def _msg(
 
 @pytest.mark.asyncio
 async def test_build_history_dedup_last_user_turn():
-    dynamodb = AsyncMock()
+    db = AsyncMock()
     t0 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     msgs = [
         _msg("hi", MessageRole.USER, t0, "1"),
         _msg("hello", MessageRole.USER, t0 + timedelta(minutes=1), "2"),
     ]
-    dynamodb.list_messages = AsyncMock(return_value=list(reversed(msgs)))
+    db.list_messages = AsyncMock(return_value=list(reversed(msgs)))
 
     history = await build_conversation_history_for_agent(
-        dynamodb, "c1", "hello", agent_context_reset_at=None
+        db, "c1", "hello", agent_context_reset_at=None
     )
     assert len(history) == 1
     assert history[0]["role"] == "user"
@@ -46,7 +46,7 @@ async def test_build_history_dedup_last_user_turn():
 
 @pytest.mark.asyncio
 async def test_build_history_excludes_messages_at_or_before_reset():
-    dynamodb = AsyncMock()
+    db = AsyncMock()
     t_old = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
     t_mid = datetime(2025, 1, 1, 11, 0, 0, tzinfo=timezone.utc)
     t_new = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -57,10 +57,10 @@ async def test_build_history_excludes_messages_at_or_before_reset():
         _msg("mid", MessageRole.AGENT, t_mid, "2"),
         _msg("new", MessageRole.USER, t_new, "3"),
     ]
-    dynamodb.list_messages = AsyncMock(return_value=list(reversed(msgs)))
+    db.list_messages = AsyncMock(return_value=list(reversed(msgs)))
 
     history = await build_conversation_history_for_agent(
-        dynamodb, "c1", "new", agent_context_reset_at=reset_at
+        db, "c1", "new", agent_context_reset_at=reset_at
     )
     assert len(history) == 0
     assert history == []
@@ -68,16 +68,16 @@ async def test_build_history_excludes_messages_at_or_before_reset():
 
 @pytest.mark.asyncio
 async def test_build_history_keeps_only_after_reset_then_dedup():
-    dynamodb = AsyncMock()
+    db = AsyncMock()
     reset_at = datetime(2025, 1, 1, 11, 0, 0, tzinfo=timezone.utc)
     t_after = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     msgs = [
         _msg("before", MessageRole.USER, datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc), "1"),
         _msg("current", MessageRole.USER, t_after, "2"),
     ]
-    dynamodb.list_messages = AsyncMock(return_value=list(reversed(msgs)))
+    db.list_messages = AsyncMock(return_value=list(reversed(msgs)))
 
     history = await build_conversation_history_for_agent(
-        dynamodb, "c1", "current", agent_context_reset_at=reset_at
+        db, "c1", "current", agent_context_reset_at=reset_at
     )
     assert history == []

@@ -26,8 +26,8 @@ def get_telegram_service(
 
     settings = get_settings()
     secrets_manager = get_secrets_manager()
-    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
-    return TelegramService(binding_service, deps.dynamodb, settings)
+    binding_service = ChannelBindingService(deps.db, secrets_manager)
+    return TelegramService(binding_service, deps.db, settings)
 
 
 @router.post("/telegram/webhook/{binding_id}")
@@ -104,7 +104,7 @@ async def set_webhook(
     from app.storage.resolver import get_secrets_manager
 
     secrets_manager = get_secrets_manager()
-    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+    binding_service = ChannelBindingService(deps.db, secrets_manager)
     binding = await binding_service.get_binding(binding_id)
 
     if not binding:
@@ -164,7 +164,7 @@ async def get_webhook_status(
     from app.storage.resolver import get_secrets_manager
 
     secrets_manager = get_secrets_manager()
-    binding_service = ChannelBindingService(deps.dynamodb, secrets_manager)
+    binding_service = ChannelBindingService(deps.db, secrets_manager)
     binding = await binding_service.get_binding(binding_id)
 
     if not binding:

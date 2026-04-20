@@ -57,7 +57,7 @@ uvicorn app.main:app --reload
 The application uses:
 - FastAPI for API framework
 - Pydantic for data validation
-- DynamoDB for data storage
+- PostgreSQL for data storage
 - OpenSearch for vector search
 - Redis for caching
 - OpenAI API for LLM and embeddings

@@ -74,7 +74,7 @@ async def test_webchat_sender_pushes_to_connection_manager():
     mock_cm.send_message = AsyncMock(return_value=True)
 
     with patch("app.api.websocket.connection_manager", mock_cm):
-        sender = WebChatSender(dynamodb=MagicMock())
+        sender = WebChatSender(db=MagicMock())
         await sender.send_message(
             conversation_id="conv-1",
             message_text="Hello",
@@ -98,7 +98,7 @@ async def test_webchat_sender_no_active_connection_does_not_raise():
     mock_cm.send_message = AsyncMock(return_value=False)  # no active socket
 
     with patch("app.api.websocket.connection_manager", mock_cm):
-        sender = WebChatSender(dynamodb=MagicMock())
+        sender = WebChatSender(db=MagicMock())
         # Must complete without raising
         await sender.send_message(conversation_id="conv-orphan", message_text="Ping")
 

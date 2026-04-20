@@ -93,7 +93,7 @@ async def update_conversation_crm_stage(
     if not stage:
         raise HTTPException(status_code=404, detail="CRM stage not found")
 
-    updated = await deps.dynamodb.update_conversation(
+    updated = await deps.db.update_conversation(
         conversation_id=conversation_id,
         crm_stage_id=body.crm_stage_id,
     )

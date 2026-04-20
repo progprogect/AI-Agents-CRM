@@ -80,8 +80,8 @@ class TestProcessMessageStale(unittest.IsolatedAsyncioTestCase):
         }
         agent_config = AgentConfig.from_dict(cfg_dict)
 
-        dynamodb = MagicMock()
-        dynamodb.update_conversation = AsyncMock()
+        db = MagicMock()
+        db.update_conversation = AsyncMock()
 
         esc = MagicMock()
         esc.detect_escalation = AsyncMock(
@@ -98,7 +98,7 @@ class TestProcessMessageStale(unittest.IsolatedAsyncioTestCase):
             escalation_service=esc,
             moderation_service=mod,
             rag_service=rag,
-            dynamodb=dynamodb,
+            db=db,
             channel_sender=None,
         )
         stale = AsyncMock(return_value=True)
@@ -130,9 +130,9 @@ class TestEscalationDisabled(unittest.IsolatedAsyncioTestCase):
         }
         agent_config = AgentConfig.from_dict(cfg_dict)
 
-        dynamodb = MagicMock()
-        dynamodb.update_conversation = AsyncMock()
-        dynamodb.get_conversation = AsyncMock(return_value=None)
+        db = MagicMock()
+        db.update_conversation = AsyncMock()
+        db.get_conversation = AsyncMock(return_value=None)
 
         esc = MagicMock()
         esc.detect_escalation = AsyncMock(
@@ -149,7 +149,7 @@ class TestEscalationDisabled(unittest.IsolatedAsyncioTestCase):
             escalation_service=esc,
             moderation_service=mod,
             rag_service=rag,
-            dynamodb=dynamodb,
+            db=db,
             channel_sender=None,
         )
         # generate_response now returns a dict (graph result contract)
