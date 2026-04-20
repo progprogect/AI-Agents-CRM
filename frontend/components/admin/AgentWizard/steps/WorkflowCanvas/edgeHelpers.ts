@@ -244,13 +244,20 @@ export function flowToSteps(
   const stepMap = new Map<string, WorkflowFormStep>();
   existingSteps.forEach((s) => stepMap.set(s.id, s));
 
-  // Rebuild transitions from edges (exclude start-node edges)
+  // Rebuild transitions from edges (exclude start-node and auto_step-targeting edges)
   const transitionsBySource = new Map<string, { condition: string; is_forced: boolean; is_fallback: boolean; next_step_id: string }[]>();
+
+  // Auto-step node IDs — edges targeting these must never become transitions.
+  const autoStepNodeIds = new Set(
+    nodes.filter((n) => n.type === "autoStepNode").map((n) => n.id)
+  );
 
   edges.forEach((edge) => {
     if (edge.source === START_NODE_ID) return;
     // Timed edges (step → auto_step) are encoded via auto_step.source_id — not as transitions.
     if ((edge.data as { isTimed?: boolean })?.isTimed) return;
+    // Also filter any non-timed edge whose target is an auto_step node (e.g. leaked from old configs).
+    if (autoStepNodeIds.has(edge.target)) return;
     const list = transitionsBySource.get(edge.source) ?? [];
     list.push({
       condition: (edge.data as { condition?: string })?.condition ?? (edge.label as string) ?? "",
