@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from app.config import get_settings
 from app.models.conversation import ConversationStatus
@@ -377,74 +377,54 @@ async def _generate_agent_timer_message(
         return ""
 
 
-async def _load_graph_state_values(agent_config, conversation_id: str) -> dict:
-    """Load fully-deserialized LangGraph state values using graph.aget_state().
+async def _load_conversation_history_from_db(dynamodb: Any, conversation_id: str) -> list[dict]:
+    """Load conversation history from DynamoDB (the canonical source of sent messages).
 
-    checkpointer.aget() returns a raw Checkpoint TypedDict whose channel_values
-    contain *serialized* message objects (JSON dicts, not LangChain instances).
-    graph.aget_state() uses the registered serde to return real Python objects.
-    Falls back to empty dict if the graph is not cached or state is unavailable.
+    This is preferred over reading from the LangGraph checkpoint because:
+    - LangGraph writes intermediate checkpoints mid-run (router sets step before
+      the AI response node runs), so aget_state() can return a snapshot that is
+      missing the latest AI message.
+    - DynamoDB contains every message that was actually *sent* to the user.
+    """
+    try:
+        return await build_conversation_history_for_agent(
+            dynamodb,
+            conversation_id,
+            last_user_message_for_dedup="",  # no dedup needed here
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not load conversation history from DB for %s: %s",
+            conversation_id,
+            exc,
+            extra={"conversation_id": conversation_id},
+        )
+    return []
+
+
+async def _load_current_step_from_graph(agent_config: Any, conversation_id: str) -> Optional[str]:
+    """Try to load current_step_id from the LangGraph checkpoint.
+
+    Used only for the stale-timer guard. Returns None if unavailable so the
+    caller can skip the guard rather than fail noisily.
     """
     try:
         from app.chains.agent_chain import _graph_cache, _graph_cache_key
         cache_key = _graph_cache_key(agent_config.agent_id, agent_config.workflow)
         graph = _graph_cache.get(cache_key)
-        logger.info(
-            "Graph state lookup: conv=%s cache_key=...%s graph_found=%s",
-            conversation_id,
-            cache_key[-8:],
-            graph is not None,
-            extra={"conversation_id": conversation_id},
-        )
         if graph is None:
-            return {}
+            return None
         config = {"configurable": {"thread_id": conversation_id}}
         state_snapshot = await graph.aget_state(config)
         if state_snapshot and isinstance(getattr(state_snapshot, "values", None), dict):
-            msg_count = len(state_snapshot.values.get("messages") or [])
-            logger.info(
-                "Graph state loaded: conv=%s messages=%d step=%s",
-                conversation_id,
-                msg_count,
-                state_snapshot.values.get("current_step_id", "?"),
-                extra={"conversation_id": conversation_id},
-            )
-            return state_snapshot.values
-        logger.warning(
-            "Graph state snapshot empty or invalid for %s: snapshot=%r",
-            conversation_id,
-            state_snapshot,
-            extra={"conversation_id": conversation_id},
-        )
+            return state_snapshot.values.get("current_step_id")
     except Exception as exc:
-        logger.warning(
-            "Could not load graph state for %s: %s",
+        logger.debug(
+            "Could not load current_step_id from graph for %s: %s",
             conversation_id,
             exc,
-            extra={"conversation_id": conversation_id},
         )
-    return {}
-
-
-def _extract_conversation_history(state_values: dict) -> list[dict]:
-    """Convert LangChain message objects from graph state into plain dicts."""
-    history: list[dict] = []
-    raw_messages = state_values.get("messages") or []
-    for m in raw_messages[-20:]:
-        role = (
-            type(m).__name__.lower()
-            .replace("message", "")
-            .replace("ai", "assistant")
-            .replace("human", "user")
-        )
-        text = getattr(m, "content", "")
-        if isinstance(text, list):
-            text = " ".join(
-                c.get("text", "") if isinstance(c, dict) else str(c) for c in text
-            )
-        if text:
-            history.append({"role": role, "content": str(text)})
-    return history
+    return None
 
 
 async def execute_timer_trigger(conversation_id: str) -> None:
@@ -518,19 +498,18 @@ async def execute_timer_trigger(conversation_id: str) -> None:
 
     action_type = timer.get("action_type", "static")
 
-    # Load LangGraph state for variable substitution and conversation context.
+    # Load conversation history from DynamoDB (the canonical source of sent messages).
+    # LangGraph checkpoints may contain intermediate states (mid-run snapshots) that
+    # are missing the latest AI response, making them unreliable for history.
     collected: dict = {}
-    conversation_history: list[dict] = []
-    state_values = await _load_graph_state_values(agent_config, conversation_id)
-    if state_values:
-        collected = state_values.get("collected") or {}
-        conversation_history = _extract_conversation_history(state_values)
+    conversation_history = await _load_conversation_history_from_db(dynamodb, conversation_id)
 
-        # Guard: discard timer if the conversation has already moved past the
-        # step that originally scheduled it (e.g. user replied mid-timer).
-        timer_step = timer.get("step_id")
-        checkpoint_step = state_values.get("current_step_id")
-        if timer_step and checkpoint_step and timer_step != checkpoint_step:
+    # Guard: discard timer if the conversation has already moved past the
+    # step that originally scheduled it (e.g. user replied mid-timer).
+    timer_step = timer.get("step_id")
+    if timer_step:
+        checkpoint_step = await _load_current_step_from_graph(agent_config, conversation_id)
+        if checkpoint_step and timer_step != checkpoint_step:
             logger.info(
                 "Timer for %s discarded: conversation moved from step '%s' to '%s'",
                 conversation_id,
@@ -540,12 +519,6 @@ async def execute_timer_trigger(conversation_id: str) -> None:
             )
             await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
             return
-    else:
-        logger.warning(
-            "Timer trigger: could not load graph state for %s (graph not cached or unavailable)",
-            conversation_id,
-            extra={"conversation_id": conversation_id},
-        )
 
     if action_type == "agent":
         # Generate a proactive message via LLM using conversation context + prompt instruction.
@@ -935,19 +908,9 @@ async def execute_auto_step_trigger(member: str) -> None:
 
     action_type = payload.get("action_type", "static")
 
-    # Load conversation state for variable substitution and LLM context.
+    # Load conversation history from DynamoDB (reliable canonical source).
     collected: dict = {}
-    conversation_history: list[dict] = []
-    state_values = await _load_graph_state_values(agent_config, conversation_id)
-    if state_values:
-        collected = state_values.get("collected") or {}
-        conversation_history = _extract_conversation_history(state_values)
-    else:
-        logger.warning(
-            "Auto-step: could not load graph state for %s (graph not cached or unavailable)",
-            conversation_id,
-            extra={"conversation_id": conversation_id},
-        )
+    conversation_history = await _load_conversation_history_from_db(dynamodb, conversation_id)
 
     # Optional condition check.
     condition = payload.get("condition")
