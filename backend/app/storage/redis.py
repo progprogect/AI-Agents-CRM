@@ -2,7 +2,7 @@
 
 import json
 from functools import lru_cache
-from typing import Any, Optional
+from typing import Any, Optional, Set
 
 import redis.asyncio as redis
 
@@ -157,7 +157,7 @@ class RedisClient:
             return 0
         return int(await self.client.sadd(key, *members))
 
-    async def smembers(self, key: str) -> set[str]:
+    async def smembers(self, key: str) -> Set[str]:
         """SMEMBERS — return all members of a set."""
         await self.connect()
         if not self.client:
