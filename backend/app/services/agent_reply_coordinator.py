@@ -377,6 +377,55 @@ async def _generate_agent_timer_message(
         return ""
 
 
+async def _load_graph_state_values(agent_config, conversation_id: str) -> dict:
+    """Load fully-deserialized LangGraph state values using graph.aget_state().
+
+    checkpointer.aget() returns a raw Checkpoint TypedDict whose channel_values
+    contain *serialized* message objects (JSON dicts, not LangChain instances).
+    graph.aget_state() uses the registered serde to return real Python objects.
+    Falls back to empty dict if the graph is not cached or state is unavailable.
+    """
+    try:
+        from app.chains.agent_chain import _graph_cache, _graph_cache_key
+        cache_key = _graph_cache_key(agent_config.agent_id, agent_config.workflow)
+        graph = _graph_cache.get(cache_key)
+        if graph is None:
+            return {}
+        config = {"configurable": {"thread_id": conversation_id}}
+        state_snapshot = await graph.aget_state(config)
+        if state_snapshot and isinstance(getattr(state_snapshot, "values", None), dict):
+            return state_snapshot.values
+    except Exception as exc:
+        logger.warning(
+            "Could not load graph state for %s: %s",
+            conversation_id,
+            exc,
+            extra={"conversation_id": conversation_id},
+        )
+    return {}
+
+
+def _extract_conversation_history(state_values: dict) -> list[dict]:
+    """Convert LangChain message objects from graph state into plain dicts."""
+    history: list[dict] = []
+    raw_messages = state_values.get("messages") or []
+    for m in raw_messages[-20:]:
+        role = (
+            type(m).__name__.lower()
+            .replace("message", "")
+            .replace("ai", "assistant")
+            .replace("human", "user")
+        )
+        text = getattr(m, "content", "")
+        if isinstance(text, list):
+            text = " ".join(
+                c.get("text", "") if isinstance(c, dict) else str(c) for c in text
+            )
+        if text:
+            history.append({"role": role, "content": str(text)})
+    return history
+
+
 async def execute_timer_trigger(conversation_id: str) -> None:
     """Fire a scheduled workflow timer trigger for a conversation."""
     import json as _json
@@ -451,50 +500,29 @@ async def execute_timer_trigger(conversation_id: str) -> None:
     # Load LangGraph state for variable substitution and conversation context.
     collected: dict = {}
     conversation_history: list[dict] = []
-    try:
-        from app.storage.postgres_checkpointer import get_checkpointer
-        checkpointer = get_checkpointer()
-        state_snapshot = await checkpointer.aget({"configurable": {"thread_id": conversation_id}})
-        if state_snapshot:
-            # checkpointer.aget() returns a raw Checkpoint TypedDict (dict with "channel_values"),
-            # NOT a StateSnapshot; .values on a dict returns the built-in method, not state data.
-            if isinstance(state_snapshot, dict):
-                state_values: dict = state_snapshot.get("channel_values", {})
-            elif hasattr(state_snapshot, "checkpoint") and isinstance(getattr(state_snapshot, "checkpoint"), dict):
-                state_values = state_snapshot.checkpoint.get("channel_values", {})
-            else:
-                sv = getattr(state_snapshot, "values", {})
-                state_values = sv if isinstance(sv, dict) else {}
+    state_values = await _load_graph_state_values(agent_config, conversation_id)
+    if state_values:
+        collected = state_values.get("collected") or {}
+        conversation_history = _extract_conversation_history(state_values)
 
-            collected = state_values.get("collected") or {}
-            raw_messages = state_values.get("messages") or []
-            for m in raw_messages[-20:]:
-                role = type(m).__name__.lower().replace("message", "").replace("ai", "assistant").replace("human", "user")
-                text = getattr(m, "content", "")
-                if isinstance(text, list):
-                    text = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in text)
-                if text:
-                    conversation_history.append({"role": role, "content": str(text)})
-
-            # Guard: discard timer if the conversation has already moved past the
-            # step that originally scheduled it (e.g. user replied mid-timer).
-            timer_step = timer.get("step_id")
-            checkpoint_step = state_values.get("current_step_id")
-            if timer_step and checkpoint_step and timer_step != checkpoint_step:
-                logger.info(
-                    "Timer for %s discarded: conversation moved from step '%s' to '%s'",
-                    conversation_id,
-                    timer_step,
-                    checkpoint_step,
-                    extra={"conversation_id": conversation_id},
-                )
-                await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
-                return
-    except Exception as exc:
+        # Guard: discard timer if the conversation has already moved past the
+        # step that originally scheduled it (e.g. user replied mid-timer).
+        timer_step = timer.get("step_id")
+        checkpoint_step = state_values.get("current_step_id")
+        if timer_step and checkpoint_step and timer_step != checkpoint_step:
+            logger.info(
+                "Timer for %s discarded: conversation moved from step '%s' to '%s'",
+                conversation_id,
+                timer_step,
+                checkpoint_step,
+                extra={"conversation_id": conversation_id},
+            )
+            await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
+            return
+    else:
         logger.warning(
-            "Timer trigger: could not load checkpointer state for %s: %s",
+            "Timer trigger: could not load graph state for %s (graph not cached or unavailable)",
             conversation_id,
-            exc,
             extra={"conversation_id": conversation_id},
         )
 
@@ -889,35 +917,14 @@ async def execute_auto_step_trigger(member: str) -> None:
     # Load conversation state for variable substitution and LLM context.
     collected: dict = {}
     conversation_history: list[dict] = []
-    try:
-        from app.storage.postgres_checkpointer import get_checkpointer
-        checkpointer = get_checkpointer()
-        state_snapshot = await checkpointer.aget({"configurable": {"thread_id": conversation_id}})
-        if state_snapshot:
-            # checkpointer.aget() returns a raw Checkpoint TypedDict (dict with "channel_values"),
-            # NOT a StateSnapshot; .values on a dict returns the built-in method, not state data.
-            if isinstance(state_snapshot, dict):
-                state_values: dict = state_snapshot.get("channel_values", {})
-            elif hasattr(state_snapshot, "checkpoint") and isinstance(getattr(state_snapshot, "checkpoint"), dict):
-                state_values = state_snapshot.checkpoint.get("channel_values", {})
-            else:
-                sv = getattr(state_snapshot, "values", {})
-                state_values = sv if isinstance(sv, dict) else {}
-
-            collected = state_values.get("collected") or {}
-            raw_messages = state_values.get("messages") or []
-            for m in raw_messages[-20:]:
-                role = type(m).__name__.lower().replace("message", "").replace("ai", "assistant").replace("human", "user")
-                text = getattr(m, "content", "")
-                if isinstance(text, list):
-                    text = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in text)
-                if text:
-                    conversation_history.append({"role": role, "content": str(text)})
-    except Exception as exc:
+    state_values = await _load_graph_state_values(agent_config, conversation_id)
+    if state_values:
+        collected = state_values.get("collected") or {}
+        conversation_history = _extract_conversation_history(state_values)
+    else:
         logger.warning(
-            "Auto-step: could not load checkpointer state for %s: %s",
+            "Auto-step: could not load graph state for %s (graph not cached or unavailable)",
             conversation_id,
-            exc,
             extra={"conversation_id": conversation_id},
         )
 
