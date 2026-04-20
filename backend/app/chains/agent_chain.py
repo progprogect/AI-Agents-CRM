@@ -99,10 +99,19 @@ class WorkflowState(TypedDict):
 _graph_cache: dict[str, Any] = {}
 
 
-def _graph_cache_key(agent_id: str, workflow: WorkflowConfig) -> str:
+def workflow_config_hash(workflow: WorkflowConfig) -> str:
+    """Return a short stable hash of the workflow configuration.
+
+    Used to detect stale timer payloads: if the hash stored in a scheduled
+    timer no longer matches the agent's current workflow, the timer is
+    discarded before sending.
+    """
     payload = json.dumps(workflow.model_dump(), sort_keys=True, default=str)
-    digest = hashlib.sha256(payload.encode()).hexdigest()[:12]
-    return f"{agent_id}:{digest}"
+    return hashlib.sha256(payload.encode()).hexdigest()[:12]
+
+
+def _graph_cache_key(agent_id: str, workflow: WorkflowConfig) -> str:
+    return f"{agent_id}:{workflow_config_hash(workflow)}"
 
 
 # ---------------------------------------------------------------------------

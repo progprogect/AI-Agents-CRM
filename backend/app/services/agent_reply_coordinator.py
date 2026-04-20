@@ -392,6 +392,20 @@ async def execute_timer_trigger(conversation_id: str) -> None:
     from app.storage.resolver import get_secrets_manager
 
     agent_config = AgentConfig.from_dict(agent_data["config"])
+
+    # Guard: discard timer if the agent's workflow was changed after scheduling.
+    stored_hash = timer.get("config_hash")
+    if stored_hash:
+        from app.chains.agent_chain import workflow_config_hash
+        if stored_hash != workflow_config_hash(agent_config.workflow):
+            logger.info(
+                "Timer for %s discarded: workflow changed since scheduling",
+                conversation_id,
+                extra={"conversation_id": conversation_id},
+            )
+            await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
+            return
+
     conversation_channel = get_enum_value(conversation.channel)
 
     instagram_service = None
@@ -427,6 +441,21 @@ async def execute_timer_trigger(conversation_id: str) -> None:
                     text = " ".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in text)
                 if text:
                     conversation_history.append({"role": role, "content": str(text)})
+
+            # Guard: discard timer if the conversation has already moved past the
+            # step that originally scheduled it (e.g. user replied mid-timer).
+            timer_step = timer.get("step_id")
+            checkpoint_step = state_snapshot.values.get("current_step_id")
+            if timer_step and checkpoint_step and timer_step != checkpoint_step:
+                logger.info(
+                    "Timer for %s discarded: conversation moved from step '%s' to '%s'",
+                    conversation_id,
+                    timer_step,
+                    checkpoint_step,
+                    extra={"conversation_id": conversation_id},
+                )
+                await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
+                return
     except Exception as exc:
         logger.debug("Timer trigger: could not load checkpointer state for %s: %s", conversation_id, exc)
 

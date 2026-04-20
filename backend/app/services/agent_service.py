@@ -193,7 +193,9 @@ class AgentService:
         pending_timer = graph_result.get("pending_timer")
         if pending_timer:
             try:
+                from app.chains.agent_chain import workflow_config_hash
                 from app.services.agent_reply_coordinator import schedule_timer_trigger
+                pending_timer["config_hash"] = workflow_config_hash(self.agent_config.workflow)
                 await schedule_timer_trigger(conversation_id, pending_timer)
                 logger.info(
                     "Timer trigger scheduled for conversation %s in %ds",
