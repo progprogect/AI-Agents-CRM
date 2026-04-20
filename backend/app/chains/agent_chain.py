@@ -560,7 +560,17 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 response_text = _clean_response(_normalise_llm_text(ai_msg.content))
                 if not response_text:
                     response_text = "I apologize, but I couldn't generate a response. Please try again."
-                return {"messages": [AIMessage(content=response_text)], "llm_response": response_text}
+                # Store BOTH the user's message and the AI response so that
+                # transition_evaluator can see the user's actual text when
+                # evaluating conditions (e.g. "user said thanks").
+                user_text = state.get("user_message") or ""
+                return {
+                    "messages": [
+                        HumanMessage(content=user_text),
+                        AIMessage(content=response_text),
+                    ],
+                    "llm_response": response_text,
+                }
             except Exception as exc:
                 logger.error(
                     "LLM generation error: %s",
