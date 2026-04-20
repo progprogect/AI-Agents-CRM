@@ -366,9 +366,9 @@ async def _generate_agent_timer_message(
 
         messages = [_SystemMessage(content=system_content)]
         for turn in conversation_history[-10:]:
-            role = turn.get("role", "user")
+            role = turn.get("role", "user").lower()
             content = turn.get("content", "")
-            if role in ("assistant", "ai"):
+            if role in ("assistant", "ai", "agent"):
                 from langchain_core.messages import AIMessage as _AIMessage
                 messages.append(_AIMessage(content=content))
             else:
