@@ -154,6 +154,26 @@ export function AutoStepPanel({ autoStep, onUpdate, onDelete, onClose }: AutoSte
           </p>
         </Section>
 
+        {/* Cancel policy on workflow step change */}
+        <Section title="Отмена при смене шага">
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#BEBAB7] bg-white p-3 text-sm text-[#443C3C] hover:border-[#7C3AED]">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[#7C3AED]"
+              checked={autoStep.cancel_on_workflow_step_change !== false}
+              onChange={(e) =>
+                onUpdate({ cancel_on_workflow_step_change: e.target.checked })
+              }
+            />
+            <span>
+              <span className="font-medium">Отменять, если пользователь перешёл на другой шаг workflow</span>
+              <span className="mt-1 block text-[11px] text-[#9A9590]">
+                Снимите галочку, чтобы таймер дождался срабатывания даже после смены шага (сброс при /restart и закрытии чата по-прежнему полный).
+              </span>
+            </span>
+          </label>
+        </Section>
+
         {/* Action type */}
         <Section title="Тип действия">
           <div className="flex gap-2">

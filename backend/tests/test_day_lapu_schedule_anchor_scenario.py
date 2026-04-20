@@ -176,7 +176,7 @@ def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu
             new_callable=AsyncMock,
         ) as mock_schedule_auto,
         patch(
-            "app.services.agent_reply_coordinator.cancel_all_auto_steps",
+            "app.services.agent_reply_coordinator.cancel_auto_steps_for_workflow_transition",
             new_callable=AsyncMock,
         ) as mock_cancel_all,
     ):

@@ -53,6 +53,7 @@ export interface WorkflowAutoStep {
   message_template: string;
   prompt: string;
   condition?: string | null;
+  cancel_on_workflow_step_change?: boolean;
 }
 
 export interface WorkflowFormStep extends WorkflowStep {
@@ -324,6 +325,10 @@ export function agentConfigToFormData(
       message_template: a.message_template || "",
       prompt: a.prompt || "",
       condition: a.condition ?? null,
+      cancel_on_workflow_step_change:
+        typeof a.cancel_on_workflow_step_change === "boolean"
+          ? a.cancel_on_workflow_step_change
+          : true,
     })) as WorkflowFormAutoStep[],
   };
 
@@ -473,6 +478,7 @@ export function formDataToAgentConfig(
         message_template: a.message_template || "",
         prompt: a.prompt || "",
         condition: a.condition ?? null,
+        cancel_on_workflow_step_change: a.cancel_on_workflow_step_change ?? true,
       })),
     },
   };

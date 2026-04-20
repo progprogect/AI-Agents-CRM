@@ -210,8 +210,11 @@ class AgentService:
         # --- Handle auto-step scheduling/cancellation ---
         if graph_result.get("cancel_all_auto_steps"):
             try:
-                from app.services.agent_reply_coordinator import cancel_all_auto_steps
-                await cancel_all_auto_steps(conversation_id)
+                from app.services.agent_reply_coordinator import (
+                    cancel_auto_steps_for_workflow_transition,
+                )
+
+                await cancel_auto_steps_for_workflow_transition(conversation_id)
             except Exception as exc:
                 logger.warning("Failed to cancel auto-steps for %s: %s", conversation_id, exc)
 

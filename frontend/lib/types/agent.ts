@@ -206,6 +206,8 @@ export interface WorkflowAutoStep {
   message_template: string;
   prompt: string;
   condition?: string | null;
+  /** Default true: pending job cleared on workflow step change; false keeps until fire or hard reset. */
+  cancel_on_workflow_step_change?: boolean;
 }
 
 export interface WorkflowConfig {

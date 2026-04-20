@@ -852,8 +852,59 @@ async def schedule_auto_step(
     )
 
 
+def _payload_cancel_on_workflow_step_change(raw: str | bytes | None) -> bool:
+    """Return True if this pending auto-step should be removed on workflow step change.
+
+    Missing key or invalid JSON defaults to True (legacy payloads).
+    """
+    import json as _json
+
+    if not raw:
+        return True
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    try:
+        data = _json.loads(raw)
+    except Exception:
+        return True
+    if not isinstance(data, dict):
+        return True
+    # Only JSON false is "sticky"; null / missing key still cancel (default True).
+    if data.get("cancel_on_workflow_step_change") is False:
+        return False
+    return True
+
+
+async def cancel_auto_steps_for_workflow_transition(conversation_id: str) -> None:
+    """Remove pending auto-steps that opt in to cancellation on workflow step change.
+
+    Members with ``cancel_on_workflow_step_change: false`` in the stored payload are kept.
+    """
+    redis = get_redis_client()
+    try:
+        if not await redis.ping():
+            return
+        idx_key = f"{KEY_AUTO_IDX}{conversation_id}"
+        members = await redis.smembers(idx_key)
+        if not members:
+            return
+        for m in members:
+            member = m.decode("utf-8") if isinstance(m, bytes) else str(m)
+            raw = await redis.get(f"{KEY_AUTO_PAY}{member}")
+            if _payload_cancel_on_workflow_step_change(raw):
+                await redis.zrem(KEY_AUTO_DUE, member)
+                await redis.delete(f"{KEY_AUTO_PAY}{member}")
+                await redis.srem(idx_key, member)
+    except Exception as exc:
+        logger.debug(
+            "cancel_auto_steps_for_workflow_transition error for %s: %s",
+            conversation_id,
+            exc,
+        )
+
+
 async def cancel_all_auto_steps(conversation_id: str) -> None:
-    """Cancel every pending auto-step for *conversation_id* (e.g. on step transition)."""
+    """Cancel every pending auto-step for *conversation_id* (hard reset, e.g. /restart)."""
     redis = get_redis_client()
     try:
         if not await redis.ping():

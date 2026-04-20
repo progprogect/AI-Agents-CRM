@@ -414,8 +414,13 @@ class WorkflowAutoStep(BaseModel):
 
     Unlike ``WorkflowTimerTrigger`` (which resets on every user message), an auto-step
     is scheduled once when the source step/auto-step fires and is NOT cancelled by
-    subsequent user messages.  It is only cancelled when the conversation transitions
-    to a different regular WorkflowStep.
+    subsequent user messages alone.
+
+    By default (``cancel_on_workflow_step_change=True``) pending auto-steps are cleared
+    when the workflow moves to another regular ``WorkflowStep``.  Set
+    ``cancel_on_workflow_step_change=False`` to keep the job until it fires or until
+    a hard reset (e.g. conversation /restart).  Explicit full cancellation still removes
+    all pending auto-steps regardless of this flag.
 
     ``source_id`` must reference either a ``WorkflowStep.id`` or another
     ``WorkflowAutoStep.id`` within the same ``WorkflowConfig``.
@@ -457,6 +462,14 @@ class WorkflowAutoStep(BaseModel):
     condition: Optional[str] = Field(
         default=None,
         description="Natural-language condition evaluated by LLM (yes/no) before sending; None = always fire",
+    )
+    cancel_on_workflow_step_change: bool = Field(
+        default=True,
+        description=(
+            "If True (default), remove this pending auto-step when the conversation "
+            "transitions to another regular workflow step. If False, keep it until "
+            "fire_at or until a full cancel (e.g. /restart)."
+        ),
     )
 
 
