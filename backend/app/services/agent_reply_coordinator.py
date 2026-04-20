@@ -389,12 +389,33 @@ async def _load_graph_state_values(agent_config, conversation_id: str) -> dict:
         from app.chains.agent_chain import _graph_cache, _graph_cache_key
         cache_key = _graph_cache_key(agent_config.agent_id, agent_config.workflow)
         graph = _graph_cache.get(cache_key)
+        logger.info(
+            "Graph state lookup: conv=%s cache_key=...%s graph_found=%s",
+            conversation_id,
+            cache_key[-8:],
+            graph is not None,
+            extra={"conversation_id": conversation_id},
+        )
         if graph is None:
             return {}
         config = {"configurable": {"thread_id": conversation_id}}
         state_snapshot = await graph.aget_state(config)
         if state_snapshot and isinstance(getattr(state_snapshot, "values", None), dict):
+            msg_count = len(state_snapshot.values.get("messages") or [])
+            logger.info(
+                "Graph state loaded: conv=%s messages=%d step=%s",
+                conversation_id,
+                msg_count,
+                state_snapshot.values.get("current_step_id", "?"),
+                extra={"conversation_id": conversation_id},
+            )
             return state_snapshot.values
+        logger.warning(
+            "Graph state snapshot empty or invalid for %s: snapshot=%r",
+            conversation_id,
+            state_snapshot,
+            extra={"conversation_id": conversation_id},
+        )
     except Exception as exc:
         logger.warning(
             "Could not load graph state for %s: %s",
