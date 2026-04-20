@@ -437,21 +437,52 @@ async def _load_current_step_from_graph(agent_config: Any, conversation_id: str)
             channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
             step_id = channel_values.get("current_step_id")
             if step_id:
+                logger.debug(
+                    "current_step_id for %s from checkpointer: %s",
+                    conversation_id,
+                    step_id,
+                )
                 return step_id
+            # Log all keys when current_step_id not found to diagnose key naming
+            logger.info(
+                "current_step_id not found in checkpoint channel_values for %s; keys=%s",
+                conversation_id,
+                list(channel_values.keys())[:20],
+                extra={"conversation_id": conversation_id},
+            )
+        else:
+            logger.info(
+                "No checkpoint found for %s via aget_tuple (tuple=%s)",
+                conversation_id,
+                bool(checkpoint_tuple),
+                extra={"conversation_id": conversation_id},
+            )
         # Fallback: try the in-memory graph cache (less reliable but available)
         from app.chains.agent_chain import _graph_cache, _graph_cache_key
         cache_key = _graph_cache_key(agent_config.agent_id, agent_config.workflow)
         graph = _graph_cache.get(cache_key)
         if graph is None:
+            logger.info(
+                "Graph cache miss for %s; cannot determine current_step_id",
+                conversation_id,
+                extra={"conversation_id": conversation_id},
+            )
             return None
         state_snapshot = await graph.aget_state(config)
         if state_snapshot and isinstance(getattr(state_snapshot, "values", None), dict):
-            return state_snapshot.values.get("current_step_id")
+            step_id = state_snapshot.values.get("current_step_id")
+            logger.debug(
+                "current_step_id for %s from graph cache: %s",
+                conversation_id,
+                step_id,
+            )
+            return step_id
     except Exception as exc:
-        logger.debug(
+        logger.warning(
             "Could not load current_step_id from graph for %s: %s",
             conversation_id,
             exc,
+            extra={"conversation_id": conversation_id},
         )
     return None
 
@@ -538,7 +569,18 @@ async def execute_timer_trigger(conversation_id: str) -> None:
     timer_step = timer.get("step_id")
     if timer_step:
         checkpoint_step = await _load_current_step_from_graph(agent_config, conversation_id)
-        if checkpoint_step and timer_step != checkpoint_step:
+        if checkpoint_step is None:
+            # Could not determine the current step — conservatively discard the
+            # timer to avoid sending a stale message. The timer will be
+            # rescheduled on the next user message if still appropriate.
+            logger.warning(
+                "Timer for %s discarded: could not verify current step (checkpoint unavailable)",
+                conversation_id,
+                extra={"conversation_id": conversation_id},
+            )
+            await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
+            return
+        if timer_step != checkpoint_step:
             logger.info(
                 "Timer for %s discarded: conversation moved from step '%s' to '%s'",
                 conversation_id,
