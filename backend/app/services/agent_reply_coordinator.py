@@ -77,9 +77,6 @@ async def notify_user_message_saved(
             ttl=ttl,
         )
         await redis.zadd(KEY_DUE, {conversation_id: float(fire_at_ms)})
-        # Cancel any pending workflow timer — user has responded, inactivity timer no longer relevant.
-        await redis.zrem(KEY_TIMER_DUE, conversation_id)
-        await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
     except Exception as exc:
         logger.warning(
             "Redis error scheduling debounced reply: %s; falling back to immediate reply",
@@ -88,6 +85,15 @@ async def notify_user_message_saved(
             exc_info=True,
         )
         return "fallback"
+    finally:
+        # Always cancel any pending inactivity timer when the user sends a message,
+        # regardless of whether the debounce scheduling above succeeded.
+        # This prevents stale timers firing after a step transition.
+        try:
+            await redis.zrem(KEY_TIMER_DUE, conversation_id)
+            await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
+        except Exception:
+            pass
 
     return "scheduled"
 
