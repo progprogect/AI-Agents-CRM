@@ -456,8 +456,18 @@ async def execute_timer_trigger(conversation_id: str) -> None:
         checkpointer = get_checkpointer()
         state_snapshot = await checkpointer.aget({"configurable": {"thread_id": conversation_id}})
         if state_snapshot:
-            collected = state_snapshot.values.get("collected") or {}
-            raw_messages = state_snapshot.values.get("messages") or []
+            # checkpointer.aget() returns a raw Checkpoint TypedDict (dict with "channel_values"),
+            # NOT a StateSnapshot; .values on a dict returns the built-in method, not state data.
+            if isinstance(state_snapshot, dict):
+                state_values: dict = state_snapshot.get("channel_values", {})
+            elif hasattr(state_snapshot, "checkpoint") and isinstance(getattr(state_snapshot, "checkpoint"), dict):
+                state_values = state_snapshot.checkpoint.get("channel_values", {})
+            else:
+                sv = getattr(state_snapshot, "values", {})
+                state_values = sv if isinstance(sv, dict) else {}
+
+            collected = state_values.get("collected") or {}
+            raw_messages = state_values.get("messages") or []
             for m in raw_messages[-20:]:
                 role = type(m).__name__.lower().replace("message", "").replace("ai", "assistant").replace("human", "user")
                 text = getattr(m, "content", "")
@@ -469,7 +479,7 @@ async def execute_timer_trigger(conversation_id: str) -> None:
             # Guard: discard timer if the conversation has already moved past the
             # step that originally scheduled it (e.g. user replied mid-timer).
             timer_step = timer.get("step_id")
-            checkpoint_step = state_snapshot.values.get("current_step_id")
+            checkpoint_step = state_values.get("current_step_id")
             if timer_step and checkpoint_step and timer_step != checkpoint_step:
                 logger.info(
                     "Timer for %s discarded: conversation moved from step '%s' to '%s'",
@@ -884,8 +894,18 @@ async def execute_auto_step_trigger(member: str) -> None:
         checkpointer = get_checkpointer()
         state_snapshot = await checkpointer.aget({"configurable": {"thread_id": conversation_id}})
         if state_snapshot:
-            collected = state_snapshot.values.get("collected") or {}
-            raw_messages = state_snapshot.values.get("messages") or []
+            # checkpointer.aget() returns a raw Checkpoint TypedDict (dict with "channel_values"),
+            # NOT a StateSnapshot; .values on a dict returns the built-in method, not state data.
+            if isinstance(state_snapshot, dict):
+                state_values: dict = state_snapshot.get("channel_values", {})
+            elif hasattr(state_snapshot, "checkpoint") and isinstance(getattr(state_snapshot, "checkpoint"), dict):
+                state_values = state_snapshot.checkpoint.get("channel_values", {})
+            else:
+                sv = getattr(state_snapshot, "values", {})
+                state_values = sv if isinstance(sv, dict) else {}
+
+            collected = state_values.get("collected") or {}
+            raw_messages = state_values.get("messages") or []
             for m in raw_messages[-20:]:
                 role = type(m).__name__.lower().replace("message", "").replace("ai", "assistant").replace("human", "user")
                 text = getattr(m, "content", "")

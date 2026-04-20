@@ -914,6 +914,8 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     "rag_media_type": rag_media_attachment["media_type"] if rag_media_attachment else None,
                     "pending_timer": state.get("pending_timer"),
                     "quick_replies": state.get("quick_replies") or [],
+                    "cancel_all_auto_steps": state.get("cancel_all_auto_steps"),
+                    "pending_auto_schedules": state.get("pending_auto_schedules"),
                 }
             }
 
