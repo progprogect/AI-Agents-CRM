@@ -913,6 +913,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     "rag_media_url": rag_media_attachment["url"] if rag_media_attachment else None,
                     "rag_media_type": rag_media_attachment["media_type"] if rag_media_attachment else None,
                     "pending_timer": state.get("pending_timer"),
+                    "quick_replies": state.get("quick_replies") or [],
                 }
             }
 

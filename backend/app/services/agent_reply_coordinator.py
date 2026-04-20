@@ -343,7 +343,11 @@ async def _generate_agent_timer_message(
 
         system_content = (
             f"{base_prompt}\n\n"
-            "--- ТАЙМЕР ---\n"
+            "--- КОНТЕКСТ ---\n"
+            "Ты уже ведёшь разговор с пользователем (история сообщений ниже). "
+            "Тебе нужно написать следующее сообщение-продолжение в этот диалог.\n"
+            "Не начинай с приветствия — разговор уже идёт.\n\n"
+            "--- ЗАДАЧА ---\n"
             f"{prompt_instruction}\n\n"
             "Напиши только текст сообщения. Без пояснений и предисловий."
         ).strip()
@@ -477,7 +481,12 @@ async def execute_timer_trigger(conversation_id: str) -> None:
                 await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
                 return
     except Exception as exc:
-        logger.debug("Timer trigger: could not load checkpointer state for %s: %s", conversation_id, exc)
+        logger.warning(
+            "Timer trigger: could not load checkpointer state for %s: %s",
+            conversation_id,
+            exc,
+            extra={"conversation_id": conversation_id},
+        )
 
     if action_type == "agent":
         # Generate a proactive message via LLM using conversation context + prompt instruction.
@@ -486,6 +495,20 @@ async def execute_timer_trigger(conversation_id: str) -> None:
             logger.warning(
                 "Timer trigger action_type=agent but no prompt for %s; skipping",
                 conversation_id,
+            )
+            await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
+            return
+
+        # Without conversation history the LLM has no context for a follow-up
+        # message and tends to generate a generic greeting instead. Skip the
+        # timer and clean up so it doesn't linger in Redis.
+        if not conversation_history:
+            logger.warning(
+                "Timer trigger action_type=agent skipped for %s: conversation history is empty"
+                " (checkpointer unavailable or new conversation). "
+                "A static message_template would fire regardless.",
+                conversation_id,
+                extra={"conversation_id": conversation_id},
             )
             await redis.delete(f"agent_reply:timer_payload:{conversation_id}")
             return
@@ -871,7 +894,12 @@ async def execute_auto_step_trigger(member: str) -> None:
                 if text:
                     conversation_history.append({"role": role, "content": str(text)})
     except Exception as exc:
-        logger.debug("Auto-step: could not load checkpointer state for %s: %s", conversation_id, exc)
+        logger.warning(
+            "Auto-step: could not load checkpointer state for %s: %s",
+            conversation_id,
+            exc,
+            extra={"conversation_id": conversation_id},
+        )
 
     # Optional condition check.
     condition = payload.get("condition")

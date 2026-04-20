@@ -132,7 +132,8 @@ async def handle_restart(
             if c.external_user_id == chat_id
         ]
 
-        # Close all active conversations for this chat_id
+        # Close all active conversations for this chat_id and cancel any
+        # pending timers / auto-steps so they don't fire on the closed conv.
         for conv in existing_conversations:
             await dynamodb.update_conversation(
                 conversation_id=conv.conversation_id,
@@ -144,6 +145,18 @@ async def handle_restart(
                 conv.conversation_id,
                 chat_id,
             )
+            try:
+                from app.services.agent_reply_coordinator import cancel_all_auto_steps
+                from app.storage.redis import get_redis_client
+                redis = get_redis_client()
+                await redis.delete(f"agent_reply:timer_payload:{conv.conversation_id}")
+                await cancel_all_auto_steps(conv.conversation_id)
+            except Exception as exc:
+                logger.warning(
+                    "Could not cancel timers for conversation %s during /restart: %s",
+                    conv.conversation_id,
+                    exc,
+                )
 
         # Create a new conversation
         new_conv_id = str(uuid.uuid4())
