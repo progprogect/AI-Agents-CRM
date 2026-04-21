@@ -204,14 +204,13 @@ def create_app() -> FastAPI:
     ):
         """Handle Pydantic validation errors."""
         request_id = getattr(request.state, "request_id", None)
-        # Pydantic v2 includes ``input`` (raw objects, e.g. Pydantic models)
-        # and ``ctx`` (Python exception instances) in errors() by default;
-        # neither is JSON-serialisable, so strip them here.
-        safe_errors = exc.errors(
-            include_input=False,
-            include_url=False,
-            include_context=False,
-        )
+        # Pydantic v2 / FastAPI can put non-JSON objects into ``input`` and
+        # ``ctx`` (e.g. raw Pydantic models, Python exceptions).  Strip them
+        # manually so the response stays JSON-serialisable on every version.
+        safe_errors = [
+            {k: v for k, v in e.items() if k not in ("input", "ctx", "url")}
+            for e in exc.errors()
+        ]
         logger.warning(
             f"Validation error: {safe_errors}",
             extra={
