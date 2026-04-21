@@ -116,5 +116,8 @@ export const Button: React.FC<ButtonProps> = ({
   );
 };
 
+/** Use on ``<Link>`` to match ``Button`` ``variant="secondary"`` ``size="sm"`` (no ``asChild`` on ``Button``). */
+export const linkButtonSecondarySmClassName =
+  "inline-flex items-center justify-center font-medium rounded-sm transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#251D1C] bg-white text-gray-900 border border-[#251D1C] hover:bg-[#EEEAE7] hover:border-[#443C3C] px-3 py-1.5 text-sm gap-1.5";
 
 

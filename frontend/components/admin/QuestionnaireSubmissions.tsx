@@ -4,7 +4,10 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { Input } from "@/components/shared/Input";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
+import { Select } from "@/components/shared/Select";
+import { SegmentedControl } from "@/components/shared/SegmentedControl";
 import type {
   QuestionnaireTemplate,
   QuestionnaireSubmissionListItem,
@@ -39,6 +42,13 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 type SubmissionsViewMode = "compact" | "table";
+
+const VIEW_MODE_SEGMENTS: { value: SubmissionsViewMode; label: string }[] = [
+  { value: "compact", label: "Компактный список" },
+  { value: "table", label: "Таблица с ответами" },
+];
+
+const CONTROL_BORDER = "border-[#BEBAB7]";
 
 /** Column keys: template order first, then orphan keys from snapshots (sorted). */
 function tableColumnKeys(
@@ -83,6 +93,33 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
     for (const k of historicFieldKeys) s.add(k);
     return Array.from(s).sort((a, b) => a.localeCompare(b));
   }, [template.fields, historicFieldKeys]);
+
+  const statusSelectOptions = useMemo(
+    () => [
+      { value: "", label: "Все" },
+      { value: "in_progress", label: STATUS_LABEL.in_progress },
+      { value: "completed", label: STATUS_LABEL.completed },
+      { value: "cancelled", label: STATUS_LABEL.cancelled },
+    ],
+    []
+  );
+
+  const fieldFilterSelectOptions = useMemo(() => {
+    const rows = [{ value: "", label: "Все поля" }];
+    for (const key of fieldKeySelectOptions) {
+      const lab = labelByKey[key];
+      rows.push({
+        value: key,
+        label: lab ? `${key} — ${lab}` : `${key} (нет в шаблоне)`,
+      });
+    }
+    return rows;
+  }, [fieldKeySelectOptions, labelByKey]);
+
+  const sortSelectOptions = useMemo(
+    () => SORT_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -153,93 +190,55 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 bg-[#EEEAE7]/30 border border-[#BEBAB7]/80 rounded-sm p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1 min-w-[140px]">
-            <label className="text-xs text-gray-600">Статус</label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-[#BEBAB7] rounded-sm px-2 py-1.5 text-sm bg-white"
-            >
-              <option value="">Все</option>
-              <option value="in_progress">В процессе</option>
-              <option value="completed">Завершено</option>
-              <option value="cancelled">Отменено</option>
-            </select>
-          </div>
-          <div className="flex flex-col gap-1 min-w-[200px] flex-1">
-            <label className="text-xs text-gray-600">Поле</label>
-            <select
-              value={fieldKeyFilter}
-              onChange={(e) => setFieldKeyFilter(e.target.value)}
-              className="border border-[#BEBAB7] rounded-sm px-2 py-1.5 text-sm bg-white max-w-md"
-            >
-              <option value="">Все поля</option>
-              {fieldKeySelectOptions.map((key) => {
-                const label = labelByKey[key];
-                return (
-                  <option key={key} value={key}>
-                    {label ? `${key} — ${label}` : `${key} (нет в шаблоне)`}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1 min-w-[180px] flex-1">
-            <label className="text-xs text-gray-600">Поиск по значению</label>
-            <input
-              type="search"
-              value={valueSearchDraft}
-              onChange={(e) => setValueSearchDraft(e.target.value)}
-              placeholder="Подстрока в последнем ответе…"
-              className="border border-[#BEBAB7] rounded-sm px-2 py-1.5 text-sm bg-white w-full max-w-md"
-            />
-          </div>
-          <div className="flex flex-col gap-1 min-w-[220px]">
-            <label className="text-xs text-gray-600">Сортировка</label>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as QuestionnaireSubmissionSort)}
-              className="border border-[#BEBAB7] rounded-sm px-2 py-1.5 text-sm bg-white"
-            >
-              {SORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
+      <div className="flex flex-col gap-4 bg-white border border-[#BEBAB7] rounded-sm p-4 shadow-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          <Select
+            label="Статус"
+            options={statusSelectOptions}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className={CONTROL_BORDER}
+          />
+          <Select
+            label="Поле"
+            options={fieldFilterSelectOptions}
+            value={fieldKeyFilter}
+            onChange={(e) => setFieldKeyFilter(e.target.value)}
+            className={CONTROL_BORDER}
+          />
+          <Input
+            label="Поиск по значению"
+            type="search"
+            value={valueSearchDraft}
+            onChange={(e) => setValueSearchDraft(e.target.value)}
+            placeholder="Подстрока в последнем ответе…"
+            className={CONTROL_BORDER}
+          />
+          <Select
+            label="Сортировка"
+            options={sortSelectOptions}
+            value={sort}
+            onChange={(e) => setSort(e.target.value as QuestionnaireSubmissionSort)}
+            className={CONTROL_BORDER}
+          />
         </div>
-        <p className="text-xs text-gray-600 leading-relaxed">
-          Фильтр по значению смотрит на последний ответ в сессии для каждого поля. Ключи, которых уже нет в текущей анкете,
-          подтягиваются из сохранённых ответов — их можно выбрать в списке «Поле» для поиска по архиву.
-        </p>
-        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#BEBAB7]/40">
-          <span className="text-xs text-gray-600">Вид:</span>
-          <button
-            type="button"
-            onClick={() => setViewMode("compact")}
-            className={`text-xs px-3 py-1.5 rounded-sm border ${
-              viewMode === "compact"
-                ? "bg-[#443C3C] text-white border-[#443C3C]"
-                : "bg-white text-gray-700 border-[#BEBAB7] hover:bg-[#EEEAE7]/50"
-            }`}
-          >
-            Компактный список
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("table")}
-            className={`text-xs px-3 py-1.5 rounded-sm border ${
-              viewMode === "table"
-                ? "bg-[#443C3C] text-white border-[#443C3C]"
-                : "bg-white text-gray-700 border-[#BEBAB7] hover:bg-[#EEEAE7]/50"
-            }`}
-          >
-            Таблица с ответами
-          </button>
-        </div>
+        <SegmentedControl
+          label="Вид данных"
+          options={VIEW_MODE_SEGMENTS}
+          value={viewMode}
+          onChange={(v) => setViewMode(v as SubmissionsViewMode)}
+          aria-label="Вид отображения списка заполнений"
+        />
+        <details className="group text-sm text-gray-600 border-t border-[#EEEAE7] pt-3">
+          <summary className="cursor-pointer text-[#443C3C] font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+            <span className="select-none">Как устроены фильтры</span>
+            <span className="text-xs text-gray-500 group-open:hidden">(раскрыть)</span>
+          </summary>
+          <p className="mt-2 text-xs leading-relaxed text-gray-600 pl-0.5">
+            Фильтр по значению смотрит на последний ответ в сессии для каждого поля. Ключи, которых уже нет в текущей
+            анкете, подтягиваются из сохранённых ответов — их можно выбрать в списке «Поле» для поиска по архиву.
+          </p>
+        </details>
       </div>
 
       {error && (

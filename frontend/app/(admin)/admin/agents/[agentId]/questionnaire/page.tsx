@@ -9,11 +9,7 @@ import { api, ApiError } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { QuestionnaireEditor } from "@/components/admin/QuestionnaireEditor";
 import { QuestionnaireSubmissions } from "@/components/admin/QuestionnaireSubmissions";
-import type {
-  QuestionnaireField,
-  QuestionnaireResponsePayload,
-  QuestionnaireTemplate,
-} from "@/lib/types/questionnaire";
+import type { QuestionnaireField, QuestionnaireTemplate } from "@/lib/types/questionnaire";
 
 type TabId = "editor" | "submissions";
 
@@ -23,6 +19,8 @@ export default function AgentQuestionnairePage() {
 
   const [template, setTemplate] = useState<QuestionnaireTemplate | null>(null);
   const [submissionsCount, setSubmissionsCount] = useState<number>(0);
+  /** Human-readable agent title for the header (falls back to agent_id). */
+  const [agentDisplayName, setAgentDisplayName] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,9 +37,16 @@ export default function AgentQuestionnairePage() {
     try {
       setIsLoading(true);
       setError(null);
-      const data: QuestionnaireResponsePayload = await api.getQuestionnaireTemplate(agentId);
+      setAgentDisplayName(agentId);
+      const [data, agent] = await Promise.all([
+        api.getQuestionnaireTemplate(agentId),
+        api.getAgent(agentId).catch(() => null),
+      ]);
       setTemplate(data.template);
       setSubmissionsCount(data.submissions_count);
+      const display =
+        agent?.config?.profile?.agent_display_name?.trim() || agent?.agent_id || agentId;
+      setAgentDisplayName(display);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else setError("Не удалось загрузить анкету");
@@ -71,10 +76,35 @@ export default function AgentQuestionnairePage() {
     }
   };
 
-  if (isLoading || !template) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-white">
         <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (!template) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-white via-[#EEEAE7]/5 to-[#251D1C]/10">
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-sm text-gray-500 mb-1">
+            <Link href="/admin/questionnaires" className="hover:underline">
+              Анкеты
+            </Link>
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">Анкета агента</h1>
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-sm max-w-xl">
+            <p className="text-sm text-red-700">{error || "Не удалось загрузить анкету"}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="mt-4 inline-flex items-center rounded-sm border border-[#251D1C] bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-[#EEEAE7]"
+          >
+            Повторить
+          </button>
+        </div>
       </div>
     );
   }
@@ -91,7 +121,12 @@ export default function AgentQuestionnairePage() {
               /
             </div>
             <h1 className="text-3xl font-bold text-gray-900">Анкета агента</h1>
-            <p className="text-gray-600 mt-1">Агент: {agentId}</p>
+            <p className="text-gray-600 mt-1">
+              <span className="font-medium text-gray-800">{agentDisplayName || agentId}</span>
+              {agentDisplayName && agentDisplayName !== agentId ? (
+                <span className="block text-xs text-gray-500 mt-0.5 font-mono">{agentId}</span>
+              ) : null}
+            </p>
           </div>
         </div>
 

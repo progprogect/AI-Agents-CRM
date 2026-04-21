@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
+import { linkButtonSecondarySmClassName } from "@/components/shared/Button";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import type { Agent } from "@/lib/types";
 import type { QuestionnaireResponsePayload } from "@/lib/types/questionnaire";
@@ -121,7 +122,7 @@ export default function QuestionnairesIndexPage() {
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={`/admin/agents/${row.agent.agent_id}/questionnaire`}
-                        className="inline-flex items-center px-3 py-1.5 rounded-sm border border-[#BEBAB7] hover:border-[#251D1C] hover:bg-[#EEEAE7]/50 text-sm text-[#443C3C]"
+                        className={linkButtonSecondarySmClassName}
                       >
                         Открыть
                       </Link>
