@@ -299,6 +299,12 @@ async def dispatch_command(
     # Strip the "/" prefix and any "@botname" suffix
     cmd_key = command.lstrip("/").split("@")[0].lower()
 
+    # /start is a Telegram system command always sent when a user first opens the bot
+    # or presses the Start button. Treat it as /restart unconditionally — no need to
+    # configure it in telegram_commands.
+    if cmd_key == "start":
+        cmd_key = "restart"
+
     enabled: dict[str, bool] = binding.metadata.get("telegram_commands", {})
     if not enabled.get(cmd_key, False):
         return False  # command disabled or unknown — let agent handle as text
