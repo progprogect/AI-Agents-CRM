@@ -15,6 +15,6 @@ COMMENT ON COLUMN payment_settings.feature_gates IS
 COMMENT ON COLUMN payment_settings.paywall_messages IS
     'Custom paywall text per feature, e.g. {"voice": "Voice requires subscription.", "images": "Image analysis requires subscription.", "limit_reached": "Free limit reached."}';
 COMMENT ON COLUMN payment_settings.free_message_limit_enabled IS
-    'When true the free_messages counter is enforced; when false all text messages are free regardless of count';
+    'When true the free_messages counter is enforced. When false all text messages are free regardless of count';
 COMMENT ON COLUMN user_subscriptions.feature_overrides IS
     'Per-user feature access overrides (null = use global setting), e.g. {"voice": true, "images": false}';
