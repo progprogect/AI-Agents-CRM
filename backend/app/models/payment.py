@@ -547,11 +547,14 @@ async def update_transaction_status(txn_id: str, status: str) -> None:
 
 
 def _row_to_dict(row) -> dict:
+    import uuid as _uuid
     d = dict(row)
     for k, v in d.items():
         if isinstance(v, datetime) and v.tzinfo is None:
             d[k] = v.replace(tzinfo=timezone.utc)
-        # asyncpg may return JSONB as str in some configurations; ensure it's parsed
+        elif isinstance(v, _uuid.UUID):
+            # asyncpg returns UUID columns as uuid.UUID objects; Pydantic models expect str
+            d[k] = str(v)
         elif isinstance(v, str) and k in (
             "feature_gates", "paywall_messages", "feature_overrides", "raw_payload"
         ):

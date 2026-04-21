@@ -495,3 +495,28 @@ async def count_submissions(agent_id: str) -> int:
             agent_id,
         )
     return int(val or 0)
+
+
+async def delete_user_field(
+    agent_id: str, external_user_id: str, field_key: str
+) -> int:
+    """Delete all questionnaire_responses rows for a specific field_key and user.
+
+    Returns the number of rows deleted.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """
+            DELETE FROM questionnaire_responses
+            WHERE agent_id = $1
+              AND external_user_id = $2
+              AND field_key = $3
+            """,
+            agent_id, external_user_id, field_key,
+        )
+    # asyncpg returns a status string like "DELETE 3"
+    try:
+        return int(result.split()[-1])
+    except (ValueError, IndexError):
+        return 0

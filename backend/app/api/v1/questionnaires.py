@@ -244,3 +244,22 @@ async def get_user_questionnaire(
         latest_values=latest,
         history=history,
     )
+
+
+@router.delete(
+    "/agents/{agent_id}/questionnaire/user/{external_user_id}/field/{field_key}",
+    status_code=200,
+)
+async def delete_user_questionnaire_field(
+    agent_id: str,
+    external_user_id: str,
+    field_key: str,
+    _admin: str = require_admin(),
+) -> dict:
+    """Delete all recorded values for a specific questionnaire field for a user.
+
+    Useful for resetting consent flags or re-triggering one-time workflow steps.
+    Returns the number of deleted rows.
+    """
+    deleted = await repo.delete_user_field(agent_id, external_user_id, field_key)
+    return {"ok": True, "deleted": deleted}

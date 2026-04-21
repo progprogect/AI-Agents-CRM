@@ -26,6 +26,16 @@ const CURRENCIES = ["RUB", "USD", "EUR", "XTR"];
 
 // ── Plan form modal ────────────────────────────────────────────────────────────
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  RUB: "₽", USD: "$", EUR: "€", XTR: "⭐",
+};
+
+function formatPrice(amount: number, currency: string): string {
+  if (currency === "XTR") return `${amount} Stars`;
+  const sym = CURRENCY_SYMBOLS[currency] ?? currency;
+  return `${(amount / 100).toFixed(2).replace(/\.00$/, "")} ${sym}`;
+}
+
 function PlanModal({
   bindingId,
   plan,
@@ -66,6 +76,8 @@ function PlanModal({
     }
   };
 
+  const priceHint = form.price_amount > 0 ? formatPrice(form.price_amount, form.currency) : null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
@@ -80,17 +92,19 @@ function PlanModal({
 
         <div className="space-y-3">
           <Input
-            label="Название"
+            label="Название плана"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            placeholder="1 месяц"
+            placeholder="Например: 1 месяц"
           />
+
           <div className="grid grid-cols-2 gap-3">
             <Input
-              label="Срок (дней)"
+              label="Срок действия (дней)"
               type="number"
               value={String(form.duration_days)}
               onChange={(e) => setForm((f) => ({ ...f, duration_days: Number(e.target.value) || 30 }))}
+              placeholder="30"
             />
             <div>
               <label className="text-xs font-medium text-[#443C3C] mb-1 block">Валюта</label>
@@ -103,25 +117,58 @@ function PlanModal({
               </select>
             </div>
           </div>
-          <Input
-            label="Цена (в минимальных единицах: копейки / cents / Stars)"
-            type="number"
-            value={String(form.price_amount)}
-            onChange={(e) => setForm((f) => ({ ...f, price_amount: Number(e.target.value) || 0 }))}
-            placeholder="29900 = 299 ₽"
-          />
-          <Input
-            label="Лимит сообщений (пусто = безлимит)"
-            type="number"
-            value={form.messages_limit != null ? String(form.messages_limit) : ""}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                messages_limit: e.target.value ? Number(e.target.value) : null,
-              }))
-            }
-            placeholder="Оставьте пустым для безлимита"
-          />
+
+          {/* Price field with live preview */}
+          <div>
+            <div className="flex items-baseline justify-between mb-1">
+              <label className="text-xs font-medium text-[#443C3C]">
+                Цена
+                {form.currency !== "XTR" && (
+                  <span className="ml-1 font-normal text-[#9A9590]">
+                    (в копейках/центах, т.е. × 100)
+                  </span>
+                )}
+              </label>
+              {priceHint && (
+                <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded">
+                  = {priceHint}
+                </span>
+              )}
+            </div>
+            <input
+              type="number"
+              min={0}
+              value={String(form.price_amount)}
+              onChange={(e) => setForm((f) => ({ ...f, price_amount: Number(e.target.value) || 0 }))}
+              placeholder={form.currency === "XTR" ? "50" : "29900"}
+              className="w-full border border-[#BEBAB7] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#251D1C]"
+            />
+            {form.currency !== "XTR" && (
+              <p className="mt-1 text-xs text-[#9A9590]">
+                Пример: 29900 = 299 ₽ · 99900 = 999 ₽
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-[#443C3C] mb-1 block">
+              Лимит сообщений{" "}
+              <span className="font-normal text-[#9A9590]">(оставьте пустым — безлимит)</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={form.messages_limit != null ? String(form.messages_limit) : ""}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  messages_limit: e.target.value ? Number(e.target.value) : null,
+                }))
+              }
+              placeholder="Безлимит"
+              className="w-full border border-[#BEBAB7] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#251D1C]"
+            />
+          </div>
         </div>
 
         {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
