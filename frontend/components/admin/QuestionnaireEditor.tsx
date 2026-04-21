@@ -12,7 +12,7 @@ import type { QuestionnaireField, QuestionnaireTemplate } from "@/lib/types/ques
 
 interface Props {
   template: QuestionnaireTemplate;
-  onSave: (welcome_message: string, fields: QuestionnaireField[]) => Promise<void>;
+  onSave: (welcome_message: string, completion_message: string, fields: QuestionnaireField[]) => Promise<void>;
   isSaving: boolean;
 }
 
@@ -31,6 +31,7 @@ function defaultField(order: number): QuestionnaireField {
 
 export const QuestionnaireEditor: React.FC<Props> = ({ template, onSave, isSaving }) => {
   const [welcome, setWelcome] = useState<string>(template.welcome_message || "");
+  const [completion, setCompletion] = useState<string>(template.completion_message || "");
   const [fields, setFields] = useState<QuestionnaireField[]>(template.fields);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -79,20 +80,35 @@ export const QuestionnaireEditor: React.FC<Props> = ({ template, onSave, isSavin
 
   const handleSave = async () => {
     if (!validate()) return;
-    await onSave(welcome.trim(), fields);
+    await onSave(welcome.trim(), completion.trim(), fields);
   };
 
   return (
     <div className="space-y-6">
       <section className="bg-white border border-[#BEBAB7] rounded-sm p-4">
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">Приветствие</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Приветственное сообщение</h2>
         <p className="text-sm text-gray-600 mb-3">
-          Это сообщение бот пришлёт при старте анкеты. Используйте понятный и короткий текст.
+          Показывается перед первым вопросом. Используйте понятный и короткий текст.
         </p>
         <Textarea
           value={welcome}
           onChange={(e) => setWelcome(e.target.value)}
           placeholder="Привет! Давайте познакомимся — ответьте на несколько коротких вопросов."
+          rows={3}
+          maxLength={2000}
+        />
+      </section>
+
+      <section className="bg-white border border-[#BEBAB7] rounded-sm p-4">
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Финальное сообщение</h2>
+        <p className="text-sm text-gray-600 mb-3">
+          Отправляется после того, как пользователь ответил на все вопросы. Ниже автоматически добавится
+          сводка его ответов. Если оставить пустым — используется стандартный текст «Спасибо, анкета сохранена!»
+        </p>
+        <Textarea
+          value={completion}
+          onChange={(e) => setCompletion(e.target.value)}
+          placeholder="Спасибо! Ваши данные сохранены. Наш специалист скоро с вами свяжется."
           rows={3}
           maxLength={2000}
         />

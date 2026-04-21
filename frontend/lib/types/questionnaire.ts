@@ -12,6 +12,7 @@ export interface QuestionnaireField {
 export interface QuestionnaireTemplate {
   agent_id: string;
   welcome_message: string;
+  completion_message: string;
   fields: QuestionnaireField[];
   updated_at: string | null;
 }
@@ -65,5 +66,6 @@ export interface UserQuestionnaireDetail {
 
 export interface UpsertQuestionnaireRequest {
   welcome_message: string;
+  completion_message: string;
   fields: QuestionnaireField[];
 }

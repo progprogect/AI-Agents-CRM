@@ -94,6 +94,11 @@ class QuestionnaireTemplate(BaseModel):
         max_length=2000,
         description="Greeting shown when the user opens the questionnaire",
     )
+    completion_message: str = Field(
+        default="",
+        max_length=2000,
+        description="Message shown when the user finishes filling the questionnaire",
+    )
     fields: list[QuestionnaireField] = Field(default_factory=list)
     updated_at: Optional[datetime] = None
 

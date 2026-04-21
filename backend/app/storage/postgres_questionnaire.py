@@ -41,6 +41,7 @@ def _template_from_row(row: asyncpg.Record) -> QuestionnaireTemplate:
     return QuestionnaireTemplate(
         agent_id=row["agent_id"],
         welcome_message=row["welcome_message"] or "",
+        completion_message=row["completion_message"] or "",
         fields=[QuestionnaireField(**f) for f in (raw_fields or [])],
         updated_at=row["updated_at"],
     )
@@ -80,7 +81,7 @@ async def get_template(agent_id: str) -> Optional[QuestionnaireTemplate]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT agent_id, welcome_message, fields, updated_at "
+            "SELECT agent_id, welcome_message, completion_message, fields, updated_at "
             "FROM questionnaire_templates WHERE agent_id = $1",
             agent_id,
         )
@@ -96,15 +97,17 @@ async def upsert_template(template: QuestionnaireTemplate) -> QuestionnaireTempl
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO questionnaire_templates (agent_id, welcome_message, fields, updated_at)
-            VALUES ($1, $2, $3::jsonb, $4)
+            INSERT INTO questionnaire_templates (agent_id, welcome_message, completion_message, fields, updated_at)
+            VALUES ($1, $2, $3, $4::jsonb, $5)
             ON CONFLICT (agent_id) DO UPDATE SET
                 welcome_message = EXCLUDED.welcome_message,
+                completion_message = EXCLUDED.completion_message,
                 fields = EXCLUDED.fields,
                 updated_at = EXCLUDED.updated_at
             """,
             template.agent_id,
             template.welcome_message,
+            template.completion_message,
             fields_json,
             now,
         )

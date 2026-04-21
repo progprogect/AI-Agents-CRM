@@ -40,6 +40,7 @@ router = APIRouter()
 
 class UpsertQuestionnaireRequest(BaseModel):
     welcome_message: str = Field(default="", max_length=2000)
+    completion_message: str = Field(default="", max_length=2000)
     fields: list[QuestionnaireField] = Field(default_factory=list)
 
 
@@ -89,6 +90,7 @@ async def put_questionnaire(
         tpl = QuestionnaireTemplate(
             agent_id=agent_id,
             welcome_message=body.welcome_message,
+            completion_message=body.completion_message,
             fields=body.fields,
         )
     except ValidationError as exc:

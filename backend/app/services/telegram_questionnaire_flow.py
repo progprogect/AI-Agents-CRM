@@ -211,7 +211,8 @@ async def handle_callback_query(
     if not chat_id or not data:
         return
 
-    await _answer_callback(bot_token, query_id)
+    # answerCallbackQuery is always called by telegram_service._handle_callback_query
+    # before routing here, so we do NOT repeat it.
 
     state = await qs.load_fsm(binding.binding_id, chat_id)
     template = await qs.get_template_or_empty(binding.agent_id)
@@ -412,6 +413,7 @@ async def _finish_message(
 ) -> None:
     values = await qs.get_current_values(agent_id, chat_id)
     summary = _render_values(template, values)
+    base_text = (template.completion_message.strip() or "Спасибо, анкета сохранена!")
     buttons: list[list[dict]] = [
         [{"text": "✏️ Редактировать", "callback_data": CB_EDIT_MENU}],
         [{"text": "✖️ Закрыть", "callback_data": CB_CANCEL}],
@@ -419,6 +421,6 @@ async def _finish_message(
     await _send(
         bot_token,
         chat_id,
-        f"Спасибо, анкета сохранена!\n\n{summary}",
+        f"{base_text}\n\n{summary}",
         inline_keyboard=buttons,
     )

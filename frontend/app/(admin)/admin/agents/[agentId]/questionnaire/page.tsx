@@ -50,13 +50,14 @@ export default function AgentQuestionnairePage() {
     }
   };
 
-  const handleSave = async (welcome: string, fields: QuestionnaireField[]) => {
+  const handleSave = async (welcome: string, completion: string, fields: QuestionnaireField[]) => {
     try {
       setIsSaving(true);
       setError(null);
       setSuccessMsg(null);
       const saved = await api.updateQuestionnaireTemplate(agentId, {
         welcome_message: welcome,
+        completion_message: completion,
         fields,
       });
       setTemplate(saved);
