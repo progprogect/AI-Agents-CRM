@@ -496,7 +496,7 @@ class TelegramService:
                     )
                     if internal_sandbox:
                         plan = await get_payment_plan(plan_id)
-                        if plan:
+                        if plan and plan.binding_id == binding.binding_id:
                             activated = await activate_subscription(
                                 binding.binding_id, chat_id, plan
                             )
