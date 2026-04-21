@@ -92,11 +92,16 @@ async def put_questionnaire(
             fields=body.fields,
         )
     except ValidationError as exc:
-        # ``include_input=False`` keeps Pydantic model instances out of the
-        # response so FastAPI can JSON-serialise the validation errors.
+        # Pydantic v2 includes ``input`` (raw objects) and ``ctx`` (Python
+        # exception instances) by default, neither of which is JSON-
+        # serialisable.  Strip them so FastAPI can return a clean 422.
         raise HTTPException(
             status_code=422,
-            detail=exc.errors(include_input=False, include_url=False),
+            detail=exc.errors(
+                include_input=False,
+                include_url=False,
+                include_context=False,
+            ),
         ) from exc
     return await repo.upsert_template(tpl)
 
