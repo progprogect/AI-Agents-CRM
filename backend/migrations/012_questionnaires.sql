@@ -33,8 +33,8 @@ CREATE INDEX IF NOT EXISTS idx_q_submissions_user
 CREATE INDEX IF NOT EXISTS idx_q_submissions_started
     ON questionnaire_submissions(agent_id, started_at DESC);
 
--- Append-only answers. One row per answer; the latest row per
--- (agent_id, external_user_id, field_key) is the "current" value.
+-- Append-only answers: one row per answer. Latest row per
+-- (agent_id, external_user_id, field_key) is the current value.
 CREATE TABLE IF NOT EXISTS questionnaire_responses (
     response_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     submission_id    UUID NOT NULL REFERENCES questionnaire_submissions(submission_id) ON DELETE CASCADE,
