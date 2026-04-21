@@ -210,6 +210,19 @@ async def get_payment_settings_endpoint(
             "sandbox_mode": False,
             "has_live_token": False,
             "has_sandbox_token": False,
+            "payment_title": "Подписка",
+            "payment_description": "Доступ к чат-боту",
+            "invoice_resend_hours": 24,
+            "support_contact": None,
+            "feature_gates": {"voice": False, "images": False},
+            "paywall_messages": {
+                "voice": "Голосовые сообщения доступны по подписке.",
+                "images": "Анализ изображений доступен по подписке.",
+                "limit_reached": (
+                    "Вы исчерпали лимит бесплатных сообщений. Выберите план подписки."
+                ),
+            },
+            "free_message_limit_enabled": False,
         }
     return _settings_to_dict(settings)
 
@@ -398,8 +411,9 @@ async def update_subscription_endpoint(
         patch["manual_override"] = request.manual_override
     if request.notes is not None:
         patch["notes"] = request.notes
-    if request.feature_overrides is not None:
-        patch["feature_overrides"] = request.feature_overrides
+    req_set = request.model_dump(exclude_unset=True)
+    if "feature_overrides" in req_set:
+        patch["feature_overrides"] = req_set["feature_overrides"]
 
     if patch:
         await update_subscription(sub.sub_id, **patch)
@@ -452,6 +466,11 @@ async def simulate_sandbox_payment_endpoint(
         raise HTTPException(status_code=400, detail="Payment not enabled for this binding")
     if not settings.sandbox_mode:
         raise HTTPException(status_code=400, detail="Sandbox mode is not enabled")
+    if settings.provider_secret_name or settings.sandbox_secret_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Simulate payment is only allowed in internal sandbox (no provider tokens)",
+        )
 
     plan = await get_payment_plan(request.plan_id)
     if not plan or plan.binding_id != binding_id:

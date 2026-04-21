@@ -341,7 +341,8 @@ class TelegramService:
                                 )
                                 return
 
-                        if has_photo and pay_settings.feature_gates.images:
+                        # Photos and stickers both feed vision (see vision_user_media_url above).
+                        if (has_photo or has_sticker) and pay_settings.feature_gates.images:
                             feat_result = await feat_check(
                                 binding_id=binding.binding_id,
                                 external_user_id=chat_id,
@@ -487,7 +488,13 @@ class TelegramService:
                     )
                     from app.services.payment.guard import invalidate_cache as _inv
                     sb_settings = await _gps(binding.binding_id)
-                    if sb_settings and sb_settings.sandbox_mode:
+                    internal_sandbox = (
+                        sb_settings
+                        and sb_settings.sandbox_mode
+                        and not sb_settings.sandbox_secret_name
+                        and not sb_settings.provider_secret_name
+                    )
+                    if internal_sandbox:
                         plan = await get_payment_plan(plan_id)
                         if plan:
                             activated = await activate_subscription(
@@ -585,7 +592,6 @@ class TelegramService:
         In internal sandbox mode (sandbox_mode=True and no provider token configured)
         an inline 'Тест-оплата' button is shown instead of a real invoice.
         """
-        from app.models.payment import PaymentSettings
         paywall_msg: str = getattr(settings.paywall_messages, feature, None) or (
             "Голосовые сообщения доступны по подписке."
             if feature == "voice"
