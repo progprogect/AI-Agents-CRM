@@ -246,6 +246,34 @@ class TelegramService:
                     if handled:
                         return  # command was processed; do not pass to agent
 
+            # Questionnaire FSM short-circuit: when the user is actively filling
+            # or editing a field, route free-text answers to the questionnaire
+            # flow and do NOT persist them as chat messages or invoke the agent.
+            if message_text:
+                try:
+                    from app.services.questionnaire_service import load_fsm as q_load_fsm
+                    fsm_state = await q_load_fsm(binding.binding_id, chat_id)
+                except Exception:
+                    fsm_state = None
+                if fsm_state is not None and fsm_state.mode.value in ("fill", "edit_field"):
+                    if bot_token is None:
+                        try:
+                            bot_token = await self.channel_binding_service.get_access_token(binding_id)
+                        except Exception:
+                            pass
+                    if bot_token:
+                        from app.services.telegram_questionnaire_flow import (
+                            handle_user_message as q_handle_msg,
+                        )
+                        await q_handle_msg(
+                            db=self.db,
+                            chat_id=chat_id,
+                            binding=binding,
+                            bot_token=bot_token,
+                            text=message_text,
+                        )
+                        return
+
             # Build metadata for the message
             msg_metadata: dict[str, Any] = {}
             if media_url:
@@ -406,6 +434,16 @@ class TelegramService:
                     secret_key=self._get_invoice_signing_key(),
                 )
                 await pay_svc.send_invoice_for_plan(chat_id, plan_id)
+                return
+
+            # Questionnaire callbacks (q:*): stay out of the agent pipeline.
+            if data.startswith("q:") and chat_id:
+                from app.services.telegram_questionnaire_flow import (
+                    handle_callback_query as q_handle_cb,
+                )
+                await q_handle_cb(
+                    db=self.db, query=query, binding=binding, bot_token=bot_token
+                )
 
         except Exception as exc:
             logger.error("callback_query handler error: %s", exc, exc_info=True)

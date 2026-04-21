@@ -22,6 +22,7 @@ import {
   Kanban,
   MessageCircle,
   CreditCard,
+  FileText,
   X,
 } from "lucide-react";
 import { LanguageSwitcher } from "@/components/shared/LanguageSwitcher";
@@ -33,6 +34,7 @@ function useNavItems() {
     { name: t("conversations"), href: "/admin/conversations", icon: <MessageSquare size={20} /> },
     { name: t("crm"), href: "/admin/crm", icon: <Kanban size={20} /> },
     { name: "Подписки", href: "/admin/subscriptions", icon: <CreditCard size={20} /> },
+    { name: t("questionnaires"), href: "/admin/questionnaires", icon: <FileText size={20} /> },
     { name: t("notifications"), href: "/admin/notifications", icon: <Bell size={20} /> },
     { name: t("audit"), href: "/admin/audit", icon: <ClipboardList size={20} /> },
     { name: t("statistics"), href: "/admin/stats", icon: <BarChart3 size={20} /> },

@@ -38,6 +38,11 @@ TELEGRAM_BOT_COMMANDS: list[dict[str, str]] = [
         "command": "paysupport",
         "description": "Вопросы по оплате",
     },
+    {
+        "key": "questionnaire",
+        "command": "questionnaire",
+        "description": "Моя анкета",
+    },
 ]
 
 
@@ -158,6 +163,16 @@ async def handle_restart(
                     exc,
                 )
 
+        try:
+            from app.services.questionnaire_service import clear_fsm as clear_questionnaire_fsm
+            await clear_questionnaire_fsm(binding.binding_id, chat_id)
+        except Exception as exc:
+            logger.debug(
+                "Could not clear questionnaire FSM during /restart for chat_id=%s: %s",
+                chat_id,
+                exc,
+            )
+
         # Create a new conversation
         new_conv_id = str(uuid.uuid4())
         new_conversation = Conversation(
@@ -189,6 +204,25 @@ async def handle_restart(
             "handle_restart failed for chat_id=%s binding=%s: %s",
             chat_id,
             binding.binding_id,
+            exc,
+            exc_info=True,
+        )
+
+
+async def handle_questionnaire(
+    db: Any,
+    chat_id: str,
+    binding: ChannelBinding,
+    bot_token: str,
+) -> None:
+    """Open the questionnaire main menu for the user."""
+    try:
+        from app.services.telegram_questionnaire_flow import handle_command as q_handle
+        await q_handle(db=db, chat_id=chat_id, binding=binding, bot_token=bot_token)
+    except Exception as exc:
+        logger.error(
+            "handle_questionnaire failed for chat_id=%s: %s",
+            chat_id,
             exc,
             exc_info=True,
         )
@@ -239,6 +273,7 @@ async def _send_telegram_message(bot_token: str, chat_id: str, text: str) -> Non
 COMMAND_HANDLERS: dict[str, Any] = {
     "restart": handle_restart,
     "paysupport": handle_paysupport,
+    "questionnaire": handle_questionnaire,
 }
 
 

@@ -164,6 +164,39 @@ def _get_service(key: str) -> Any:
         return None
 
 
+async def _build_questionnaire_context_block(
+    agent_id: str, conversation_id: str
+) -> str:
+    """Return a prompt-ready block with the user's latest questionnaire answers.
+
+    Returns an empty string if the conversation has no external user or if no
+    answers are stored yet.  Any error is swallowed: the agent must stay
+    functional even when the questionnaire feature is misconfigured.
+    """
+    if not conversation_id:
+        return ""
+    try:
+        from app.dependencies import get_db
+        from app.services import questionnaire_service as qs
+
+        db = get_db()
+        conversation = await db.get_conversation(conversation_id)
+        external_user_id = getattr(conversation, "external_user_id", None) if conversation else None
+        if not external_user_id:
+            return ""
+        values = await qs.get_current_values(agent_id, external_user_id)
+        if not values:
+            return ""
+        template = await qs.get_template_or_empty(agent_id)
+        formatted = qs.format_values_for_prompt(values, template)
+        if not formatted:
+            return ""
+        return "## Известно из анкеты пользователя\n" + formatted
+    except Exception as exc:
+        logger.debug("questionnaire context block skipped: %s", exc)
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # AgentChain
 # ---------------------------------------------------------------------------
@@ -437,6 +470,17 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 )
             else:
                 system_text = base_prompt
+
+            # Attach the user's latest questionnaire values so the agent can rely
+            # on them in replies.  Kept separate from WorkflowState.collected so
+            # the workflow's extraction gate (required + collect) is not affected.
+            questionnaire_block = await _build_questionnaire_context_block(
+                agent_id=state["agent_id"],
+                conversation_id=state.get("conversation_id") or "",
+            )
+            if questionnaire_block:
+                system_text = system_text + "\n\n" + questionnaire_block
+
             return {"step_system_prompt": system_text}
 
         # ---- Node: rag_retrieval ----

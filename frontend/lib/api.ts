@@ -1193,6 +1193,73 @@ export const api = {
       true
     );
   },
+
+  // ── Questionnaire (admin) ──────────────────────────────────────────────
+  async getQuestionnaireTemplate(
+    agentId: string
+  ): Promise<import("./types/questionnaire").QuestionnaireResponsePayload> {
+    return request<import("./types/questionnaire").QuestionnaireResponsePayload>(
+      `/api/v1/admin/agents/${agentId}/questionnaire`,
+      {},
+      true
+    );
+  },
+
+  async updateQuestionnaireTemplate(
+    agentId: string,
+    data: import("./types/questionnaire").UpsertQuestionnaireRequest
+  ): Promise<import("./types/questionnaire").QuestionnaireTemplate> {
+    return request<import("./types/questionnaire").QuestionnaireTemplate>(
+      `/api/v1/admin/agents/${agentId}/questionnaire`,
+      { method: "PUT", body: JSON.stringify(data) },
+      true
+    );
+  },
+
+  async listQuestionnaireSubmissions(
+    agentId: string,
+    params: {
+      limit?: number;
+      offset?: number;
+      status?: import("./types/questionnaire").QuestionnaireSubmissionStatus;
+      started_from?: string;
+      started_to?: string;
+    } = {}
+  ): Promise<import("./types/questionnaire").QuestionnaireSubmissionListItem[]> {
+    const qs = new URLSearchParams();
+    if (params.limit != null) qs.set("limit", String(params.limit));
+    if (params.offset != null) qs.set("offset", String(params.offset));
+    if (params.status) qs.set("status", params.status);
+    if (params.started_from) qs.set("started_from", params.started_from);
+    if (params.started_to) qs.set("started_to", params.started_to);
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return request<import("./types/questionnaire").QuestionnaireSubmissionListItem[]>(
+      `/api/v1/admin/agents/${agentId}/questionnaire/submissions${suffix}`,
+      {},
+      true
+    );
+  },
+
+  async getQuestionnaireSubmission(
+    submissionId: string
+  ): Promise<import("./types/questionnaire").QuestionnaireSubmissionDetail> {
+    return request<import("./types/questionnaire").QuestionnaireSubmissionDetail>(
+      `/api/v1/admin/questionnaires/submissions/${submissionId}`,
+      {},
+      true
+    );
+  },
+
+  async getUserQuestionnaire(
+    agentId: string,
+    externalUserId: string
+  ): Promise<import("./types/questionnaire").UserQuestionnaireDetail> {
+    return request<import("./types/questionnaire").UserQuestionnaireDetail>(
+      `/api/v1/admin/agents/${agentId}/questionnaire/user/${encodeURIComponent(externalUserId)}`,
+      {},
+      true
+    );
+  },
 };
 
 export { ApiError };
