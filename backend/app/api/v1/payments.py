@@ -15,10 +15,13 @@ from pydantic import BaseModel, Field
 from app.api.auth import require_admin
 from app.dependencies import CommonDependencies
 from app.models.payment import (
+    FeatureGates,
     PaymentPlan,
     PaymentProvider,
     PaymentSettings,
+    PaywallMessages,
     SubscriptionStatus,
+    activate_subscription,
     create_payment_plan,
     delete_payment_plan,
     get_payment_plan,
@@ -43,6 +46,17 @@ router = APIRouter()
 # ── Request / response schemas ─────────────────────────────────────────────────
 
 
+class FeatureGatesRequest(BaseModel):
+    voice: bool = False
+    images: bool = False
+
+
+class PaywallMessagesRequest(BaseModel):
+    voice: str = "Голосовые сообщения доступны по подписке."
+    images: str = "Анализ изображений доступен по подписке."
+    limit_reached: str = "Вы исчерпали лимит бесплатных сообщений. Выберите план подписки."
+
+
 class UpsertPaymentSettingsRequest(BaseModel):
     enabled: bool = False
     provider: str = "telegram_native"
@@ -53,6 +67,10 @@ class UpsertPaymentSettingsRequest(BaseModel):
     payment_description: Optional[str] = None
     invoice_resend_hours: int = Field(default=24, ge=1)
     support_contact: Optional[str] = None
+    # Paid features (migration 014)
+    feature_gates: Optional[FeatureGatesRequest] = None
+    paywall_messages: Optional[PaywallMessagesRequest] = None
+    free_message_limit_enabled: bool = False
 
 
 class SetPaymentTokenRequest(BaseModel):
@@ -86,6 +104,12 @@ class UpdateSubscriptionRequest(BaseModel):
     messages_used: Optional[int] = None
     manual_override: Optional[bool] = None
     notes: Optional[str] = None
+    feature_overrides: Optional[dict[str, bool]] = None
+
+
+class SimulateSandboxPaymentRequest(BaseModel):
+    external_user_id: str
+    plan_id: str
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -106,6 +130,10 @@ def _settings_to_dict(s: PaymentSettings) -> dict:
         "payment_description": s.payment_description,
         "invoice_resend_hours": s.invoice_resend_hours,
         "support_contact": s.support_contact,
+        # Paid features (migration 014)
+        "feature_gates": s.feature_gates.model_dump(),
+        "paywall_messages": s.paywall_messages.model_dump(),
+        "free_message_limit_enabled": s.free_message_limit_enabled,
         "created_at": to_utc_iso_string(s.created_at),
         "updated_at": to_utc_iso_string(s.updated_at),
     }
@@ -141,6 +169,7 @@ def _sub_to_dict(s: Any) -> dict:
         "grace_messages_used": s.grace_messages_used,
         "manual_override": s.manual_override,
         "notes": s.notes,
+        "feature_overrides": s.feature_overrides,
         "created_at": to_utc_iso_string(s.created_at),
         "updated_at": to_utc_iso_string(s.updated_at),
     }
@@ -193,6 +222,21 @@ async def upsert_payment_settings_endpoint(
 ):
     existing = await get_payment_settings(binding_id)
     now = utc_now()
+
+    # Merge feature_gates / paywall_messages with existing values (keep defaults if not provided)
+    existing_gates = existing.feature_gates if existing else FeatureGates()
+    existing_paywall = existing.paywall_messages if existing else PaywallMessages()
+
+    if request.feature_gates is not None:
+        new_gates = FeatureGates(**request.feature_gates.model_dump())
+    else:
+        new_gates = existing_gates
+
+    if request.paywall_messages is not None:
+        new_paywall = PaywallMessages(**request.paywall_messages.model_dump())
+    else:
+        new_paywall = existing_paywall
+
     settings = PaymentSettings(
         setting_id=existing.setting_id if existing else str(uuid.uuid4()),
         binding_id=binding_id,
@@ -207,6 +251,9 @@ async def upsert_payment_settings_endpoint(
         payment_description=request.payment_description or "Доступ к чат-боту",
         invoice_resend_hours=request.invoice_resend_hours,
         support_contact=request.support_contact,
+        feature_gates=new_gates,
+        paywall_messages=new_paywall,
+        free_message_limit_enabled=request.free_message_limit_enabled,
         created_at=existing.created_at if existing else now,
         updated_at=now,
     )
@@ -351,6 +398,8 @@ async def update_subscription_endpoint(
         patch["manual_override"] = request.manual_override
     if request.notes is not None:
         patch["notes"] = request.notes
+    if request.feature_overrides is not None:
+        patch["feature_overrides"] = request.feature_overrides
 
     if patch:
         await update_subscription(sub.sub_id, **patch)
@@ -385,6 +434,36 @@ async def list_transactions_endpoint(
 ):
     txns = await list_transactions(binding_id, limit=limit, offset=offset)
     return [_txn_to_dict(t) for t in txns]
+
+
+@router.post("/channel-bindings/{binding_id}/sandbox/simulate-payment", status_code=200)
+async def simulate_sandbox_payment_endpoint(
+    binding_id: str,
+    request: SimulateSandboxPaymentRequest,
+    _admin: str = require_admin(),
+):
+    """Simulate a successful payment in sandbox mode (no real provider needed).
+
+    Only works when payment is enabled and sandbox_mode=True.
+    Activates the specified plan for the given user immediately.
+    """
+    settings = await get_payment_settings(binding_id)
+    if not settings or not settings.enabled:
+        raise HTTPException(status_code=400, detail="Payment not enabled for this binding")
+    if not settings.sandbox_mode:
+        raise HTTPException(status_code=400, detail="Sandbox mode is not enabled")
+
+    plan = await get_payment_plan(request.plan_id)
+    if not plan or plan.binding_id != binding_id:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    activated = await activate_subscription(binding_id, request.external_user_id, plan)
+    await invalidate_cache(binding_id, request.external_user_id)
+
+    return {
+        "ok": True,
+        "sub": _sub_to_dict(activated),
+    }
 
 
 @router.post("/transactions/{txn_id}/refund")

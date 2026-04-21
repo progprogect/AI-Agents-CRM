@@ -1194,6 +1194,17 @@ export const api = {
     );
   },
 
+  async simulateSandboxPayment(
+    bindingId: string,
+    data: import("./types/payment").SimulateSandboxPaymentRequest
+  ): Promise<{ ok: boolean; sub: import("./types/payment").UserSubscription }> {
+    return request<{ ok: boolean; sub: import("./types/payment").UserSubscription }>(
+      `/api/v1/channel-bindings/${bindingId}/sandbox/simulate-payment`,
+      { method: "POST", body: JSON.stringify(data) },
+      true
+    );
+  },
+
   // ── Questionnaire (admin) ──────────────────────────────────────────────
   async getQuestionnaireTemplate(
     agentId: string

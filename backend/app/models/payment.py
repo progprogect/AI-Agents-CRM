@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -43,6 +44,21 @@ class TransactionStatus(str, Enum):
 # ---------------------------------------------------------------------------
 
 
+class FeatureGates(BaseModel):
+    """Per-feature payment gates. When True, the feature requires an active subscription."""
+
+    voice: bool = False
+    images: bool = False
+
+
+class PaywallMessages(BaseModel):
+    """Custom paywall messages shown when a user hits a feature gate."""
+
+    voice: str = "Голосовые сообщения доступны по подписке."
+    images: str = "Анализ изображений доступен по подписке."
+    limit_reached: str = "Вы исчерпали лимит бесплатных сообщений. Выберите план подписки."
+
+
 class PaymentSettings(BaseModel):
     setting_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     binding_id: str
@@ -57,6 +73,10 @@ class PaymentSettings(BaseModel):
     payment_description: str = "Доступ к чат-боту"
     invoice_resend_hours: int = 24
     support_contact: Optional[str] = None
+    # Paid features (migration 014)
+    feature_gates: FeatureGates = Field(default_factory=FeatureGates)
+    paywall_messages: PaywallMessages = Field(default_factory=PaywallMessages)
+    free_message_limit_enabled: bool = False
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -88,6 +108,8 @@ class UserSubscription(BaseModel):
     grace_messages_used: int = 0
     manual_override: bool = False
     notes: Optional[str] = None
+    # Per-user feature access overrides (migration 014)
+    feature_overrides: Optional[dict[str, bool]] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -161,6 +183,9 @@ async def get_payment_settings(binding_id: str) -> Optional[PaymentSettings]:
 async def upsert_payment_settings(settings: PaymentSettings) -> PaymentSettings:
     from app.storage.postgres import get_pool
 
+    feature_gates_json = json.dumps(settings.feature_gates.model_dump())
+    paywall_messages_json = json.dumps(settings.paywall_messages.model_dump())
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
@@ -169,8 +194,9 @@ async def upsert_payment_settings(settings: PaymentSettings) -> PaymentSettings:
                 setting_id, binding_id, enabled, provider, free_messages, grace_messages,
                 sandbox_mode, provider_secret_name, sandbox_secret_name,
                 payment_title, payment_description, invoice_resend_hours, support_contact,
+                feature_gates, paywall_messages, free_message_limit_enabled,
                 created_at, updated_at
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
             ON CONFLICT (binding_id) DO UPDATE SET
                 enabled = EXCLUDED.enabled,
                 provider = EXCLUDED.provider,
@@ -183,6 +209,9 @@ async def upsert_payment_settings(settings: PaymentSettings) -> PaymentSettings:
                 payment_description = EXCLUDED.payment_description,
                 invoice_resend_hours = EXCLUDED.invoice_resend_hours,
                 support_contact = EXCLUDED.support_contact,
+                feature_gates = EXCLUDED.feature_gates,
+                paywall_messages = EXCLUDED.paywall_messages,
+                free_message_limit_enabled = EXCLUDED.free_message_limit_enabled,
                 updated_at = NOW()
             """,
             settings.setting_id, settings.binding_id, settings.enabled,
@@ -191,6 +220,7 @@ async def upsert_payment_settings(settings: PaymentSettings) -> PaymentSettings:
             settings.sandbox_mode, settings.provider_secret_name, settings.sandbox_secret_name,
             settings.payment_title, settings.payment_description, settings.invoice_resend_hours,
             settings.support_contact,
+            feature_gates_json, paywall_messages_json, settings.free_message_limit_enabled,
             settings.created_at, settings.updated_at,
         )
     return settings
@@ -393,6 +423,9 @@ async def update_subscription(sub_id: str, **kwargs) -> None:
     if not kwargs:
         return
     kwargs["updated_at"] = utc_now()
+    # Serialize JSONB fields
+    if "feature_overrides" in kwargs and isinstance(kwargs["feature_overrides"], dict):
+        kwargs["feature_overrides"] = json.dumps(kwargs["feature_overrides"])
     sets = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(kwargs))
     params = list(kwargs.values())
     pool = await get_pool()
@@ -518,4 +551,12 @@ def _row_to_dict(row) -> dict:
     for k, v in d.items():
         if isinstance(v, datetime) and v.tzinfo is None:
             d[k] = v.replace(tzinfo=timezone.utc)
+        # asyncpg may return JSONB as str in some configurations; ensure it's parsed
+        elif isinstance(v, str) and k in (
+            "feature_gates", "paywall_messages", "feature_overrides", "raw_payload"
+        ):
+            try:
+                d[k] = json.loads(v)
+            except (ValueError, TypeError):
+                pass
     return d

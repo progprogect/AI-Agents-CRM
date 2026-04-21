@@ -77,6 +77,7 @@ function OverrideModal({
     messages_used: sub.messages_used,
     manual_override: sub.manual_override,
     notes: sub.notes ?? "",
+    feature_overrides: sub.feature_overrides ?? null,
   });
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -98,6 +99,7 @@ function OverrideModal({
         status: form.status,
         manual_override: form.manual_override,
         notes: form.notes,
+        feature_overrides: form.feature_overrides,
       };
       if (form.expires_at) {
         patch.expires_at = new Date(form.expires_at as string).toISOString();
@@ -224,6 +226,86 @@ function OverrideModal({
                   onChange={() => setForm((f) => ({ ...f, manual_override: !f.manual_override }))}
                 />
                 <span className="text-sm text-[#443C3C]">Ручное управление (игнорировать лимиты)</span>
+              </div>
+
+              {/* ── Per-user feature overrides ──────────────────────── */}
+              <div className="border-t border-[#EEEAE7] pt-3 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#9A9590]">
+                  Доступ к функциям (индивидуально)
+                </p>
+                <p className="text-xs text-[#9A9590]">
+                  Переопределяет настройки платных функций для конкретного пользователя.
+                </p>
+
+                {(["voice", "images"] as const).map((feat) => {
+                  const overrides = form.feature_overrides ?? {};
+                  const val = overrides[feat];
+                  return (
+                    <div key={feat} className="flex items-center justify-between">
+                      <span className="text-sm text-[#443C3C]">
+                        {feat === "voice" ? "🎙 Голосовые сообщения" : "🖼 Анализ изображений"}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((f) => ({
+                              ...f,
+                              feature_overrides: {
+                                ...(f.feature_overrides ?? {}),
+                                [feat]: true,
+                              },
+                            }))
+                          }
+                          className={`px-2 py-0.5 text-xs rounded border transition-colors ${
+                            val === true
+                              ? "bg-green-100 border-green-400 text-green-700 font-medium"
+                              : "border-[#BEBAB7] text-[#9A9590] hover:border-green-300"
+                          }`}
+                        >
+                          Разрешить
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((f) => ({
+                              ...f,
+                              feature_overrides: {
+                                ...(f.feature_overrides ?? {}),
+                                [feat]: false,
+                              },
+                            }))
+                          }
+                          className={`px-2 py-0.5 text-xs rounded border transition-colors ${
+                            val === false
+                              ? "bg-red-100 border-red-400 text-red-700 font-medium"
+                              : "border-[#BEBAB7] text-[#9A9590] hover:border-red-300"
+                          }`}
+                        >
+                          Запретить
+                        </button>
+                        {val !== undefined && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setForm((f) => {
+                                const next = { ...(f.feature_overrides ?? {}) };
+                                delete next[feat];
+                                return {
+                                  ...f,
+                                  feature_overrides: Object.keys(next).length > 0 ? next : null,
+                                };
+                              })
+                            }
+                            className="px-2 py-0.5 text-xs rounded border border-[#BEBAB7] text-[#9A9590] hover:border-[#443C3C] transition-colors"
+                          >
+                            По умолч.
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               <div>

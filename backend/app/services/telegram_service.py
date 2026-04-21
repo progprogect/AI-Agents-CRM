@@ -135,6 +135,7 @@ class TelegramService:
             has_audio = bool(message_data.get("audio") or message_data.get("voice"))
             has_document = bool(message_data.get("document"))
             has_sticker = bool(message_data.get("sticker"))
+            is_voice: bool = False  # set True below if this is a voice message
 
             if has_photo or has_video or has_audio or has_document or has_sticker:
                 # Need bot token to resolve file URL
@@ -153,7 +154,7 @@ class TelegramService:
                     media_url = await self._get_file_url(bot_token, file_id)
                     media_type = "video"
                 elif has_audio and bot_token:
-                    is_voice = bool(message_data.get("voice"))
+                    is_voice = bool(message_data.get("voice"))  # also updates outer-scope flag
                     audio = message_data.get("audio") or message_data.get("voice", {})
                     file_id = audio.get("file_id")
                     if file_id:
@@ -323,11 +324,48 @@ class TelegramService:
                 if pay_settings and pay_settings.enabled:
                     try:
                         bot_token_for_pay = bot_token or await self.channel_binding_service.get_access_token(binding_id)
-                        guard_result = await payment_check(
-                            binding_id=binding.binding_id,
-                            external_user_id=chat_id,
-                            settings=pay_settings,
-                        )
+
+                        # ── Per-feature gate checks (voice / images) ─────────
+                        from app.services.payment.guard import check_feature as feat_check
+                        if is_voice and pay_settings.feature_gates.voice:
+                            feat_result = await feat_check(
+                                binding_id=binding.binding_id,
+                                external_user_id=chat_id,
+                                feature="voice",
+                                settings=pay_settings,
+                            )
+                            if feat_result != GuardResult.ALLOW:
+                                await self._send_feature_paywall(
+                                    binding.binding_id, chat_id, "voice",
+                                    pay_settings, bot_token_for_pay,
+                                )
+                                return
+
+                        if has_photo and pay_settings.feature_gates.images:
+                            feat_result = await feat_check(
+                                binding_id=binding.binding_id,
+                                external_user_id=chat_id,
+                                feature="images",
+                                settings=pay_settings,
+                            )
+                            if feat_result != GuardResult.ALLOW:
+                                await self._send_feature_paywall(
+                                    binding.binding_id, chat_id, "images",
+                                    pay_settings, bot_token_for_pay,
+                                )
+                                return
+
+                        # ── Global subscription guard (free message limit) ───
+                        # Only enforce the message counter when free_message_limit_enabled is set.
+                        if pay_settings.free_message_limit_enabled:
+                            guard_result = await payment_check(
+                                binding_id=binding.binding_id,
+                                external_user_id=chat_id,
+                                settings=pay_settings,
+                            )
+                        else:
+                            guard_result = GuardResult.ALLOW
+
                         if guard_result == GuardResult.BLOCK_SEND_INVOICE:
                             from app.services.payment.service import PaymentService
                             pay_svc = PaymentService(
@@ -335,6 +373,8 @@ class TelegramService:
                                 bot_token=bot_token_for_pay,
                                 secret_key=self._get_invoice_signing_key(),
                             )
+                            limit_msg = pay_settings.paywall_messages.limit_reached
+                            await self.send_message(binding_id, chat_id, limit_msg)
                             await pay_svc.send_plans_keyboard(chat_id, settings=pay_settings)
                             return
                         elif guard_result == GuardResult.GRACE:
@@ -436,6 +476,40 @@ class TelegramService:
                 await pay_svc.send_invoice_for_plan(chat_id, plan_id)
                 return
 
+            # Sandbox payment simulation (internal test mode, no real provider)
+            if data.startswith("sandbox_pay:") and chat_id:
+                plan_id = data[len("sandbox_pay:"):]
+                try:
+                    from app.models.payment import (
+                        activate_subscription,
+                        get_payment_plan,
+                        get_payment_settings as _gps,
+                    )
+                    from app.services.payment.guard import invalidate_cache as _inv
+                    sb_settings = await _gps(binding.binding_id)
+                    if sb_settings and sb_settings.sandbox_mode:
+                        plan = await get_payment_plan(plan_id)
+                        if plan:
+                            activated = await activate_subscription(
+                                binding.binding_id, chat_id, plan
+                            )
+                            await _inv(binding.binding_id, chat_id)
+                            expires_str = (
+                                activated.expires_at.strftime("%d.%m.%Y")
+                                if activated.expires_at
+                                else "бессрочно"
+                            )
+                            await self.send_message(
+                                binding.binding_id,
+                                chat_id,
+                                f"✅ Тестовая оплата принята!\n\n"
+                                f"Подписка активирована до {expires_str}. "
+                                f"Теперь вы можете продолжить.",
+                            )
+                except Exception as sb_exc:
+                    logger.warning("Sandbox payment simulation error: %s", sb_exc)
+                return
+
             # Questionnaire callbacks (q:*): stay out of the agent pipeline.
             if data.startswith("q:") and chat_id:
                 from app.services.telegram_questionnaire_flow import (
@@ -497,6 +571,65 @@ class TelegramService:
                 )
         except Exception as exc:
             logger.error("successful_payment handler error: %s", exc, exc_info=True)
+
+    async def _send_feature_paywall(
+        self,
+        binding_id: str,
+        chat_id: str,
+        feature: str,
+        settings: Any,
+        bot_token: str,
+    ) -> None:
+        """Send a paywall message when a user tries to use a gated feature.
+
+        In internal sandbox mode (sandbox_mode=True and no provider token configured)
+        an inline 'Тест-оплата' button is shown instead of a real invoice.
+        """
+        from app.models.payment import PaymentSettings
+        paywall_msg: str = getattr(settings.paywall_messages, feature, None) or (
+            "Голосовые сообщения доступны по подписке."
+            if feature == "voice"
+            else "Анализ изображений доступен по подписке."
+        )
+
+        is_internal_sandbox = (
+            settings.sandbox_mode
+            and not settings.sandbox_secret_name
+            and not settings.provider_secret_name
+        )
+
+        if is_internal_sandbox:
+            # Show sandbox test-payment button instead of real invoice
+            from app.models.payment import list_payment_plans
+            plans = await list_payment_plans(binding_id, active_only=True)
+            if plans:
+                plan_id = plans[0].plan_id
+                inline_kb = {
+                    "inline_keyboard": [[
+                        {
+                            "text": "✅ Тест-оплата (Sandbox)",
+                            "callback_data": f"sandbox_pay:{plan_id}",
+                        }
+                    ]]
+                }
+                await self.send_message(
+                    binding_id,
+                    chat_id,
+                    f"{paywall_msg}\n\n🔧 Режим тестирования: нажмите кнопку для симуляции оплаты.",
+                    reply_markup=inline_kb,
+                )
+            else:
+                await self.send_message(binding_id, chat_id, paywall_msg)
+        else:
+            # Regular mode — show plans keyboard
+            await self.send_message(binding_id, chat_id, paywall_msg)
+            from app.services.payment.service import PaymentService
+            pay_svc = PaymentService(
+                binding_id=binding_id,
+                bot_token=bot_token,
+                secret_key=self._get_invoice_signing_key(),
+            )
+            await pay_svc.send_plans_keyboard(chat_id, settings=settings)
 
     async def _find_or_create_conversation(
         self,

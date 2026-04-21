@@ -4,6 +4,17 @@ export type PaymentProvider = "telegram_native" | "external_link";
 export type SubscriptionStatus = "free" | "active" | "expired" | "manual";
 export type TransactionStatus = "pending" | "completed" | "failed" | "refunded";
 
+export interface FeatureGates {
+  voice: boolean;
+  images: boolean;
+}
+
+export interface PaywallMessages {
+  voice: string;
+  images: string;
+  limit_reached: string;
+}
+
 export interface PaymentSettings {
   setting_id?: string;
   binding_id: string;
@@ -18,6 +29,10 @@ export interface PaymentSettings {
   payment_description: string;
   invoice_resend_hours: number;
   support_contact?: string | null;
+  // Paid features (migration 014)
+  feature_gates: FeatureGates;
+  paywall_messages: PaywallMessages;
+  free_message_limit_enabled: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -32,6 +47,10 @@ export interface UpsertPaymentSettingsRequest {
   payment_description?: string;
   invoice_resend_hours: number;
   support_contact?: string;
+  // Paid features (migration 014)
+  feature_gates?: FeatureGates;
+  paywall_messages?: PaywallMessages;
+  free_message_limit_enabled?: boolean;
 }
 
 export interface PaymentPlan {
@@ -70,6 +89,8 @@ export interface UserSubscription {
   grace_messages_used: number;
   manual_override: boolean;
   notes: string | null;
+  // Per-user feature access overrides (migration 014)
+  feature_overrides: Record<string, boolean> | null;
   created_at: string;
   updated_at: string;
 }
@@ -81,6 +102,12 @@ export interface UpdateSubscriptionRequest {
   messages_used?: number;
   manual_override?: boolean;
   notes?: string;
+  feature_overrides?: Record<string, boolean> | null;
+}
+
+export interface SimulateSandboxPaymentRequest {
+  external_user_id: string;
+  plan_id: string;
 }
 
 export interface PaymentTransaction {

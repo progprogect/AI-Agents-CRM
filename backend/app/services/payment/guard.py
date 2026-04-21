@@ -17,6 +17,7 @@ from app.models.payment import (
     UserSubscription,
     get_or_create_subscription,
     get_payment_settings,
+    get_subscription,
     increment_grace_messages,
     increment_messages,
     set_invoice_sent,
@@ -142,6 +143,45 @@ async def check(
         # Throttle window expired → fall through to re-send invoice
 
     return GuardResult.BLOCK_SEND_INVOICE
+
+
+async def check_feature(
+    binding_id: str,
+    external_user_id: str,
+    feature: str,
+    settings: Optional[PaymentSettings] = None,
+) -> GuardResult:
+    """Check whether a specific paid feature is accessible for this user.
+
+    Returns ALLOW if:
+    - Payment is not enabled for this binding.
+    - The feature is not in feature_gates (not gated).
+    - The user has an explicit per-user override set to True for this feature.
+    - The user has an active subscription (delegates to check()).
+
+    Returns BLOCK_SEND_INVOICE / GRACE / PENDING_HARD otherwise.
+    """
+    if settings is None:
+        settings = await get_payment_settings(binding_id)
+
+    if not settings or not settings.enabled:
+        return GuardResult.ALLOW
+
+    # Check whether this feature is gated
+    feature_gated: bool = bool(getattr(settings.feature_gates, feature, False))
+    if not feature_gated:
+        return GuardResult.ALLOW
+
+    # Check per-user feature override (skip DB lookup if no override stored)
+    sub = await get_subscription(binding_id, external_user_id)
+    if sub and sub.feature_overrides:
+        override = sub.feature_overrides.get(feature)
+        if override is True:
+            return GuardResult.ALLOW
+        # explicit False → fall through to standard subscription check
+
+    # Delegate to the standard subscription check
+    return await check(binding_id, external_user_id, settings=settings)
 
 
 async def invalidate_cache(binding_id: str, external_user_id: str) -> None:

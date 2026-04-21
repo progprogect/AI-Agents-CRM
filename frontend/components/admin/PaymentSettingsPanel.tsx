@@ -3,12 +3,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CreditCard, Eye, EyeOff, Plus, Trash2, X } from "lucide-react";
+import { CreditCard, Eye, EyeOff, FlaskConical, Mic, Plus, Image, Trash2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import type {
   CreatePlanRequest,
+  FeatureGates,
   PaymentPlan,
   PaymentSettings,
+  PaywallMessages,
   UpsertPaymentSettingsRequest,
 } from "@/lib/types/payment";
 import type { ChannelBinding } from "@/lib/types/channel";
@@ -148,12 +150,21 @@ function PlanModal({
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
+const DEFAULT_FEATURE_GATES: FeatureGates = { voice: false, images: false };
+const DEFAULT_PAYWALL_MESSAGES: PaywallMessages = {
+  voice: "Голосовые сообщения доступны по подписке.",
+  images: "Анализ изображений доступен по подписке.",
+  limit_reached: "Вы исчерпали лимит бесплатных сообщений. Выберите план подписки.",
+};
+
 export function PaymentSettingsPanel({ binding }: Props) {
   const [settings, setSettings] = useState<PaymentSettings | null>(null);
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [simulating, setSimulating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [liveToken, setLiveToken] = useState("");
   const [sandboxToken, setSandboxToken] = useState("");
   const [showLive, setShowLive] = useState(false);
@@ -161,6 +172,7 @@ export function PaymentSettingsPanel({ binding }: Props) {
   const [planModal, setPlanModal] = useState<{ open: boolean; plan?: PaymentPlan }>({
     open: false,
   });
+  const [simUserId, setSimUserId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,6 +198,7 @@ export function PaymentSettingsPanel({ binding }: Props) {
     if (!settings) return;
     setSaving(true);
     setError(null);
+    setSuccessMsg(null);
     try {
       const req: UpsertPaymentSettingsRequest = {
         enabled: settings.enabled,
@@ -197,6 +210,9 @@ export function PaymentSettingsPanel({ binding }: Props) {
         payment_description: settings.payment_description,
         invoice_resend_hours: settings.invoice_resend_hours,
         support_contact: settings.support_contact ?? undefined,
+        feature_gates: settings.feature_gates,
+        paywall_messages: settings.paywall_messages,
+        free_message_limit_enabled: settings.free_message_limit_enabled,
       };
       const saved = await api.upsertPaymentSettings(binding.binding_id, req);
       setSettings(saved);
@@ -210,10 +226,34 @@ export function PaymentSettingsPanel({ binding }: Props) {
         setLiveToken("");
         setSandboxToken("");
       }
+      setSuccessMsg("Настройки сохранены");
+      setTimeout(() => setSuccessMsg(null), 3000);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Ошибка сохранения");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSimulateSandbox = async () => {
+    if (!simUserId.trim() || plans.length === 0) return;
+    setSimulating(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const result = await api.simulateSandboxPayment(binding.binding_id, {
+        external_user_id: simUserId.trim(),
+        plan_id: plans[0].plan_id,
+      });
+      const expiresAt = result.sub.expires_at
+        ? new Date(result.sub.expires_at).toLocaleDateString("ru-RU")
+        : "бессрочно";
+      setSuccessMsg(`✅ Подписка активирована до ${expiresAt} для пользователя ${simUserId.trim()}`);
+      setSimUserId("");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Ошибка симуляции");
+    } finally {
+      setSimulating(false);
     }
   };
 
@@ -247,6 +287,9 @@ export function PaymentSettingsPanel({ binding }: Props) {
     payment_title: "Подписка",
     payment_description: "Доступ к чат-боту",
     invoice_resend_hours: 24,
+    feature_gates: DEFAULT_FEATURE_GATES,
+    paywall_messages: DEFAULT_PAYWALL_MESSAGES,
+    free_message_limit_enabled: false,
   };
 
   const set = (patch: Partial<typeof s>) =>
@@ -337,30 +380,6 @@ export function PaymentSettingsPanel({ binding }: Props) {
             </div>
           </div>
 
-          {/* Limits */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-[#443C3C] mb-1 block">Бесплатных сообщений</label>
-              <input
-                type="number"
-                value={s.free_messages}
-                min={0}
-                onChange={(e) => set({ free_messages: Number(e.target.value) })}
-                className="w-full border border-[#BEBAB7] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#251D1C]"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[#443C3C] mb-1 block">Grace-сообщений</label>
-              <input
-                type="number"
-                value={s.grace_messages}
-                min={0}
-                onChange={(e) => set({ grace_messages: Number(e.target.value) })}
-                className="w-full border border-[#BEBAB7] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#251D1C]"
-              />
-            </div>
-          </div>
-
           {/* Invoice text */}
           <div className="space-y-2">
             <Input
@@ -384,13 +403,212 @@ export function PaymentSettingsPanel({ binding }: Props) {
             />
           </div>
 
-          {/* Sandbox */}
-          <div className="flex items-center gap-3">
-            <Toggle
-              checked={s.sandbox_mode}
-              onChange={() => set({ sandbox_mode: !s.sandbox_mode })}
-            />
-            <span className="text-sm text-[#443C3C]">Sandbox / тестовый режим</span>
+          {/* ── Paid features ────────────────────────────────────────── */}
+          <div className="border-t border-[#EEEAE7] pt-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#9A9590]">
+              Платные функции
+            </p>
+
+            {/* Voice */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Mic size={14} className="text-[#443C3C]" />
+                  <span className="text-sm text-[#443C3C]">Голосовые сообщения — платно</span>
+                </div>
+                <Toggle
+                  checked={s.feature_gates?.voice ?? false}
+                  onChange={() =>
+                    set({
+                      feature_gates: {
+                        ...(s.feature_gates ?? DEFAULT_FEATURE_GATES),
+                        voice: !(s.feature_gates?.voice ?? false),
+                      },
+                    })
+                  }
+                />
+              </div>
+              {s.feature_gates?.voice && (
+                <Textarea
+                  label="Сообщение при блокировке (голос)"
+                  value={s.paywall_messages?.voice ?? DEFAULT_PAYWALL_MESSAGES.voice}
+                  onChange={(e) =>
+                    set({
+                      paywall_messages: {
+                        ...(s.paywall_messages ?? DEFAULT_PAYWALL_MESSAGES),
+                        voice: e.target.value,
+                      },
+                    })
+                  }
+                  rows={2}
+                  placeholder="Голосовые сообщения доступны по подписке."
+                />
+              )}
+            </div>
+
+            {/* Images */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Image size={14} className="text-[#443C3C]" />
+                  <span className="text-sm text-[#443C3C]">Анализ изображений — платно</span>
+                </div>
+                <Toggle
+                  checked={s.feature_gates?.images ?? false}
+                  onChange={() =>
+                    set({
+                      feature_gates: {
+                        ...(s.feature_gates ?? DEFAULT_FEATURE_GATES),
+                        images: !(s.feature_gates?.images ?? false),
+                      },
+                    })
+                  }
+                />
+              </div>
+              {s.feature_gates?.images && (
+                <Textarea
+                  label="Сообщение при блокировке (изображения)"
+                  value={s.paywall_messages?.images ?? DEFAULT_PAYWALL_MESSAGES.images}
+                  onChange={(e) =>
+                    set({
+                      paywall_messages: {
+                        ...(s.paywall_messages ?? DEFAULT_PAYWALL_MESSAGES),
+                        images: e.target.value,
+                      },
+                    })
+                  }
+                  rows={2}
+                  placeholder="Анализ изображений доступен по подписке."
+                />
+              )}
+            </div>
+          </div>
+
+          {/* ── Free message limit ───────────────────────────────────── */}
+          <div className="border-t border-[#EEEAE7] pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-[#251D1C]">Лимит бесплатных сообщений</p>
+                <p className="text-xs text-[#9A9590]">
+                  Требовать подписку после N бесплатных сообщений
+                </p>
+              </div>
+              <Toggle
+                checked={s.free_message_limit_enabled ?? false}
+                onChange={() => set({ free_message_limit_enabled: !s.free_message_limit_enabled })}
+              />
+            </div>
+            {s.free_message_limit_enabled && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-[#443C3C] mb-1 block">
+                    Бесплатных сообщений
+                  </label>
+                  <input
+                    type="number"
+                    value={s.free_messages}
+                    min={0}
+                    onChange={(e) => set({ free_messages: Number(e.target.value) })}
+                    className="w-full border border-[#BEBAB7] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#251D1C]"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-[#443C3C] mb-1 block">
+                    Grace-сообщений
+                  </label>
+                  <input
+                    type="number"
+                    value={s.grace_messages}
+                    min={0}
+                    onChange={(e) => set({ grace_messages: Number(e.target.value) })}
+                    className="w-full border border-[#BEBAB7] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#251D1C]"
+                  />
+                </div>
+              </div>
+            )}
+            {s.free_message_limit_enabled && (
+              <Textarea
+                label="Сообщение при достижении лимита"
+                value={s.paywall_messages?.limit_reached ?? DEFAULT_PAYWALL_MESSAGES.limit_reached}
+                onChange={(e) =>
+                  set({
+                    paywall_messages: {
+                      ...(s.paywall_messages ?? DEFAULT_PAYWALL_MESSAGES),
+                      limit_reached: e.target.value,
+                    },
+                  })
+                }
+                rows={2}
+                placeholder="Вы исчерпали лимит бесплатных сообщений."
+              />
+            )}
+          </div>
+
+          {/* ── Sandbox mode ─────────────────────────────────────────── */}
+          <div className="border-t border-[#EEEAE7] pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FlaskConical size={14} className="text-[#443C3C]" />
+                <span className="text-sm font-medium text-[#251D1C]">Тестовый режим (Sandbox)</span>
+              </div>
+              <Toggle
+                checked={s.sandbox_mode}
+                onChange={() => set({ sandbox_mode: !s.sandbox_mode })}
+              />
+            </div>
+
+            {s.sandbox_mode && (
+              <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-3">
+                {!s.has_sandbox_token && !s.has_live_token ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                        🔧 Внутренний тест
+                      </span>
+                      <span className="text-xs text-amber-700">
+                        Токен провайдера не настроен — используется встроенная симуляция
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-[#443C3C]">
+                        Симулировать оплату для пользователя
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={simUserId}
+                          onChange={(e) => setSimUserId(e.target.value)}
+                          placeholder="Telegram chat_id пользователя"
+                          className="flex-1 border border-[#BEBAB7] rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#251D1C]"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSimulateSandbox}
+                          disabled={simulating || !simUserId.trim() || plans.length === 0}
+                          className="px-3 py-1.5 text-sm font-medium bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+                        >
+                          {simulating ? "Симулируем…" : "Активировать"}
+                        </button>
+                      </div>
+                      {plans.length === 0 && (
+                        <p className="text-xs text-amber-600">
+                          Добавьте хотя бы один план подписки для симуляции
+                        </p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                      🧪 Тест-провайдер
+                    </span>
+                    <span className="text-xs text-blue-700">
+                      Используется тестовый токен YooKassa
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Plans */}
@@ -451,6 +669,7 @@ export function PaymentSettingsPanel({ binding }: Props) {
       )}
 
       {error && <p className="text-xs text-red-600">{error}</p>}
+      {successMsg && <p className="text-xs text-green-600">{successMsg}</p>}
 
       <button
         type="button"
