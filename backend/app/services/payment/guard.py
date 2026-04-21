@@ -61,8 +61,14 @@ async def check(
     binding_id: str,
     external_user_id: str,
     settings: Optional[PaymentSettings] = None,
+    *,
+    skip_free_tier: bool = False,
 ) -> GuardResult:
-    """Return the appropriate GuardResult for this user's current subscription state."""
+    """Return the appropriate GuardResult for this user's current subscription state.
+
+    When ``skip_free_tier`` is True, the free-message allowance is ignored (used for
+    per-feature gates: voice/images must rely on an active subscription, not free quota).
+    """
 
     # Load settings (may be cached by caller)
     if settings is None:
@@ -117,7 +123,11 @@ async def check(
             # message limit exhausted → fall through
 
     # ── Free tier ────────────────────────────────────────────────────────────
-    if sub.status == "free" and sub.messages_used < settings.free_messages:
+    if (
+        not skip_free_tier
+        and sub.status == "free"
+        and sub.messages_used < settings.free_messages
+    ):
         await increment_messages(sub.sub_id)
         await _invalidate(cache_key)
         return GuardResult.ALLOW
@@ -180,8 +190,11 @@ async def check_feature(
             return GuardResult.ALLOW
         # explicit False → fall through to standard subscription check
 
-    # Delegate to the standard subscription check
-    return await check(binding_id, external_user_id, settings=settings)
+    # Delegate to subscription / invoice logic, but never satisfy a gated feature
+    # via the free-message quota alone.
+    return await check(
+        binding_id, external_user_id, settings=settings, skip_free_tier=True
+    )
 
 
 async def invalidate_cache(binding_id: str, external_user_id: str) -> None:
