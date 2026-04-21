@@ -1227,6 +1227,7 @@ export const api = {
       field_key?: string;
       value_search?: string;
       sort?: import("./types/questionnaire").QuestionnaireSubmissionSort;
+      include_field_snapshot?: boolean;
     } = {}
   ): Promise<import("./types/questionnaire").QuestionnaireSubmissionListItem[]> {
     const qs = new URLSearchParams();
@@ -1238,6 +1239,7 @@ export const api = {
     if (params.field_key) qs.set("field_key", params.field_key);
     if (params.value_search) qs.set("value_search", params.value_search);
     if (params.sort) qs.set("sort", params.sort);
+    if (params.include_field_snapshot === true) qs.set("include_field_snapshot", "true");
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     return request<import("./types/questionnaire").QuestionnaireSubmissionListItem[]>(
       `/api/v1/admin/agents/${agentId}/questionnaire/submissions${suffix}`,

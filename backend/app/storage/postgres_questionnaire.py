@@ -45,6 +45,7 @@ _FIELD_KEY_FILTER_RE = re.compile(r"^[a-z][a-z0-9_]{0,29}$")
 class SubmissionListEntry(NamedTuple):
     submission: QuestionnaireSubmission
     answers_count: int
+    field_snapshot: dict[str, str]
 
 
 def escape_ilike_pattern(user_fragment: str) -> str:
@@ -230,6 +231,29 @@ async def cancel_submission(submission_id: str) -> None:
         )
 
 
+def _snapshot_dict_from_cell(raw: Any) -> dict[str, str]:
+    """Normalise JSONB / JSON / str from ``jsonb_object_agg`` into ``dict[str, str]``."""
+    if raw is None:
+        return {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k, v in raw.items():
+        key = str(k)
+        if v is None:
+            out[key] = ""
+        elif isinstance(v, str):
+            out[key] = v
+        else:
+            out[key] = json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
+    return out
+
+
 async def list_submissions(
     agent_id: str,
     *,
@@ -241,6 +265,7 @@ async def list_submissions(
     field_key: Optional[str] = None,
     value_search: Optional[str] = None,
     sort: Optional[str] = None,
+    include_field_snapshot: bool = False,
 ) -> list[SubmissionListEntry]:
     """List submissions with ``answers_count`` in one query (no N+1).
 
@@ -249,6 +274,9 @@ async def list_submissions(
 
     ``field_key`` must match ``^[a-z][a-z0-9_]{0,29}$`` or callers must validate;
     invalid keys result in an empty list.
+
+    When ``include_field_snapshot`` is True, each row includes ``field_snapshot``:
+    latest value per ``field_key`` within that submission (same semantics as filters).
     """
     fk = (field_key or "").strip() or None
     vs = (value_search or "").strip() or None
@@ -303,6 +331,21 @@ async def list_submissions(
     params.extend([limit, offset])
     lim_idx, off_idx = idx, idx + 1
 
+    if include_field_snapshot:
+        snapshot_sql = """
+        , COALESCE(fs.snapshot, '{}'::jsonb) AS field_snapshot
+        """
+        snapshot_join = """
+        LEFT JOIN LATERAL (
+            SELECT jsonb_object_agg(l.field_key, to_jsonb(l.value)) AS snapshot
+            FROM latest l
+            WHERE l.submission_id = s.submission_id
+        ) fs ON true
+        """
+    else:
+        snapshot_sql = ""
+        snapshot_join = ""
+
     sql = f"""
         WITH latest AS (
             SELECT DISTINCT ON (submission_id, field_key)
@@ -312,12 +355,14 @@ async def list_submissions(
             ORDER BY submission_id, field_key, created_at DESC
         )
         SELECT s.*, COALESCE(rc.total, 0)::int AS answers_count
+        {snapshot_sql}
         FROM questionnaire_submissions s
         LEFT JOIN LATERAL (
             SELECT COUNT(*)::int AS total
             FROM questionnaire_responses r
             WHERE r.submission_id = s.submission_id
         ) rc ON true
+        {snapshot_join}
         WHERE {" AND ".join(where_parts)}
         ORDER BY {order_sql}
         LIMIT ${lim_idx} OFFSET ${off_idx}
@@ -331,7 +376,8 @@ async def list_submissions(
     for r in rows:
         sub = _submission_from_row(r)
         cnt = int(r["answers_count"])
-        out.append(SubmissionListEntry(submission=sub, answers_count=cnt))
+        snap = _snapshot_dict_from_cell(r["field_snapshot"]) if include_field_snapshot else {}
+        out.append(SubmissionListEntry(submission=sub, answers_count=cnt, field_snapshot=snap))
     return out
 
 

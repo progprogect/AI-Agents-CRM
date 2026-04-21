@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.api.auth import get_current_admin
 from app.api.v1 import questionnaires as qmod
-from app.storage.postgres_questionnaire import escape_ilike_pattern
+from app.storage.postgres_questionnaire import escape_ilike_pattern, _snapshot_dict_from_cell
 
 
 @pytest.fixture
@@ -61,6 +61,25 @@ def test_api_submissions_passes_filters(mock_list: AsyncMock, q_client: TestClie
     assert kwargs["field_key"] == "pet_name"
     assert kwargs["value_search"] == "rex"
     assert kwargs["sort"] == "completed_at_desc"
+    assert kwargs.get("include_field_snapshot") is False
+
+
+@patch.object(qmod.repo, "list_submissions", new_callable=AsyncMock)
+def test_api_include_field_snapshot_passed(mock_list: AsyncMock, q_client: TestClient) -> None:
+    mock_list.return_value = []
+    r = q_client.get(
+        "/api/v1/admin/agents/a1/questionnaire/submissions",
+        params={"include_field_snapshot": "true"},
+    )
+    assert r.status_code == 200
+    mock_list.assert_awaited_once()
+    assert mock_list.await_args.kwargs.get("include_field_snapshot") is True
+
+
+def test_snapshot_dict_from_cell_parses_jsonb_like_dict() -> None:
+    assert _snapshot_dict_from_cell(None) == {}
+    assert _snapshot_dict_from_cell({}) == {}
+    assert _snapshot_dict_from_cell({"a": "x", "b": 1}) == {"a": "x", "b": "1"}
 
 
 @patch.object(qmod.repo, "list_submissions", new_callable=AsyncMock)

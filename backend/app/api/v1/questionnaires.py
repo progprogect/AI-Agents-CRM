@@ -4,7 +4,7 @@ Endpoints (all under ``/api/v1/admin``):
 
 - ``GET  /agents/{agent_id}/questionnaire``                — template
 - ``PUT  /agents/{agent_id}/questionnaire``                — upsert template
-- ``GET  /agents/{agent_id}/questionnaire/submissions``    — list fill/edit sessions
+- ``GET  /agents/{agent_id}/questionnaire/submissions``    — list fill/edit sessions (optional field snapshot)
 - ``GET  /agents/{agent_id}/questionnaire/response-field-keys`` — distinct field keys ever answered
 - ``GET  /questionnaires/submissions/{submission_id}``     — single session + answers
 - ``GET  /agents/{agent_id}/questionnaire/user/{external_user_id}``
@@ -60,6 +60,10 @@ class QuestionnaireResponsePayload(BaseModel):
 class SubmissionListItem(BaseModel):
     submission: QuestionnaireSubmission
     answers_count: int
+    field_snapshot: dict[str, str] = Field(
+        default_factory=dict,
+        description="Latest value per field_key in this session; empty unless include_field_snapshot was requested.",
+    )
 
 
 class SubmissionDetail(BaseModel):
@@ -135,6 +139,10 @@ async def list_questionnaire_submissions(
         default="started_at_desc",
         description="started_at_desc | started_at_asc | completed_at_desc | completed_at_asc",
     ),
+    include_field_snapshot: bool = Query(
+        default=False,
+        description="If true, each item includes field_snapshot (latest value per field in session).",
+    ),
     _admin: str = require_admin(),
 ) -> list[SubmissionListItem]:
     status_enum: Optional[SubmissionStatus] = None
@@ -180,9 +188,17 @@ async def list_questionnaire_submissions(
         field_key=fk,
         value_search=vs,
         sort=sort,
+        include_field_snapshot=include_field_snapshot,
     )
 
-    return [SubmissionListItem(submission=e.submission, answers_count=e.answers_count) for e in rows]
+    return [
+        SubmissionListItem(
+            submission=e.submission,
+            answers_count=e.answers_count,
+            field_snapshot=e.field_snapshot,
+        )
+        for e in rows
+    ]
 
 
 @router.get(

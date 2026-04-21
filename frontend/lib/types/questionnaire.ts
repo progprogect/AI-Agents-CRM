@@ -58,6 +58,8 @@ export interface QuestionnaireResponseItem {
 export interface QuestionnaireSubmissionListItem {
   submission: QuestionnaireSubmission;
   answers_count: number;
+  /** Present when ``include_field_snapshot`` was true on list request. */
+  field_snapshot?: Record<string, string>;
 }
 
 export interface QuestionnaireSubmissionDetail {

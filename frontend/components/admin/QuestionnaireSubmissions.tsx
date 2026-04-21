@@ -38,6 +38,25 @@ const SOURCE_LABEL: Record<string, string> = {
   edit: "Редактирование",
 };
 
+type SubmissionsViewMode = "compact" | "table";
+
+/** Column keys: template order first, then orphan keys from snapshots (sorted). */
+function tableColumnKeys(
+  fields: QuestionnaireTemplate["fields"],
+  items: QuestionnaireSubmissionListItem[]
+): string[] {
+  const ordered = [...fields].sort((a, b) => a.order - b.order).map((f) => f.key);
+  const known = new Set(ordered);
+  const extras = new Set<string>();
+  for (const row of items) {
+    const snap = row.field_snapshot ?? {};
+    for (const k of Object.keys(snap)) {
+      if (!known.has(k)) extras.add(k);
+    }
+  }
+  return [...ordered, ...Array.from(extras).sort((a, b) => a.localeCompare(b))];
+}
+
 export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template }) => {
   const [items, setItems] = useState<QuestionnaireSubmissionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,6 +67,7 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
   const [valueSearch, setValueSearch] = useState("");
   const [sort, setSort] = useState<QuestionnaireSubmissionSort>(DEFAULT_SORT);
   const [historicFieldKeys, setHistoricFieldKeys] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<SubmissionsViewMode>("compact");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<QuestionnaireSubmissionDetail | null>(null);
 
@@ -87,9 +107,14 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, statusFilter, fieldKeyFilter, valueSearch, sort]);
+  }, [agentId, statusFilter, fieldKeyFilter, valueSearch, sort, viewMode]);
 
   const hasResponseFilters = Boolean(fieldKeyFilter || valueSearch);
+
+  const tableColumns = useMemo(
+    () => tableColumnKeys(template.fields, items),
+    [template.fields, items]
+  );
 
   const load = async () => {
     try {
@@ -98,6 +123,7 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
       const params: Parameters<typeof api.listQuestionnaireSubmissions>[1] = {
         limit: 100,
         sort,
+        include_field_snapshot: viewMode === "table",
       };
       if (statusFilter) {
         params.status = statusFilter as typeof params.status;
@@ -189,6 +215,31 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
           Фильтр по значению смотрит на последний ответ в сессии для каждого поля. Ключи, которых уже нет в текущей анкете,
           подтягиваются из сохранённых ответов — их можно выбрать в списке «Поле» для поиска по архиву.
         </p>
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#BEBAB7]/40">
+          <span className="text-xs text-gray-600">Вид:</span>
+          <button
+            type="button"
+            onClick={() => setViewMode("compact")}
+            className={`text-xs px-3 py-1.5 rounded-sm border ${
+              viewMode === "compact"
+                ? "bg-[#443C3C] text-white border-[#443C3C]"
+                : "bg-white text-gray-700 border-[#BEBAB7] hover:bg-[#EEEAE7]/50"
+            }`}
+          >
+            Компактный список
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("table")}
+            className={`text-xs px-3 py-1.5 rounded-sm border ${
+              viewMode === "table"
+                ? "bg-[#443C3C] text-white border-[#443C3C]"
+                : "bg-white text-gray-700 border-[#BEBAB7] hover:bg-[#EEEAE7]/50"
+            }`}
+          >
+            Таблица с ответами
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -207,7 +258,7 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
             ? "Нет сессий, подходящих под выбранные фильтры."
             : "Пока никто не заполнял эту анкету."}
         </div>
-      ) : (
+      ) : viewMode === "compact" ? (
         <div className="bg-white border border-[#BEBAB7] rounded-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-[#EEEAE7]/50 text-left text-[#443C3C]">
@@ -247,6 +298,83 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="rounded-sm border border-[#BEBAB7] bg-white overflow-x-auto">
+          <table className="text-sm min-w-max w-full border-collapse">
+            <thead className="bg-[#EEEAE7]/50 text-left text-[#443C3C]">
+              <tr>
+                <th className="sticky left-0 z-30 px-3 py-3 font-medium min-w-[9rem] max-w-[9rem] bg-[#EEEAE7]/95 shadow-[2px_0_4px_rgba(0,0,0,0.06)]">
+                  Пользователь
+                </th>
+                <th className="sticky left-[9rem] z-20 px-3 py-3 font-medium min-w-[10rem] bg-[#EEEAE7]/95 shadow-[2px_0_4px_rgba(0,0,0,0.04)]">
+                  Начало
+                </th>
+                <th className="sticky left-[19rem] z-10 px-3 py-3 font-medium min-w-[10rem] bg-[#EEEAE7]/95 shadow-[2px_0_4px_rgba(0,0,0,0.04)]">
+                  Завершение
+                </th>
+                <th className="px-3 py-3 font-medium whitespace-nowrap">Канал</th>
+                <th className="px-3 py-3 font-medium whitespace-nowrap">Тип</th>
+                <th className="px-3 py-3 font-medium whitespace-nowrap">Статус</th>
+                <th className="px-3 py-3 font-medium whitespace-nowrap">Ответов</th>
+                {tableColumns.map((key) => (
+                  <th
+                    key={key}
+                    className="px-3 py-3 font-medium min-w-[8rem] max-w-[14rem] align-top whitespace-normal"
+                    title={labelByKey[key] ? `${key} — ${labelByKey[key]}` : key}
+                  >
+                    <span className="line-clamp-2">{labelByKey[key] || `${key} (архив)`}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(({ submission, answers_count, field_snapshot }) => {
+                const snap = field_snapshot ?? {};
+                return (
+                  <tr
+                    key={submission.submission_id}
+                    className="border-t border-[#BEBAB7]/60 hover:bg-[#EEEAE7]/30 cursor-pointer align-top"
+                    onClick={() => openDetail(submission.submission_id)}
+                  >
+                    <td className="sticky left-0 z-20 px-3 py-2.5 font-mono text-xs text-gray-800 min-w-[9rem] max-w-[9rem] bg-white shadow-[2px_0_4px_rgba(0,0,0,0.06)]">
+                      {submission.external_user_id}
+                    </td>
+                    <td className="sticky left-[9rem] z-10 px-3 py-2.5 text-gray-600 text-xs bg-white whitespace-nowrap">
+                      {formatTime(submission.started_at)}
+                    </td>
+                    <td className="sticky left-[19rem] z-10 px-3 py-2.5 text-gray-600 text-xs bg-white whitespace-nowrap">
+                      {submission.completed_at
+                        ? formatTime(submission.completed_at)
+                        : submission.cancelled_at
+                        ? formatTime(submission.cancelled_at)
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">{submission.channel}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      {SOURCE_LABEL[submission.source] || submission.source}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <StatusBadge status={submission.status} />
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">{answers_count}</td>
+                    {tableColumns.map((key) => {
+                      const raw = snap[key] ?? "";
+                      return (
+                        <td
+                          key={key}
+                          className="px-3 py-2.5 text-gray-800 max-w-[14rem] align-top"
+                          title={raw || undefined}
+                        >
+                          <span className="line-clamp-3 break-words">{raw || "—"}</span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
