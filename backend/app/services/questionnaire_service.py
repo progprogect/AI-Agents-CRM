@@ -311,6 +311,44 @@ async def get_current_values(agent_id: str, external_user_id: str) -> dict[str, 
         return {}
 
 
+async def write_workflow_field(
+    *,
+    agent_id: str,
+    external_user_id: str,
+    field_key: str,
+    value: str,
+    conversation_id: Optional[str] = None,
+) -> None:
+    """Write a single field value on behalf of the workflow engine.
+
+    Creates a short-lived completed submission so the existing append-only
+    schema (submission_id NOT NULL) is satisfied.  Safe to call without any
+    active FSM session.  Errors are swallowed: the workflow must stay
+    functional even when the questionnaire storage is unavailable.
+    """
+    try:
+        submission = await repo.start_submission(
+            agent_id=agent_id,
+            external_user_id=external_user_id,
+            channel="workflow",
+            conversation_id=conversation_id,
+            source=SubmissionSource.FILL,
+        )
+        await repo.append_response(
+            submission_id=submission.submission_id,
+            agent_id=agent_id,
+            external_user_id=external_user_id,
+            field_key=field_key,
+            value=value,
+        )
+        await repo.complete_submission(submission.submission_id)
+    except Exception as exc:
+        logger.warning(
+            "write_workflow_field failed for agent=%s field=%s: %s",
+            agent_id, field_key, exc,
+        )
+
+
 def format_values_for_prompt(
     values: dict[str, str],
     template: Optional[QuestionnaireTemplate] = None,

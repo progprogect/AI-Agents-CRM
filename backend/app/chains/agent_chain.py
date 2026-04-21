@@ -100,6 +100,11 @@ class WorkflowState(TypedDict):
     agent_id: str
     conversation_id: str
 
+    external_user_id: Optional[str]
+    """Channel-level user identifier (e.g. Telegram chat_id).  Populated once
+    from the Conversation record on the first turn; used by skip_if_questionnaire_field
+    and collect_to_questionnaire without an additional DB lookup on every turn."""
+
 
 # ---------------------------------------------------------------------------
 # Graph cache — keyed by (agent_id, sha256[:12] of workflow config)
@@ -455,6 +460,42 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                             )
                             current = last_step.id
                             break
+
+            # skip_if_questionnaire_field: if the resolved step carries this
+            # flag AND the field already has a recorded value for this user,
+            # jump directly to the step's first fallback/unconditional transition
+            # so the step is silently bypassed on subsequent conversations.
+            step_candidate = step_map.get(current)
+            ext_uid = state.get("external_user_id")
+            if step_candidate and step_candidate.skip_if_questionnaire_field and ext_uid:
+                try:
+                    from app.services import questionnaire_service as _qs
+                    _field_key = step_candidate.skip_if_questionnaire_field
+                    _values = await _qs.get_current_values(state["agent_id"], ext_uid)
+                    if _field_key in _values:
+                        # Find the first fallback or unconditional transition as skip target.
+                        _skip_target: Optional[str] = None
+                        for _tr in step_candidate.transitions:
+                            if _tr.is_fallback or not _tr.condition.strip():
+                                _skip_target = _tr.next_step_id
+                                break
+                        if _skip_target is None and step_candidate.transitions:
+                            _skip_target = step_candidate.transitions[0].next_step_id
+                        if _skip_target and _skip_target in step_map:
+                            logger.info(
+                                "Skipping step %s (field %r already recorded for user) → %s",
+                                current,
+                                _field_key,
+                                _skip_target,
+                                extra={"conversation_id": state["conversation_id"]},
+                            )
+                            current = _skip_target
+                except Exception as _exc:
+                    logger.debug(
+                        "skip_if_questionnaire_field check failed for step %s: %s",
+                        current, _exc,
+                    )
+
             return {"current_step_id": current}
 
         # ---- Node: step_executor ----
@@ -717,6 +758,34 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                             "Collect extraction for step %s: got %s, merged=%s",
                             step_id, new_data, existing_collected,
                         )
+
+                        # collect_to_questionnaire: persist newly extracted values
+                        # to questionnaire_responses so they survive across
+                        # conversations and the skip_if_questionnaire_field check
+                        # can find them on the next session.
+                        if step.collect_to_questionnaire and new_data:
+                            _ext_uid_te = state.get("external_user_id")
+                            if _ext_uid_te:
+                                try:
+                                    from app.services import questionnaire_service as _qs_te
+                                    for _fk, _val in new_data.items():
+                                        await _qs_te.write_workflow_field(
+                                            agent_id=state["agent_id"],
+                                            external_user_id=_ext_uid_te,
+                                            field_key=_fk,
+                                            value=_val,
+                                            conversation_id=state.get("conversation_id") or "",
+                                        )
+                                    logger.debug(
+                                        "collect_to_questionnaire: wrote %s for step %s",
+                                        list(new_data.keys()), step_id,
+                                    )
+                                except Exception as _exc_te:
+                                    logger.warning(
+                                        "collect_to_questionnaire write failed for step %s: %s",
+                                        step_id, _exc_te,
+                                    )
+
                     except Exception as exc:
                         logger.warning(
                             "Collect extraction LLM call failed for step %s: %s",
@@ -1115,10 +1184,23 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         )
 
         if is_first_turn:
+            # Resolve external_user_id once from the Conversation record so it
+            # can be stored in the checkpoint and used without extra DB lookups.
+            _ext_uid: Optional[str] = None
+            if conversation_id:
+                try:
+                    from app.dependencies import get_db
+                    _db = get_db()
+                    _conv = await _db.get_conversation(conversation_id)
+                    _ext_uid = getattr(_conv, "external_user_id", None) if _conv else None
+                except Exception as _exc:
+                    logger.debug("Could not resolve external_user_id for %s: %s", conversation_id, _exc)
+
             init_state: dict = {
                 "user_message": user_message,
                 "agent_id": self.agent_config.agent_id,
                 "conversation_id": conversation_id or "",
+                "external_user_id": _ext_uid,
                 "current_step_id": wf.start_step_id if wf.enabled else "default",
                 "step_history": [],
                 "collected": {},

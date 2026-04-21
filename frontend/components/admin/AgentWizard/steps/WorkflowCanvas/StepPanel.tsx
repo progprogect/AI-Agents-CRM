@@ -4,7 +4,7 @@
 
 import { useState, type KeyboardEvent } from "react";
 import type { Edge } from "@xyflow/react";
-import { Clock, Plus, Trash2, X } from "lucide-react";
+import { Clock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import type { WorkflowFormStep, WorkflowTimerTrigger } from "@/lib/utils/agentConfig";
 import { Input } from "@/components/shared/Input";
 import { Textarea } from "@/components/shared/Textarea";
@@ -394,6 +394,53 @@ export function StepPanel({
                 quickReplies={selectedStep.quick_replies ?? []}
                 onUpdate={(qr) => onUpdateStep(selectedStep.id, { quick_replies: qr })}
               />
+
+              {/* ── One-time step (questionnaire integration) ── */}
+              <Section title="Одноразовый шаг">
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2 text-xs text-[#9A9590] bg-[#EEEAE7]/50 rounded-sm p-2.5 border border-[#BEBAB7]/50">
+                    <ShieldCheck size={13} className="text-emerald-500 mt-0.5 shrink-0" />
+                    <span>
+                      Если пользователь уже проходил этот шаг в другом диалоге — он будет пропущен.
+                      Удобно для согласия с политикой конфиденциальности.
+                    </span>
+                  </div>
+                  <Input
+                    label="Ключ поля анкеты для проверки"
+                    value={selectedStep.skip_if_questionnaire_field ?? ""}
+                    onChange={(e) =>
+                      onUpdateStep(selectedStep.id, {
+                        skip_if_questionnaire_field: e.target.value.trim() || null,
+                      })
+                    }
+                    placeholder="Например: privacy_consent"
+                  />
+                  {(selectedStep.skip_if_questionnaire_field ?? "").length > 0 && (
+                    <p className="text-[10px] text-[#9A9590]">
+                      Шаг пропускается при старте, если поле{" "}
+                      <code className="bg-[#EEEAE7] px-1 rounded">{selectedStep.skip_if_questionnaire_field}</code>{" "}
+                      уже заполнено. Переход — по первой ветке «Иначе» или первому переходу.
+                    </p>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <Toggle
+                      checked={selectedStep.collect_to_questionnaire ?? false}
+                      onChange={() =>
+                        onUpdateStep(selectedStep.id, {
+                          collect_to_questionnaire: !(selectedStep.collect_to_questionnaire ?? false),
+                        })
+                      }
+                    />
+                    <span className="text-sm text-[#443C3C]">Записывать ответы в анкету</span>
+                  </div>
+                  {(selectedStep.collect_to_questionnaire ?? false) && (
+                    <p className="text-[10px] text-[#9A9590]">
+                      После извлечения поля из поля «Переменные для сбора» значения сохраняются
+                      в анкету пользователя и видны в разделе «Анкеты».
+                    </p>
+                  )}
+                </div>
+              </Section>
 
               {/* ── Outgoing transitions ── */}
               <Section title="Переходы из этого шага">

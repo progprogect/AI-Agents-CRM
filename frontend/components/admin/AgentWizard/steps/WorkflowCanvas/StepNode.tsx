@@ -3,7 +3,7 @@
 "use client";
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Clock, Lock } from "lucide-react";
+import { Clock, Lock, ShieldCheck } from "lucide-react";
 import type { WorkflowFormStep } from "@/lib/utils/agentConfig";
 
 interface StepNodeData {
@@ -67,6 +67,11 @@ export function StepNode({ data, selected }: NodeProps) {
           {step.timer_trigger && (
             <span title={`Таймер: ${step.timer_trigger.delay_seconds}с`}>
               <Clock size={11} className={selected ? "text-blue-300" : "text-blue-500"} />
+            </span>
+          )}
+          {step.skip_if_questionnaire_field && (
+            <span title={`Одноразовый: пропускается если «${step.skip_if_questionnaire_field}» уже заполнено`}>
+              <ShieldCheck size={11} className={selected ? "text-emerald-300" : "text-emerald-500"} />
             </span>
           )}
         </div>

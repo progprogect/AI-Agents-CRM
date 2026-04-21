@@ -193,6 +193,10 @@ export interface WorkflowStep {
   transitions: WorkflowTransition[];
   timer_trigger?: WorkflowTimerTrigger | null;
   quick_replies: string[];
+  /** If set, skip this step when the named questionnaire field already has a value for the user. */
+  skip_if_questionnaire_field?: string | null;
+  /** When true, extracted collect[] values are also written to questionnaire_responses. */
+  collect_to_questionnaire?: boolean;
 }
 
 export interface WorkflowAutoStep {

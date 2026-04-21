@@ -407,6 +407,20 @@ class WorkflowStep(BaseModel):
         default_factory=list,
         description="Optional quick-reply button labels shown to the user after this step's message",
     )
+    skip_if_questionnaire_field: Optional[str] = Field(
+        default=None,
+        description=(
+            "If set and this questionnaire field already has a recorded value for the current user, "
+            "skip this step and follow the first fallback/unconditional transition instead."
+        ),
+    )
+    collect_to_questionnaire: bool = Field(
+        default=False,
+        description=(
+            "When True, each value extracted via collect[] is also written to questionnaire_responses "
+            "after LLM extraction (no active FSM session required)."
+        ),
+    )
 
 
 class WorkflowAutoStep(BaseModel):

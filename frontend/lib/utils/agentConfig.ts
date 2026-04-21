@@ -40,6 +40,10 @@ export interface WorkflowStep {
   transitions: WorkflowTransition[];
   timer_trigger?: WorkflowTimerTrigger | null;
   quick_replies: string[];
+  /** Skip this step if the named questionnaire field already has a value for the user. */
+  skip_if_questionnaire_field?: string | null;
+  /** Also write extracted collect[] values to questionnaire_responses (no FSM). */
+  collect_to_questionnaire?: boolean;
 }
 
 export interface WorkflowAutoStep {
@@ -314,6 +318,8 @@ export function agentConfigToFormData(
           }
         : undefined,
       quick_replies: Array.isArray(s.quick_replies) ? s.quick_replies : [],
+      skip_if_questionnaire_field: s.skip_if_questionnaire_field ?? null,
+      collect_to_questionnaire: s.collect_to_questionnaire ?? false,
     })) as WorkflowFormStep[],
     workflow_auto_steps: (agentConfig.workflow?.auto_steps || []).map((a: any) => ({
       id: a.id || "",
@@ -467,6 +473,8 @@ export function formDataToAgentConfig(
             }
           : null,
         quick_replies: Array.isArray(s.quick_replies) ? s.quick_replies : [],
+        skip_if_questionnaire_field: s.skip_if_questionnaire_field ?? null,
+        collect_to_questionnaire: s.collect_to_questionnaire ?? false,
       })),
       auto_steps: (formData.workflow_auto_steps || []).map((a) => ({
         id: a.id,
