@@ -5,6 +5,7 @@ Endpoints (all under ``/api/v1/admin``):
 - ``GET  /agents/{agent_id}/questionnaire``                — template
 - ``PUT  /agents/{agent_id}/questionnaire``                — upsert template
 - ``GET  /agents/{agent_id}/questionnaire/submissions``    — list fill/edit sessions
+- ``GET  /agents/{agent_id}/questionnaire/response-field-keys`` — distinct field keys ever answered
 - ``GET  /questionnaires/submissions/{submission_id}``     — single session + answers
 - ``GET  /agents/{agent_id}/questionnaire/user/{external_user_id}``
       — latest values + full history for one user
@@ -13,6 +14,7 @@ Endpoints (all under ``/api/v1/admin``):
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -33,6 +35,12 @@ from app.utils.datetime_utils import parse_query_datetime
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_FIELD_KEY_QUERY_RE = re.compile(r"^[a-z][a-z0-9_]{0,29}$")
+_SUBMISSION_SORT_VALUES = frozenset(
+    ("started_at_desc", "started_at_asc", "completed_at_desc", "completed_at_asc")
+)
+_VALUE_SEARCH_MAX_LEN = 200
 
 
 # ── Request / response payloads ────────────────────────────────────────────
@@ -115,6 +123,18 @@ async def list_questionnaire_submissions(
     status: Optional[str] = Query(default=None),
     started_from: Optional[str] = Query(default=None),
     started_to: Optional[str] = Query(default=None),
+    field_key: Optional[str] = Query(
+        default=None,
+        description="Filter by this template field key (latest value in session).",
+    ),
+    value_search: Optional[str] = Query(
+        default=None,
+        description="Case-insensitive substring match on latest field value(s).",
+    ),
+    sort: str = Query(
+        default="started_at_desc",
+        description="started_at_desc | started_at_asc | completed_at_desc | completed_at_asc",
+    ),
     _admin: str = require_admin(),
 ) -> list[SubmissionListItem]:
     status_enum: Optional[SubmissionStatus] = None
@@ -124,26 +144,57 @@ async def list_questionnaire_submissions(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"Unknown status: {status}") from exc
 
+    if sort not in _SUBMISSION_SORT_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown sort: {sort}. Allowed: {', '.join(sorted(_SUBMISSION_SORT_VALUES))}",
+        )
+
+    fk = (field_key or "").strip() or None
+    if fk is not None and not _FIELD_KEY_QUERY_RE.match(fk):
+        raise HTTPException(
+            status_code=400,
+            detail="field_key must match ^[a-z][a-z0-9_]{0,29}$",
+        )
+
+    vs = (value_search or "").strip() or None
+    if vs is not None and len(vs) > _VALUE_SEARCH_MAX_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"value_search too long (max {_VALUE_SEARCH_MAX_LEN} characters)",
+        )
+
     try:
         dt_from: Optional[datetime] = parse_query_datetime(started_from, end_of_day=False)
         dt_to: Optional[datetime] = parse_query_datetime(started_to, end_of_day=True)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    submissions = await repo.list_submissions(
+    rows = await repo.list_submissions(
         agent_id,
         limit=limit,
         offset=offset,
         status=status_enum,
         started_from=dt_from,
         started_to=dt_to,
+        field_key=fk,
+        value_search=vs,
+        sort=sort,
     )
 
-    items: list[SubmissionListItem] = []
-    for sub in submissions:
-        responses = await repo.list_responses_by_submission(sub.submission_id)
-        items.append(SubmissionListItem(submission=sub, answers_count=len(responses)))
-    return items
+    return [SubmissionListItem(submission=e.submission, answers_count=e.answers_count) for e in rows]
+
+
+@router.get(
+    "/agents/{agent_id}/questionnaire/response-field-keys",
+    response_model=list[str],
+)
+async def list_response_field_keys(
+    agent_id: str,
+    _admin: str = require_admin(),
+) -> list[str]:
+    """Distinct ``field_key`` values from stored responses (includes keys no longer on the template)."""
+    return await repo.list_distinct_response_field_keys(agent_id)
 
 
 @router.get(

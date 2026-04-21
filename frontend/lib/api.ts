@@ -1224,6 +1224,9 @@ export const api = {
       status?: import("./types/questionnaire").QuestionnaireSubmissionStatus;
       started_from?: string;
       started_to?: string;
+      field_key?: string;
+      value_search?: string;
+      sort?: import("./types/questionnaire").QuestionnaireSubmissionSort;
     } = {}
   ): Promise<import("./types/questionnaire").QuestionnaireSubmissionListItem[]> {
     const qs = new URLSearchParams();
@@ -1232,9 +1235,20 @@ export const api = {
     if (params.status) qs.set("status", params.status);
     if (params.started_from) qs.set("started_from", params.started_from);
     if (params.started_to) qs.set("started_to", params.started_to);
+    if (params.field_key) qs.set("field_key", params.field_key);
+    if (params.value_search) qs.set("value_search", params.value_search);
+    if (params.sort) qs.set("sort", params.sort);
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     return request<import("./types/questionnaire").QuestionnaireSubmissionListItem[]>(
       `/api/v1/admin/agents/${agentId}/questionnaire/submissions${suffix}`,
+      {},
+      true
+    );
+  },
+
+  async listQuestionnaireResponseFieldKeys(agentId: string): Promise<string[]> {
+    return request<string[]>(
+      `/api/v1/admin/agents/${agentId}/questionnaire/response-field-keys`,
       {},
       true
     );

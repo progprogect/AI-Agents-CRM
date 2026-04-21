@@ -79,17 +79,6 @@ async def _send(
         logger.error("questionnaire sendMessage failed: %s", exc)
 
 
-async def _answer_callback(bot_token: str, callback_query_id: str) -> None:
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(
-                f"{TELEGRAM_API_BASE}{bot_token}/answerCallbackQuery",
-                json={"callback_query_id": callback_query_id},
-            )
-    except Exception as exc:
-        logger.debug("answerCallbackQuery failed: %s", exc)
-
-
 # ── Rendering ──────────────────────────────────────────────────────────────
 
 
@@ -204,7 +193,6 @@ async def handle_callback_query(
     bot_token: str,
 ) -> None:
     data: str = query.get("data", "")
-    query_id: str = query.get("id", "")
     from_user = query.get("from") or {}
     chat_id = str(from_user.get("id", ""))
 

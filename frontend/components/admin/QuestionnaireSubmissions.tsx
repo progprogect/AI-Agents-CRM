@@ -10,7 +10,17 @@ import type {
   QuestionnaireSubmissionListItem,
   QuestionnaireSubmissionDetail,
   QuestionnaireResponseItem,
+  QuestionnaireSubmissionSort,
 } from "@/lib/types/questionnaire";
+
+const DEFAULT_SORT: QuestionnaireSubmissionSort = "started_at_desc";
+
+const SORT_OPTIONS: { value: QuestionnaireSubmissionSort; label: string }[] = [
+  { value: "started_at_desc", label: "Начало: сначала новые" },
+  { value: "started_at_asc", label: "Начало: сначала старые" },
+  { value: "completed_at_desc", label: "Завершение: сначала новые" },
+  { value: "completed_at_asc", label: "Завершение: сначала старые" },
+];
 
 interface Props {
   agentId: string;
@@ -33,6 +43,11 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [fieldKeyFilter, setFieldKeyFilter] = useState<string>("");
+  const [valueSearchDraft, setValueSearchDraft] = useState("");
+  const [valueSearch, setValueSearch] = useState("");
+  const [sort, setSort] = useState<QuestionnaireSubmissionSort>(DEFAULT_SORT);
+  const [historicFieldKeys, setHistoricFieldKeys] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<QuestionnaireSubmissionDetail | null>(null);
 
@@ -42,10 +57,39 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
     return acc;
   }, [template.fields]);
 
+  const fieldKeySelectOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const f of template.fields) s.add(f.key);
+    for (const k of historicFieldKeys) s.add(k);
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [template.fields, historicFieldKeys]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .listQuestionnaireResponseFieldKeys(agentId)
+      .then((keys) => {
+        if (!cancelled) setHistoricFieldKeys(keys);
+      })
+      .catch(() => {
+        if (!cancelled) setHistoricFieldKeys([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setValueSearch(valueSearchDraft.trim()), 400);
+    return () => clearTimeout(t);
+  }, [valueSearchDraft]);
+
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, statusFilter]);
+  }, [agentId, statusFilter, fieldKeyFilter, valueSearch, sort]);
+
+  const hasResponseFilters = Boolean(fieldKeyFilter || valueSearch);
 
   const load = async () => {
     try {
@@ -53,10 +97,13 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
       setError(null);
       const params: Parameters<typeof api.listQuestionnaireSubmissions>[1] = {
         limit: 100,
+        sort,
       };
       if (statusFilter) {
         params.status = statusFilter as typeof params.status;
       }
+      if (fieldKeyFilter) params.field_key = fieldKeyFilter;
+      if (valueSearch) params.value_search = valueSearch;
       const rows = await api.listQuestionnaireSubmissions(agentId, params);
       setItems(rows);
     } catch (err) {
@@ -80,18 +127,68 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <label className="text-sm text-gray-700">Статус:</label>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="border border-[#BEBAB7] rounded-sm px-2 py-1 text-sm"
-        >
-          <option value="">Все</option>
-          <option value="in_progress">В процессе</option>
-          <option value="completed">Завершено</option>
-          <option value="cancelled">Отменено</option>
-        </select>
+      <div className="flex flex-col gap-3 bg-[#EEEAE7]/30 border border-[#BEBAB7]/80 rounded-sm p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1 min-w-[140px]">
+            <label className="text-xs text-gray-600">Статус</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="border border-[#BEBAB7] rounded-sm px-2 py-1.5 text-sm bg-white"
+            >
+              <option value="">Все</option>
+              <option value="in_progress">В процессе</option>
+              <option value="completed">Завершено</option>
+              <option value="cancelled">Отменено</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1 min-w-[200px] flex-1">
+            <label className="text-xs text-gray-600">Поле</label>
+            <select
+              value={fieldKeyFilter}
+              onChange={(e) => setFieldKeyFilter(e.target.value)}
+              className="border border-[#BEBAB7] rounded-sm px-2 py-1.5 text-sm bg-white max-w-md"
+            >
+              <option value="">Все поля</option>
+              {fieldKeySelectOptions.map((key) => {
+                const label = labelByKey[key];
+                return (
+                  <option key={key} value={key}>
+                    {label ? `${key} — ${label}` : `${key} (нет в шаблоне)`}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1 min-w-[180px] flex-1">
+            <label className="text-xs text-gray-600">Поиск по значению</label>
+            <input
+              type="search"
+              value={valueSearchDraft}
+              onChange={(e) => setValueSearchDraft(e.target.value)}
+              placeholder="Подстрока в последнем ответе…"
+              className="border border-[#BEBAB7] rounded-sm px-2 py-1.5 text-sm bg-white w-full max-w-md"
+            />
+          </div>
+          <div className="flex flex-col gap-1 min-w-[220px]">
+            <label className="text-xs text-gray-600">Сортировка</label>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as QuestionnaireSubmissionSort)}
+              className="border border-[#BEBAB7] rounded-sm px-2 py-1.5 text-sm bg-white"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="text-xs text-gray-600 leading-relaxed">
+          Фильтр по значению смотрит на последний ответ в сессии для каждого поля. Ключи, которых уже нет в текущей анкете,
+          подтягиваются из сохранённых ответов — их можно выбрать в списке «Поле» для поиска по архиву.
+        </p>
       </div>
 
       {error && (
@@ -106,7 +203,9 @@ export const QuestionnaireSubmissions: React.FC<Props> = ({ agentId, template })
         </div>
       ) : items.length === 0 ? (
         <div className="bg-white border border-[#BEBAB7] rounded-sm p-6 text-center text-gray-600">
-          Пока никто не заполнял эту анкету.
+          {statusFilter || hasResponseFilters
+            ? "Нет сессий, подходящих под выбранные фильтры."
+            : "Пока никто не заполнял эту анкету."}
         </div>
       ) : (
         <div className="bg-white border border-[#BEBAB7] rounded-sm overflow-hidden">

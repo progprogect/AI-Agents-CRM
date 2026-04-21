@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 import asyncpg
 
@@ -29,6 +30,37 @@ from app.storage.postgres import get_pool
 from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
+
+# Whitelist for ORDER BY in list_submissions (avoid dynamic SQL injection).
+_SUBMISSION_SORT_SQL: dict[str, str] = {
+    "started_at_desc": "s.started_at DESC",
+    "started_at_asc": "s.started_at ASC",
+    "completed_at_desc": "s.completed_at DESC NULLS LAST",
+    "completed_at_asc": "s.completed_at ASC NULLS LAST",
+}
+
+_FIELD_KEY_FILTER_RE = re.compile(r"^[a-z][a-z0-9_]{0,29}$")
+
+
+class SubmissionListEntry(NamedTuple):
+    submission: QuestionnaireSubmission
+    answers_count: int
+
+
+def escape_ilike_pattern(user_fragment: str) -> str:
+    """Escape ``%``, ``_``, ``\\`` for use inside ILIKE ... ESCAPE '\\'."""
+    return (
+        user_fragment.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
+def _normalize_submission_sort(sort: Optional[str]) -> str:
+    key = (sort or "started_at_desc").strip()
+    if key not in _SUBMISSION_SORT_SQL:
+        return "started_at_desc"
+    return key
 
 
 def _template_from_row(row: asyncpg.Record) -> QuestionnaireTemplate:
@@ -206,32 +238,117 @@ async def list_submissions(
     status: Optional[SubmissionStatus] = None,
     started_from: Optional[datetime] = None,
     started_to: Optional[datetime] = None,
-) -> list[QuestionnaireSubmission]:
-    where = ["agent_id = $1"]
+    field_key: Optional[str] = None,
+    value_search: Optional[str] = None,
+    sort: Optional[str] = None,
+) -> list[SubmissionListEntry]:
+    """List submissions with ``answers_count`` in one query (no N+1).
+
+    Optional ``field_key`` / ``value_search`` filter by **latest** value per
+    ``(submission_id, field_key)`` within each session (append-only history).
+
+    ``field_key`` must match ``^[a-z][a-z0-9_]{0,29}$`` or callers must validate;
+    invalid keys result in an empty list.
+    """
+    fk = (field_key or "").strip() or None
+    vs = (value_search or "").strip() or None
+    if fk is not None and not _FIELD_KEY_FILTER_RE.match(fk):
+        return []
+
+    sort_key = _normalize_submission_sort(sort)
+    order_sql = _SUBMISSION_SORT_SQL[sort_key]
+
+    where_parts = ["s.agent_id = $1"]
     params: list[Any] = [agent_id]
     idx = 2
+
     if status:
-        where.append(f"status = ${idx}")
+        where_parts.append(f"s.status = ${idx}")
         params.append(status.value)
         idx += 1
     if started_from:
-        where.append(f"started_at >= ${idx}")
+        where_parts.append(f"s.started_at >= ${idx}")
         params.append(started_from)
         idx += 1
     if started_to:
-        where.append(f"started_at <= ${idx}")
+        where_parts.append(f"s.started_at <= ${idx}")
         params.append(started_to)
         idx += 1
+
+    # Filter by latest-in-session values using CTE scoped to this agent.
+    if fk is not None and vs is not None:
+        pattern = f"%{escape_ilike_pattern(vs)}%"
+        where_parts.append(
+            "EXISTS (SELECT 1 FROM latest l WHERE l.submission_id = s.submission_id "
+            f"AND l.field_key = ${idx} AND l.value ILIKE ${idx + 1} ESCAPE E'\\\\')"
+        )
+        params.extend([fk, pattern])
+        idx += 2
+    elif fk is not None:
+        where_parts.append(
+            f"EXISTS (SELECT 1 FROM latest l WHERE l.submission_id = s.submission_id "
+            f"AND l.field_key = ${idx})"
+        )
+        params.append(fk)
+        idx += 1
+    elif vs is not None:
+        pattern = f"%{escape_ilike_pattern(vs)}%"
+        where_parts.append(
+            "EXISTS (SELECT 1 FROM latest l WHERE l.submission_id = s.submission_id "
+            f"AND l.value ILIKE ${idx} ESCAPE E'\\\\')"
+        )
+        params.append(pattern)
+        idx += 1
+
     params.extend([limit, offset])
-    sql = (
-        "SELECT * FROM questionnaire_submissions WHERE "
-        + " AND ".join(where)
-        + f" ORDER BY started_at DESC LIMIT ${idx} OFFSET ${idx + 1}"
-    )
+    lim_idx, off_idx = idx, idx + 1
+
+    sql = f"""
+        WITH latest AS (
+            SELECT DISTINCT ON (submission_id, field_key)
+                submission_id, field_key, value
+            FROM questionnaire_responses
+            WHERE agent_id = $1
+            ORDER BY submission_id, field_key, created_at DESC
+        )
+        SELECT s.*, COALESCE(rc.total, 0)::int AS answers_count
+        FROM questionnaire_submissions s
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*)::int AS total
+            FROM questionnaire_responses r
+            WHERE r.submission_id = s.submission_id
+        ) rc ON true
+        WHERE {" AND ".join(where_parts)}
+        ORDER BY {order_sql}
+        LIMIT ${lim_idx} OFFSET ${off_idx}
+    """
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, *params)
-    return [_submission_from_row(r) for r in rows]
+
+    out: list[SubmissionListEntry] = []
+    for r in rows:
+        sub = _submission_from_row(r)
+        cnt = int(r["answers_count"])
+        out.append(SubmissionListEntry(submission=sub, answers_count=cnt))
+    return out
+
+
+async def list_distinct_response_field_keys(agent_id: str) -> list[str]:
+    """Distinct ``field_key`` values ever stored for this agent (incl. removed template fields)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT field_key
+            FROM questionnaire_responses
+            WHERE agent_id = $1
+            ORDER BY field_key ASC
+            """,
+            agent_id,
+        )
+    return [str(r["field_key"]) for r in rows]
 
 
 # ── Responses ──────────────────────────────────────────────────────────────

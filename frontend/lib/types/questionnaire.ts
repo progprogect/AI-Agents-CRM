@@ -25,6 +25,13 @@ export interface QuestionnaireResponsePayload {
 export type QuestionnaireSubmissionStatus = "in_progress" | "completed" | "cancelled";
 export type QuestionnaireSubmissionSource = "fill" | "edit";
 
+/** Must match backend ``list_questionnaire_submissions`` ``sort`` query. */
+export type QuestionnaireSubmissionSort =
+  | "started_at_desc"
+  | "started_at_asc"
+  | "completed_at_desc"
+  | "completed_at_asc";
+
 export interface QuestionnaireSubmission {
   submission_id: string;
   agent_id: string;
