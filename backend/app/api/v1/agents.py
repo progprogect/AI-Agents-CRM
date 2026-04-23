@@ -19,8 +19,8 @@ router = APIRouter()
 
 
 def _merge_agent_config(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
-    """Merge incoming config onto existing. Top-level shallow merge; `escalation` dict is deep-merged
-    so a partial PUT like {\"escalation\": {\"enabled\": false}} does not drop detect_contact, etc.
+    """Merge incoming config onto existing. Top-level shallow merge; nested dicts for
+    `escalation` and `moderation` are deep-merged so partial PUTs do not drop sibling keys.
     """
     merged = {**existing, **incoming}
     if "escalation" in incoming and isinstance(incoming.get("escalation"), dict):
@@ -29,6 +29,12 @@ def _merge_agent_config(existing: dict[str, Any], incoming: dict[str, Any]) -> d
             merged["escalation"] = {**old_esc, **incoming["escalation"]}
         else:
             merged["escalation"] = dict(incoming["escalation"])
+    if "moderation" in incoming and isinstance(incoming.get("moderation"), dict):
+        old_mod = existing.get("moderation")
+        if isinstance(old_mod, dict):
+            merged["moderation"] = {**old_mod, **incoming["moderation"]}
+        else:
+            merged["moderation"] = dict(incoming["moderation"])
     return merged
 
 

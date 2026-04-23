@@ -28,6 +28,21 @@ class TestMergeAgentConfig(unittest.TestCase):
         self.assertEqual(out["project"], "p2")
         self.assertEqual(out["escalation"]["enabled"], True)
 
+    def test_moderation_deep_merge_preserves_other_keys(self) -> None:
+        existing = {
+            "agent_id": "a1",
+            "moderation": {
+                "enabled": True,
+                "provider": "openai",
+                "categories": ["hate"],
+            },
+        }
+        incoming = {"moderation": {"enabled": False}}
+        out = _merge_agent_config(existing, incoming)
+        self.assertEqual(out["moderation"]["enabled"], False)
+        self.assertEqual(out["moderation"]["provider"], "openai")
+        self.assertEqual(out["moderation"]["categories"], ["hate"])
+
 
 if __name__ == "__main__":
     unittest.main()
