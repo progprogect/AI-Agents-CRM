@@ -9,6 +9,7 @@ import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { YAMLEditor } from "@/components/shared/YAMLEditor";
 import { Textarea } from "@/components/shared/Textarea";
 import { Select } from "@/components/shared/Select";
+import { Toggle } from "@/components/shared/Toggle";
 import { api, ApiError } from "@/lib/api";
 import type { AgentConfigFormData } from "@/lib/utils/agentConfig";
 import { formDataToAgentConfig, generateAgentId } from "@/lib/utils/agentConfig";
@@ -251,6 +252,7 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
 
   const submitting = isSubmitting || externalIsSubmitting;
 
+  const modEnabled = config.moderation_enabled !== false;
   const modProvider = config.moderation_provider || "openai";
   const modModelOptions =
     modProvider === "google_ai_studio" ? MODERATION_GEMINI_MODELS : MODERATION_OPENAI_MODELS;
@@ -363,11 +365,19 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
             </span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-gray-600 shrink-0">{t("moderationProviderSummary")}:</span>
-            <span className="font-medium text-gray-900 text-right break-all">
-              {modProvider === "google_ai_studio" ? "Google AI Studio" : "OpenAI"} / {modModel}
+            <span className="text-gray-600 shrink-0">{t("reviewModerationEnabled")}:</span>
+            <span className="font-medium text-gray-900">
+              {modEnabled ? t("yes") : t("no")}
             </span>
           </div>
+          {modEnabled && (
+            <div className="flex justify-between gap-4">
+              <span className="text-gray-600 shrink-0">{t("moderationProviderSummary")}:</span>
+              <span className="font-medium text-gray-900 text-right break-all">
+                {modProvider === "google_ai_studio" ? "Google AI Studio" : "OpenAI"} / {modModel}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -375,24 +385,40 @@ export const ReviewStep: React.FC<ReviewStepProps> = ({
       <div className="bg-white rounded-sm border border-gray-200 p-6 space-y-4">
         <h4 className="text-md font-medium text-gray-900">{t("moderationSectionTitle")}</h4>
         <p className="text-sm text-gray-600">{t("moderationSectionDesc")}</p>
+        <div className="p-3 border border-[#BEBAB7] rounded-sm bg-[#F9F8F7] flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-gray-900">{t("moderationEnabledLabel")}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t("moderationEnabledHint")}</p>
+          </div>
+          <div className="flex-shrink-0">
+            <Toggle
+              checked={modEnabled}
+              onChange={(v) => onUpdate({ moderation_enabled: v })}
+            />
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Select
             label={t("moderationProvider")}
             value={modProvider}
             onChange={(e) => handleModerationProviderChange(e.target.value)}
             options={MODERATION_PROVIDER_OPTIONS}
+            disabled={!modEnabled}
           />
           <Select
             label={t("moderationModel")}
             value={modModel}
             onChange={(e) => onUpdate({ moderation_model: e.target.value })}
             options={modModelOptions.map(({ value, label }) => ({ value, label }))}
+            disabled={!modEnabled}
           />
         </div>
-        {modProvider === "google_ai_studio" && (
+        {modProvider === "google_ai_studio" && modEnabled && (
           <p className="text-xs text-gray-500">{t("moderationGeminiHint")}</p>
         )}
-        <p className="text-xs text-gray-500">{t("reviewModerationSeparateNote")}</p>
+        {modEnabled && (
+          <p className="text-xs text-gray-500">{t("reviewModerationSeparateNote")}</p>
+        )}
       </div>
 
       {/* Configuration views */}
