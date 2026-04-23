@@ -395,10 +395,15 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 state["user_message"], agent_config
             )
             if flagged:
+                # Respect action_on_violation:
+                #   "block_and_escalate" (default) → escalate conversation to human
+                #   "block"                         → silently drop message, no escalation
+                action = agent_config.moderation.action_on_violation
+                should_escalate = action != "block"
                 return {
                     "result": {
                         "response": None,
-                        "escalate": True,
+                        "escalate": should_escalate,
                         "escalation_reason": "Content moderation violation",
                         "moderation_result": mod_result,
                     }
@@ -679,10 +684,12 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 return {}
             flagged, mod_result = await mod.check_post_moderation(response_text, agent_config)
             if flagged:
+                action = agent_config.moderation.action_on_violation
+                should_escalate = action != "block"
                 return {
                     "result": {
                         "response": None,
-                        "escalate": True,
+                        "escalate": should_escalate,
                         "escalation_reason": "Generated content moderation violation",
                         "moderation_result": mod_result,
                     }
