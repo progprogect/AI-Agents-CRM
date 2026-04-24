@@ -206,11 +206,13 @@ async def handle_callback_query(
     template = await qs.get_template_or_empty(binding.agent_id)
 
     if data == CB_CANCEL:
+        # state.submission_id is set only while actively filling; after completion it is None.
+        was_filling = bool(state and state.submission_id)
         if state:
             await qs.cancel(state)
+        if was_filling:
             await _send(bot_token, chat_id, "Хорошо, пропустим анкету! 😊 Ты можешь просто написать свой вопрос — я отвечу. Если захочешь заполнить анкету позже — /questionnaire.")
         else:
-            # User closed the completion screen — questionnaire already saved
             await _send(bot_token, chat_id, "Закрыто. Если нужно что-то уточнить — просто напиши! 😊")
         return
 
