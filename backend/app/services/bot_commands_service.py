@@ -199,6 +199,26 @@ async def handle_restart(
             text="✅ Чат перезапущен. Начнём сначала!",
         )
 
+        # Send personalized welcome message from agent config if configured
+        try:
+            agent_data = await db.get_agent(binding.agent_id)
+            if agent_data and "config" in agent_data:
+                welcome = (
+                    agent_data["config"]
+                    .get("prompts", {})
+                    .get("templates", {})
+                    .get("restart_welcome", "")
+                    .strip()
+                )
+                if welcome:
+                    await _send_telegram_message(
+                        bot_token=bot_token,
+                        chat_id=chat_id,
+                        text=welcome,
+                    )
+        except Exception as exc:
+            logger.debug("Could not send restart welcome: %s", exc)
+
     except Exception as exc:
         logger.error(
             "handle_restart failed for chat_id=%s binding=%s: %s",
@@ -243,10 +263,8 @@ async def handle_paysupport(
             bot_token=bot_token,
             chat_id=chat_id,
             text=(
-                "По вопросам оплаты обратитесь к "
-                f"{contact}.\n\n"
-                "Если вы уже совершили оплату, но доступ не открылся — "
-                "пожалуйста, пришлите скриншот чека."
+                f"По вопросам оплаты напишите на {contact}. "
+                "В письме укажите дату и сумму платежа — это ускорит проверку. 🙏"
             ),
         )
     except Exception as exc:
