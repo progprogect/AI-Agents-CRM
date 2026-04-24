@@ -208,7 +208,10 @@ async def handle_callback_query(
     if data == CB_CANCEL:
         if state:
             await qs.cancel(state)
-        await _send(bot_token, chat_id, "Хорошо, пропустим анкету! 😊 Ты можешь просто написать свой вопрос — я отвечу. Если захочешь заполнить анкету позже — /questionnaire.")
+            await _send(bot_token, chat_id, "Хорошо, пропустим анкету! 😊 Ты можешь просто написать свой вопрос — я отвечу. Если захочешь заполнить анкету позже — /questionnaire.")
+        else:
+            # User closed the completion screen — questionnaire already saved
+            await _send(bot_token, chat_id, "Закрыто. Если нужно что-то уточнить — просто напиши! 😊")
         return
 
     if data == CB_BACK or (data == CB_VIEW and not state):
