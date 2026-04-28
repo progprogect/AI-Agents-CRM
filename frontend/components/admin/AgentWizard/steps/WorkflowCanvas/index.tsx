@@ -95,6 +95,9 @@ function makeDefaultAutoStep(id: string, sourceId: string): WorkflowFormAutoStep
     message_template: "",
     prompt: "",
     condition: null,
+    telegram_attachment_type: "none",
+    telegram_video_url: null,
+    telegram_video_note_file_id: null,
     _delay_unit: "days",
   };
 }

@@ -174,6 +174,93 @@ export function AutoStepPanel({ autoStep, onUpdate, onDelete, onClose }: AutoSte
           </label>
         </Section>
 
+        {/* Telegram media (auto-step) */}
+        <Section title="Медиа в Telegram (необязательно)">
+          <p className="mb-3 text-[11px] leading-relaxed text-[#9A9590]">
+            Работает только для диалогов в Telegram. В других каналах вложение игнорируется; если текста
+            нет — сообщение не отправится.
+          </p>
+          <div className="flex flex-col gap-2">
+            {(
+              [
+                ["none", "Только текст"],
+                ["video_url", "Видео по ссылке"],
+                ["video_note", "Видеокружок (file_id)"],
+              ] as const
+            ).map(([val, label]) => (
+              <label
+                key={val}
+                className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#BEBAB7] bg-white p-2.5 text-sm text-[#443C3C] hover:border-[#7C3AED]"
+              >
+                <input
+                  type="radio"
+                  name={`tg-attach-${autoStep.id}`}
+                  className="mt-1 accent-[#7C3AED]"
+                  checked={(autoStep.telegram_attachment_type ?? "none") === val}
+                  onChange={() =>
+                    onUpdate({
+                      telegram_attachment_type: val,
+                      telegram_video_url: val === "video_url" ? autoStep.telegram_video_url : null,
+                      telegram_video_note_file_id:
+                        val === "video_note" ? autoStep.telegram_video_note_file_id : null,
+                    })
+                  }
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+
+          {(autoStep.telegram_attachment_type ?? "none") === "video_url" && (
+            <div className="mt-3">
+              <Input
+                value={autoStep.telegram_video_url ?? ""}
+                onChange={(e) => onUpdate({ telegram_video_url: e.target.value })}
+                placeholder="https://… (прямая ссылка на mp4, доступная для серверов Telegram)"
+              />
+              <p className="mt-2 text-[11px] leading-relaxed text-[#9A9590]">
+                Используется метод sendVideo. Нужен публичный HTTPS URL; размер и формат — в рамках лимитов
+                Telegram.
+              </p>
+            </div>
+          )}
+
+          {(autoStep.telegram_attachment_type ?? "none") === "video_note" && (
+            <div className="mt-3 space-y-2 rounded-lg border border-[#EDE9FE] bg-[#FAF5FF] p-3 text-[11px] leading-relaxed text-[#443C3C]">
+              <p className="font-medium text-[#5B21B6]">Как получить file_id для кружочка</p>
+              <ol className="list-decimal space-y-1.5 pl-4">
+                <li>
+                  Откройте чат с <strong>тем же ботом</strong>, который обслуживает этого агента (токен из
+                  привязки канала).
+                </li>
+                <li>
+                  Отправьте боту видеокружок <strong>или</strong> квадратное видео (до ~60 сек) — так вы
+                  загрузите файл на серверы Telegram.
+                </li>
+                <li>
+                  Получите обновление с этим сообщением: через @RawDataBot / @getidsbot, свой webhook с
+                  логированием, или временный эндпоинт <code className="rounded bg-white px-1">getUpdates</code>.
+                </li>
+                <li>
+                  Скопируйте значение <code className="rounded bg-white px-1">message.video_note.file_id</code>{" "}
+                  (длинная строка вроде{" "}
+                  <span className="text-[#9A9590]">AwACAgIAAxkB…</span>) и вставьте ниже.
+                </li>
+              </ol>
+              <p className="text-[#9A9590]">
+                У обычного видео в чате другой file_id — для кружка нужен именно video_note. При смене токена
+                бота старые file_id могут перестать работать — загрузите кружок снова.
+              </p>
+              <Input
+                className="mt-2"
+                value={autoStep.telegram_video_note_file_id ?? ""}
+                onChange={(e) => onUpdate({ telegram_video_note_file_id: e.target.value })}
+                placeholder="file_id из message.video_note.file_id"
+              />
+            </div>
+          )}
+        </Section>
+
         {/* Action type */}
         <Section title="Тип действия">
           <div className="flex gap-2">

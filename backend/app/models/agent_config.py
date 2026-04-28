@@ -494,6 +494,56 @@ class WorkflowAutoStep(BaseModel):
             "fire_at or until a full cancel (e.g. /restart)."
         ),
     )
+    telegram_attachment_type: Literal["none", "video_url", "video_note"] = Field(
+        default="none",
+        description=(
+            "Telegram-only outbound attachment for this auto-step. "
+            "'video_url' uses sendVideo with a public HTTPS URL; "
+            "'video_note' uses sendVideoNote with a file_id from the same bot (no URL support in Bot API)."
+        ),
+    )
+    telegram_video_url: Optional[str] = Field(
+        default=None,
+        description="Public HTTPS URL passed to sendVideo when telegram_attachment_type='video_url'.",
+    )
+    telegram_video_note_file_id: Optional[str] = Field(
+        default=None,
+        description="Telegram file_id for sendVideoNote when telegram_attachment_type='video_note'.",
+    )
+
+    @model_validator(mode="after")
+    def validate_telegram_auto_step_media(self) -> "WorkflowAutoStep":
+        """Ensure Telegram attachment fields are consistent."""
+        t = self.telegram_attachment_type
+        if t == "none":
+            if self.telegram_video_url or self.telegram_video_note_file_id:
+                raise ValueError(
+                    "workflow auto-step: telegram_attachment_type 'none' must not set "
+                    "telegram_video_url or telegram_video_note_file_id"
+                )
+            return self
+        if t == "video_url":
+            if not (self.telegram_video_url or "").strip():
+                raise ValueError(
+                    "workflow auto-step: telegram_attachment_type 'video_url' requires "
+                    "non-empty telegram_video_url"
+                )
+            if self.telegram_video_note_file_id:
+                raise ValueError(
+                    "workflow auto-step: telegram_video_url mode must not set telegram_video_note_file_id"
+                )
+            return self
+        # video_note
+        if not (self.telegram_video_note_file_id or "").strip():
+            raise ValueError(
+                "workflow auto-step: telegram_attachment_type 'video_note' requires "
+                "non-empty telegram_video_note_file_id"
+            )
+        if self.telegram_video_url:
+            raise ValueError(
+                "workflow auto-step: video_note mode must not set telegram_video_url"
+            )
+        return self
 
 
 class WorkflowConfig(BaseModel):

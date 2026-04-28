@@ -715,6 +715,41 @@ class TelegramService:
                     payload = {"chat_id": chat_id, "video": media_url}
                     if message_text:
                         payload["caption"] = message_text
+                elif media_type == "video_note":
+                    # sendVideoNote — ``media_url`` is the Telegram file_id (HTTPS URLs are unsupported).
+                    vn_endpoint = f"{self.TELEGRAM_API_BASE_URL}{bot_token}/sendVideoNote"
+                    vn_payload: dict[str, Any] = {
+                        "chat_id": chat_id,
+                        "video_note": media_url,
+                    }
+                    resp = await client.post(vn_endpoint, json=vn_payload)
+                    if resp.status_code != 200 or not resp.json().get("ok"):
+                        logger.error(f"Telegram video_note send failed: {resp.text}")
+                        if message_text:
+                            text_payload: dict[str, Any] = {"chat_id": chat_id, "text": message_text}
+                            if reply_markup:
+                                text_payload["reply_markup"] = reply_markup
+                            text_resp = await client.post(
+                                f"{self.TELEGRAM_API_BASE_URL}{bot_token}/sendMessage",
+                                json=text_payload,
+                            )
+                            return text_resp.json()
+                        return {}
+                    logger.info(f"Sent Telegram video_note to chat {chat_id}")
+                    if message_text:
+                        text_payload = {"chat_id": chat_id, "text": message_text}
+                        if reply_markup:
+                            text_payload["reply_markup"] = reply_markup
+                        text_resp = await client.post(
+                            f"{self.TELEGRAM_API_BASE_URL}{bot_token}/sendMessage",
+                            json=text_payload,
+                        )
+                        if text_resp.status_code != 200 or not text_resp.json().get("ok"):
+                            logger.error(
+                                "Telegram follow-up text after video_note failed: %s",
+                                text_resp.text,
+                            )
+                    return resp.json()
                 elif media_type == "audio":
                     endpoint = f"{self.TELEGRAM_API_BASE_URL}{bot_token}/sendAudio"
                     payload = {"chat_id": chat_id, "audio": media_url}

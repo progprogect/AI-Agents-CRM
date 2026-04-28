@@ -46,6 +46,8 @@ export interface WorkflowStep {
   collect_to_questionnaire?: boolean;
 }
 
+export type TelegramAutoStepAttachment = "none" | "video_url" | "video_note";
+
 export interface WorkflowAutoStep {
   id: string;
   name: string;
@@ -58,6 +60,10 @@ export interface WorkflowAutoStep {
   prompt: string;
   condition?: string | null;
   cancel_on_workflow_step_change?: boolean;
+  /** Telegram-only: optional video (URL) or video note (file_id). Ignored on other channels. */
+  telegram_attachment_type?: TelegramAutoStepAttachment;
+  telegram_video_url?: string | null;
+  telegram_video_note_file_id?: string | null;
 }
 
 export interface WorkflowFormStep extends WorkflowStep {
@@ -335,6 +341,10 @@ export function agentConfigToFormData(
         typeof a.cancel_on_workflow_step_change === "boolean"
           ? a.cancel_on_workflow_step_change
           : true,
+      telegram_attachment_type:
+        (a.telegram_attachment_type as TelegramAutoStepAttachment) || "none",
+      telegram_video_url: a.telegram_video_url ?? null,
+      telegram_video_note_file_id: a.telegram_video_note_file_id ?? null,
     })) as WorkflowFormAutoStep[],
   };
 
@@ -487,6 +497,15 @@ export function formDataToAgentConfig(
         prompt: a.prompt || "",
         condition: a.condition ?? null,
         cancel_on_workflow_step_change: a.cancel_on_workflow_step_change ?? true,
+        telegram_attachment_type: a.telegram_attachment_type ?? "none",
+        telegram_video_url:
+          a.telegram_attachment_type === "video_url"
+            ? (a.telegram_video_url || "").trim() || null
+            : null,
+        telegram_video_note_file_id:
+          a.telegram_attachment_type === "video_note"
+            ? (a.telegram_video_note_file_id || "").trim() || null
+            : null,
       })),
     },
   };

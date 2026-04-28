@@ -1070,26 +1070,73 @@ async def execute_auto_step_trigger(member: str) -> None:
         for k, v in collected.items():
             message_text = message_text.replace(f"{{{k}}}", str(v))
 
-    if not message_text:
+    tg_attach = payload.get("telegram_attachment_type") or "none"
+    out_media_url: str | None = None
+    out_media_type: str | None = None
+    if conversation_channel == MessageChannel.TELEGRAM.value:
+        if tg_attach == "video_url":
+            vu = (payload.get("telegram_video_url") or "").strip()
+            if vu:
+                out_media_url = vu
+                out_media_type = "video"
+        elif tg_attach == "video_note":
+            fid = (payload.get("telegram_video_note_file_id") or "").strip()
+            if fid:
+                out_media_url = fid
+                out_media_type = "video_note"
+
+    has_outbound = bool((message_text or "").strip()) or bool(out_media_url)
+    if not has_outbound:
         logger.info(
-            "Auto-step %s for %s produced empty message; skipping send",
+            "Auto-step %s for %s produced empty message and no media; skipping send",
             auto_step_id,
             conversation_id,
         )
-    else:
+    elif conversation_channel != MessageChannel.TELEGRAM.value and tg_attach not in ("none", None, ""):
+        logger.info(
+            "Auto-step %s for %s: Telegram-only attachment on non-Telegram channel; sending text only",
+            auto_step_id,
+            conversation_id,
+        )
+        out_media_url = None
+        out_media_type = None
+        if not (message_text or "").strip():
+            logger.info(
+                "Auto-step %s for %s: skipping send (attachment only, unsupported channel)",
+                auto_step_id,
+                conversation_id,
+            )
+            await redis.delete(f"{KEY_AUTO_PAY}{member}")
+            try:
+                await redis.srem(f"{KEY_AUTO_IDX}{conversation_id}", member)
+            except Exception:
+                pass
+            await _schedule_chained_auto_steps(
+                conversation_id, auto_step_id, agent_config, stored_hash or ""
+            )
+            return
+
+    if has_outbound:
         import uuid as _uuid
         from app.models.message import Message, MessageRole
         from app.utils.datetime_utils import utc_now
+
+        msg_meta: dict = {"auto_step_trigger": True, "auto_step_id": auto_step_id}
+        if tg_attach and tg_attach != "none":
+            msg_meta["telegram_attachment_type"] = tg_attach
+            if out_media_url:
+                msg_meta["media_url"] = out_media_url
+                msg_meta["media_type"] = out_media_type
 
         msg = Message(
             message_id=str(_uuid.uuid4()),
             conversation_id=conversation_id,
             agent_id=conversation.agent_id,
             role=MessageRole.AGENT,
-            content=message_text,
+            content=message_text or "",
             channel=conversation.channel,
             timestamp=utc_now(),
-            metadata={"auto_step_trigger": True, "auto_step_id": auto_step_id},
+            metadata=msg_meta,
         )
         try:
             await db.create_message(msg)
@@ -1099,8 +1146,10 @@ async def execute_auto_step_trigger(member: str) -> None:
         try:
             await channel_sender.send_message(
                 conversation_id=conversation_id,
-                message_text=message_text,
+                message_text=message_text or "",
                 message_id=msg.message_id,
+                media_url=out_media_url,
+                media_type=out_media_type,
             )
             logger.info(
                 "Auto-step %s (%s) sent for conversation %s",
