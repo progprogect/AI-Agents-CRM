@@ -421,6 +421,15 @@ class WorkflowStep(BaseModel):
             "after LLM extraction (no active FSM session required)."
         ),
     )
+    hard_block_until_complete: bool = Field(
+        default=False,
+        description=(
+            "When True, the LLM is strictly forbidden from answering any off-topic questions "
+            "or providing advice until this step's collect[] fields are fully satisfied. "
+            "Use for consent/legal steps where partial or topic-adjacent responses are unacceptable. "
+            "Replaces the soft 'collect first, then answer' wording with an absolute prohibition."
+        ),
+    )
 
 
 class WorkflowAutoStep(BaseModel):
