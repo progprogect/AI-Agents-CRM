@@ -192,32 +192,40 @@ async def handle_restart(
             chat_id,
         )
 
-        # Send confirmation to the user in Telegram
-        await _send_telegram_message(
-            bot_token=bot_token,
-            chat_id=chat_id,
-            text="✅ Чат перезапущен. Начнём сначала!",
+        # Send welcome message: use agent-configured restart_welcome template if set,
+        # otherwise fall back to the built-in default greeting.
+        _DEFAULT_RESTART_WELCOME = (
+            "Привет 😊 🐾\n\n"
+            "Я — твой личный помощник в любых вопросах о питомце.\n"
+            "Помогу разобраться, если что-то беспокоит, подскажу по уходу, "
+            "питанию, поведению или здоровью.\n\n"
+            "Давай познакомимся 😊\n\n"
+            "Кто у тебя?\n"
+            "🐶 Собака или 🐱 Кошка?\n\n"
+            "Или можешь сразу написать свой вопрос или наговорить голосом - я рядом\n"
+            "Давай начнём 💛"
         )
-
-        # Send personalized welcome message from agent config if configured
+        welcome_text = _DEFAULT_RESTART_WELCOME
         try:
             agent_data = await db.get_agent(binding.agent_id)
             if agent_data and "config" in agent_data:
-                welcome = (
+                custom = (
                     agent_data["config"]
                     .get("prompts", {})
                     .get("templates", {})
                     .get("restart_welcome", "")
                     .strip()
                 )
-                if welcome:
-                    await _send_telegram_message(
-                        bot_token=bot_token,
-                        chat_id=chat_id,
-                        text=welcome,
-                    )
+                if custom:
+                    welcome_text = custom
         except Exception as exc:
-            logger.debug("Could not send restart welcome: %s", exc)
+            logger.debug("Could not load restart_welcome template: %s", exc)
+
+        await _send_telegram_message(
+            bot_token=bot_token,
+            chat_id=chat_id,
+            text=welcome_text,
+        )
 
     except Exception as exc:
         logger.error(

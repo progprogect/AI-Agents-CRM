@@ -218,17 +218,10 @@ class TelegramService:
             username = from_user.get("username")
             user_name = f"{first_name} {last_name}".strip() or None
 
-            # Find or create conversation, and update user info if available
-            conversation = await self._find_or_create_conversation(
-                agent_id=binding.agent_id,
-                external_user_id=chat_id,
-                external_conversation_id=None,
-                external_user_name=user_name,
-                external_user_username=username,
-            )
-
-            # Intercept bot commands (/restart, etc.) before passing to agent.
-            # Commands are handled only when explicitly enabled in the binding metadata.
+            # Intercept bot commands BEFORE _find_or_create_conversation so that
+            # handle_restart (which manages its own conversation lifecycle) does not
+            # leave a dangling "ghost" conversation created by _find_or_create_conversation
+            # only to be immediately closed by handle_restart milliseconds later.
             if message_text.startswith("/"):
                 if bot_token is None:
                     try:
@@ -246,6 +239,15 @@ class TelegramService:
                     )
                     if handled:
                         return  # command was processed; do not pass to agent
+
+            # Find or create conversation, and update user info if available
+            conversation = await self._find_or_create_conversation(
+                agent_id=binding.agent_id,
+                external_user_id=chat_id,
+                external_conversation_id=None,
+                external_user_name=user_name,
+                external_user_username=username,
+            )
 
             # Questionnaire FSM short-circuit: when the user is actively filling
             # or editing a field, route free-text answers to the questionnaire
