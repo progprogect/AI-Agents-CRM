@@ -697,6 +697,10 @@ class TelegramService:
     ) -> dict[str, Any]:
         """Send text and/or media message via Telegram Bot API.
 
+        Text is **additive** with media: for ``photo`` / ``video`` / ``audio`` / ``document`` it is sent as
+        ``caption`` on the same message (when non-empty). For ``video_note``, Telegram has no caption —
+        non-empty ``message_text`` is sent as a separate ``sendMessage`` immediately after the note.
+
         Pass ``reply_markup`` to attach a ReplyKeyboardMarkup (quick-reply buttons)
         or remove an existing keyboard (``{"remove_keyboard": True}``).
         """

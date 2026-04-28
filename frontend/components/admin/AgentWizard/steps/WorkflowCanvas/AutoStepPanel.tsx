@@ -177,8 +177,11 @@ export function AutoStepPanel({ autoStep, onUpdate, onDelete, onClose }: AutoSte
         {/* Telegram media (auto-step) */}
         <Section title="Медиа в Telegram (необязательно)">
           <p className="mb-3 text-[11px] leading-relaxed text-[#9A9590]">
-            Работает только для диалогов в Telegram. В других каналах вложение игнорируется; если текста
-            нет — сообщение не отправится.
+            Работает только для диалогов в Telegram. В других каналах вложение не отправляется; если нужен
+            только текст — оставьте тип «Только текст». Текст из блока ниже («Фиксированный текст» или «Ответ
+            агента») <strong className="text-[#443C3C]">не заменяется</strong> медиа: к видео он идёт как
+            подпись к одному сообщению; к кружочку — отдельным сообщением сразу после кружка (у кружков в
+            Telegram нет подписи). Текст можно оставить пустым, если нужны только ролик или кружок.
           </p>
           <div className="flex flex-col gap-2">
             {(
@@ -219,8 +222,8 @@ export function AutoStepPanel({ autoStep, onUpdate, onDelete, onClose }: AutoSte
                 placeholder="https://… (прямая ссылка на mp4, доступная для серверов Telegram)"
               />
               <p className="mt-2 text-[11px] leading-relaxed text-[#9A9590]">
-                Используется метод sendVideo. Нужен публичный HTTPS URL; размер и формат — в рамках лимитов
-                Telegram.
+                Используется sendVideo: текст авто-шага уходит как подпись (caption) к этому же сообщению.
+                Нужен публичный HTTPS URL; размер и формат — в рамках лимитов Telegram.
               </p>
             </div>
           )}
@@ -249,7 +252,9 @@ export function AutoStepPanel({ autoStep, onUpdate, onDelete, onClose }: AutoSte
               </ol>
               <p className="text-[#9A9590]">
                 У обычного видео в чате другой file_id — для кружка нужен именно video_note. При смене токена
-                бота старые file_id могут перестать работать — загрузите кружок снова.
+                бота старые file_id могут перестать работать — загрузите кружок снова. Если задан текст
+                авто-шага, он отправится <strong className="text-[#443C3C]">вторым сообщением</strong> сразу
+                после кружка (подпись к video note в API нет).
               </p>
               <Input
                 className="mt-2"
