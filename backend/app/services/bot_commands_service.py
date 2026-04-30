@@ -16,8 +16,12 @@ from typing import Any, Optional
 
 import httpx
 
+from app.config import get_settings
 from app.models.channel_binding import ChannelBinding
 from app.models.conversation import Conversation, ConversationStatus, MarketingStatus
+from app.services.channel_binding_service import ChannelBindingService
+from app.services.telegram_service import TelegramService
+from app.storage.resolver import get_secrets_manager
 from app.utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
@@ -220,20 +224,6 @@ async def handle_restart(
                 )
                 if custom:
                     welcome_text = custom
-        except Exception as exc:
-            logger.debug("Could not load restart_welcome template: %s", exc)
-
-        await _send_telegram_message(
-            bot_token=bot_token,
-            chat_id=chat_id,
-            text=welcome_text,
-        )
-
-        # Send intro video note (circle) ~1 second after the welcome text if configured
-        try:
-            if agent_data is None:
-                agent_data = await db.get_agent(binding.agent_id)
-            if agent_data and "config" in agent_data:
                 video_note_file_id = (
                     agent_data["config"]
                     .get("prompts", {})
@@ -241,15 +231,59 @@ async def handle_restart(
                     .get("intro_video_note_file_id", "")
                     .strip()
                 )
-                if video_note_file_id:
-                    await asyncio.sleep(1)
-                    await _send_telegram_video_note(
-                        bot_token=bot_token,
-                        chat_id=chat_id,
-                        file_id=video_note_file_id,
-                    )
+            else:
+                video_note_file_id = ""
         except Exception as exc:
-            logger.debug("Could not send intro video note for chat_id=%s: %s", chat_id, exc)
+            logger.debug("Could not load restart_welcome template: %s", exc)
+            video_note_file_id = ""
+
+        await _send_telegram_message(
+            bot_token=bot_token,
+            chat_id=chat_id,
+            text=welcome_text,
+        )
+
+        # Intro video note: same Telegram path as workflow auto-steps (file_id → sendVideoNote)
+        if video_note_file_id:
+            try:
+                await asyncio.sleep(1)
+                logger.info(
+                    "Sending intro video note binding=%s agent=%s chat_id=%s",
+                    binding.binding_id,
+                    binding.agent_id,
+                    chat_id,
+                )
+                secrets_manager = get_secrets_manager()
+                binding_svc = ChannelBindingService(db, secrets_manager)
+                telegram_svc = TelegramService(binding_svc, db, get_settings())
+                result = await telegram_svc.send_message(
+                    binding.binding_id,
+                    chat_id,
+                    "",
+                    media_url=video_note_file_id,
+                    media_type="video_note",
+                )
+                if isinstance(result, dict) and result.get("ok"):
+                    logger.info(
+                        "Intro video note sent binding=%s chat_id=%s",
+                        binding.binding_id,
+                        chat_id,
+                    )
+                else:
+                    logger.warning(
+                        "Intro video note: Telegram did not return ok binding=%s chat_id=%s result=%s",
+                        binding.binding_id,
+                        chat_id,
+                        result,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Intro video note failed binding=%s chat_id=%s: %s",
+                    binding.binding_id,
+                    chat_id,
+                    exc,
+                    exc_info=True,
+                )
 
     except Exception as exc:
         logger.error(
@@ -314,19 +348,6 @@ async def _send_telegram_message(bot_token: str, chat_id: str, text: str) -> Non
                 logger.warning("sendMessage returned not-ok: %s", data)
     except Exception as exc:
         logger.error("sendMessage failed for chat_id=%s: %s", chat_id, exc)
-
-
-async def _send_telegram_video_note(bot_token: str, chat_id: str, file_id: str) -> None:
-    """Send a video note (circle) to a Telegram chat using an existing file_id."""
-    url = f"{TELEGRAM_API_BASE}{bot_token}/sendVideoNote"
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json={"chat_id": chat_id, "video_note": file_id})
-            data = resp.json()
-            if not data.get("ok"):
-                logger.warning("sendVideoNote returned not-ok: %s", data)
-    except Exception as exc:
-        logger.error("sendVideoNote failed for chat_id=%s: %s", chat_id, exc)
 
 
 # ---------------------------------------------------------------------------
