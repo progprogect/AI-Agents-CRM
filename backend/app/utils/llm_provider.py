@@ -112,6 +112,7 @@ def create_embeddings(
     return OpenAIEmbeddings(
         model=model,
         openai_api_key=openai_api_key,
+        timeout=60,
     )
 
 
