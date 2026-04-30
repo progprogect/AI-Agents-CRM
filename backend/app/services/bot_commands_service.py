@@ -9,6 +9,7 @@ Provides:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Any, Optional
@@ -206,6 +207,7 @@ async def handle_restart(
             "Давай начнём 💛"
         )
         welcome_text = _DEFAULT_RESTART_WELCOME
+        agent_data = None
         try:
             agent_data = await db.get_agent(binding.agent_id)
             if agent_data and "config" in agent_data:
@@ -226,6 +228,28 @@ async def handle_restart(
             chat_id=chat_id,
             text=welcome_text,
         )
+
+        # Send intro video note (circle) ~1 second after the welcome text if configured
+        try:
+            if agent_data is None:
+                agent_data = await db.get_agent(binding.agent_id)
+            if agent_data and "config" in agent_data:
+                video_note_file_id = (
+                    agent_data["config"]
+                    .get("prompts", {})
+                    .get("templates", {})
+                    .get("intro_video_note_file_id", "")
+                    .strip()
+                )
+                if video_note_file_id:
+                    await asyncio.sleep(1)
+                    await _send_telegram_video_note(
+                        bot_token=bot_token,
+                        chat_id=chat_id,
+                        file_id=video_note_file_id,
+                    )
+        except Exception as exc:
+            logger.debug("Could not send intro video note for chat_id=%s: %s", chat_id, exc)
 
     except Exception as exc:
         logger.error(
@@ -290,6 +314,19 @@ async def _send_telegram_message(bot_token: str, chat_id: str, text: str) -> Non
                 logger.warning("sendMessage returned not-ok: %s", data)
     except Exception as exc:
         logger.error("sendMessage failed for chat_id=%s: %s", chat_id, exc)
+
+
+async def _send_telegram_video_note(bot_token: str, chat_id: str, file_id: str) -> None:
+    """Send a video note (circle) to a Telegram chat using an existing file_id."""
+    url = f"{TELEGRAM_API_BASE}{bot_token}/sendVideoNote"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json={"chat_id": chat_id, "video_note": file_id})
+            data = resp.json()
+            if not data.get("ok"):
+                logger.warning("sendVideoNote returned not-ok: %s", data)
+    except Exception as exc:
+        logger.error("sendVideoNote failed for chat_id=%s: %s", chat_id, exc)
 
 
 # ---------------------------------------------------------------------------
