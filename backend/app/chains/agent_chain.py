@@ -6,6 +6,11 @@ Storage: PostgreSQL only — see backend/docs/storage_stack.md.
 Architecture:
 - The compiled StateGraph is built once per (agent_id, workflow_config_hash) and
   cached in _graph_cache.  Only serialisable data goes into WorkflowState.
+- Workflow transitions run in two phases: **pre_transition** (conditional routes
+  only, before LLM) so intents like «Все понятно» advance the step before the
+  reply is generated; **post_transition** (full logic including fallback routes
+  after LLM) so empty-condition transitions still fire after the greeting/collect
+  reply (e.g. step_1 → step_3).
 - Per-request dependencies (services, LLM, stale-callback) are passed through
   RunnableConfig.configurable so they never enter the persisted checkpoint.
 - LangGraph's AsyncPostgresSaver stores state keyed by thread_id = conversation_id.
@@ -149,6 +154,27 @@ def _normalise_llm_text(content: Any) -> str:
                 parts.append(str(block))
         return "".join(parts).strip()
     return str(content).strip()
+
+
+def _transition_conversation_sample(
+    state: WorkflowState, *, include_current_user_message: bool, tail: int = 6
+) -> str:
+    """Build recent-conversation text for transition YES/NO evaluation.
+
+    Before LLM generation (pre_transition), *messages* does not yet contain the
+    current user utterance — append user_message explicitly when requested.
+    """
+    msgs = state.get("messages") or []
+    tail_msgs = msgs[-tail:] if len(msgs) > tail else msgs
+    lines = [
+        f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
+        for m in tail_msgs
+    ]
+    if include_current_user_message:
+        cur = (state.get("user_message") or "").strip()
+        if cur:
+            lines.append(f"HumanMessage (current turn): {cur[:500]}")
+    return "\n".join(lines)
 
 
 def _clean_response(text: str) -> str:
@@ -720,13 +746,131 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 }
             return {}
 
-        # ---- Node: transition_evaluator ----
-        async def node_transition_evaluator(state: WorkflowState) -> dict:
+        def _finalize_transition_outcome(
+            state: WorkflowState,
+            *,
+            step_map: dict[str, WorkflowStep],
+            entry_step_id: str,
+            new_step_id: str,
+            collected_update: dict | None,
+            quick_replies_from_resolved_step: bool,
+        ) -> dict:
+            """Append history, schedule timers / auto-steps, compute quick_replies.
+
+            *quick_replies_from_resolved_step*
+              True: buttons belong to *new_step_id* (the step whose prompt drives the
+              upcoming LLM call — used after pre-transition).
+              False: buttons belong to *entry_step_id* (frozen step before this phase's
+              internal transitions — used after post-transition so step_1's buttons
+              still attach to the greeting before fallback moves to step_3).
+            """
+            _is_first_turn = not state.get("current_step_id")
+            history = list(state.get("step_history") or [])
+            if not history or history[-1] != new_step_id:
+                history.append(new_step_id)
+
+            if new_step_id != entry_step_id:
+                new_step = step_map.get(new_step_id)
+                if new_step and new_step.timer_trigger:
+                    tt = new_step.timer_trigger
+                    fire_at_ms = int(time.time() * 1000) + tt.delay_seconds * 1000
+                    timer_to_schedule = {
+                        "delay_seconds": tt.delay_seconds,
+                        "action_type": tt.action_type,
+                        "message_template": tt.message_template,
+                        "prompt": tt.prompt,
+                        "step_id": new_step_id,
+                        "fire_at_ms": fire_at_ms,
+                    }
+                    logger.info(
+                        "Timer scheduled for new step %s in conversation %s (delay=%ds)",
+                        new_step_id,
+                        state.get("conversation_id", "?"),
+                        tt.delay_seconds,
+                    )
+                else:
+                    timer_to_schedule = None
+
+                cancel_auto_steps = True
+                enter_autos = [
+                    {
+                        "auto_step_id": a.id,
+                        "delay_seconds": a.delay_seconds,
+                        "auto_step": a.model_dump(),
+                    }
+                    for a in agent_config.workflow.auto_steps
+                    if a.source_id == new_step_id and a.schedule_anchor == "on_step_enter"
+                ]
+                exit_autos = [
+                    {
+                        "auto_step_id": a.id,
+                        "delay_seconds": a.delay_seconds,
+                        "auto_step": a.model_dump(),
+                    }
+                    for a in agent_config.workflow.auto_steps
+                    if a.source_id == entry_step_id and a.schedule_anchor == "on_step_exit"
+                ]
+                pending_auto = enter_autos + exit_autos
+            else:
+                current_step = step_map.get(new_step_id)
+                if current_step and current_step.timer_trigger:
+                    tt = current_step.timer_trigger
+                    fire_at_ms = int(time.time() * 1000) + tt.delay_seconds * 1000
+                    timer_to_schedule = {
+                        "delay_seconds": tt.delay_seconds,
+                        "action_type": tt.action_type,
+                        "message_template": tt.message_template,
+                        "prompt": tt.prompt,
+                        "step_id": new_step_id,
+                        "fire_at_ms": fire_at_ms,
+                    }
+                    logger.debug(
+                        "Timer reset for step %s in conversation %s (delay=%ds)",
+                        new_step_id,
+                        state.get("conversation_id", "?"),
+                        tt.delay_seconds,
+                    )
+                else:
+                    timer_to_schedule = None
+
+                cancel_auto_steps = False
+                pending_auto = []
+
+                if _is_first_turn:
+                    cancel_auto_steps = True
+                    pending_auto = [
+                        {
+                            "auto_step_id": a.id,
+                            "delay_seconds": a.delay_seconds,
+                            "auto_step": a.model_dump(),
+                        }
+                        for a in agent_config.workflow.auto_steps
+                        if a.source_id == new_step_id and a.schedule_anchor == "on_step_enter"
+                    ]
+
+            qr_step_id = new_step_id if quick_replies_from_resolved_step else entry_step_id
+            responding_step = step_map.get(qr_step_id)
+            result_state: dict = {
+                "current_step_id": new_step_id,
+                "step_history": history,
+                "pending_timer": timer_to_schedule,
+                "cancel_all_auto_steps": cancel_auto_steps if cancel_auto_steps else None,
+                "pending_auto_schedules": pending_auto if pending_auto else None,
+                "quick_replies": responding_step.quick_replies if responding_step and responding_step.quick_replies else None,
+            }
+            if collected_update is not None:
+                result_state["collected"] = collected_update
+            return result_state
+
+        # ---- Node: pre_transition (conditional transitions only, before LLM) ----
+        async def node_pre_transition(state: WorkflowState) -> dict:
+            """Evaluate only non-fallback transitions so intent (e.g. quick-reply text)
+            advances the workflow before the reply is generated."""
             wf = agent_config.workflow
             if not wf.enabled or not wf.steps:
                 return {}
-            _is_first_turn = not state.get("current_step_id")
             step_id = state.get("current_step_id") or wf.start_step_id
+            entry_step_id = step_id
             step_map = {s.id: s for s in wf.steps}
             step = step_map.get(step_id)
             if step is None:
@@ -753,6 +897,9 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))}"
                         for m in (state.get("messages") or [])
                     )
+                    _cur_um = (state.get("user_message") or "").strip()
+                    if _cur_um:
+                        history_text = f"{history_text}\nHumanMessage: {_cur_um}"
                     extraction_prompt = (
                         "Extract the following fields from the conversation if mentioned by the user.\n"
                         f"Fields to extract: {missing_fields}\n"
@@ -854,35 +1001,15 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 # All required fields are present — fall through to normal transition eval.
 
             new_step_id = step_id
-            timer_to_schedule = state.get("pending_timer")
 
-            # Only run transition LLM eval when there are transitions to check.
             if step.transitions:
-                # LLM and conversation_summary are lazily initialised: only loaded when
-                # at least one transition has a non-empty condition (avoids unnecessary
-                # work for pure pass-through steps where all conditions are empty).
                 llm = None
                 conversation_summary: str | None = None
 
-                # Collect the first fallback/empty-condition transition for post-loop use.
-                # Fallback transitions are NOT evaluated in the main loop — they are only
-                # applied after all conditional transitions have been checked and none matched.
-                fallback_transition = None
-
                 for transition in step.transitions:
-                    # is_fallback flag OR empty condition → this is the "else" branch.
-                    # Collect it and skip to the next conditional transition.
                     if transition.is_fallback or not transition.condition.strip():
-                        if fallback_transition is None:
-                            fallback_transition = transition
-                            logger.debug(
-                                "Fallback transition collected for step %s → %s",
-                                step_id,
-                                transition.next_step_id,
-                            )
-                        continue  # do not evaluate fallback in the main conditional loop
+                        continue
 
-                    # Lazy-load LLM and conversation summary only on first real condition.
                     if llm is None:
                         llm = _get_service("llm")
                         if llm is None:
@@ -891,9 +1018,94 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                                 agent_config, org_id=self._organization_id
                             )
                     if conversation_summary is None:
-                        conversation_summary = "\n".join(
-                            f"{type(m).__name__}: {_normalise_llm_text(getattr(m, 'content', ''))[:200]}"
-                            for m in (state.get("messages") or [])[-6:]
+                        conversation_summary = _transition_conversation_sample(
+                            state, include_current_user_message=True
+                        )
+
+                    eval_prompt = (
+                        f"Evaluate whether the following condition is satisfied based on the conversation.\n"
+                        f"Condition: {transition.condition}\n\n"
+                        f"Recent conversation:\n{conversation_summary}\n\n"
+                        "Reply with exactly 'YES' or 'NO'."
+                    )
+                    try:
+                        eval_result = await llm.ainvoke([HumanMessage(content=eval_prompt)])
+                        answer = _normalise_llm_text(eval_result.content).upper().strip()
+                    except Exception as exc:
+                        logger.warning("Pre-transition evaluator LLM error: %s", exc)
+                        answer = "NO"
+
+                    if answer.startswith("YES"):
+                        if step_map.get(transition.next_step_id) is not None:
+                            new_step_id = transition.next_step_id
+                        else:
+                            logger.warning(
+                                "Transition target %s not found in steps (step %s) — staying",
+                                transition.next_step_id,
+                                step_id,
+                                extra={"conversation_id": state["conversation_id"]},
+                            )
+                        break
+                    elif transition.is_forced:
+                        logger.debug(
+                            "Forced transition condition not met for step %s; staying",
+                            step_id,
+                            extra={"conversation_id": state["conversation_id"]},
+                        )
+                        new_step_id = step_id
+                        break
+
+            return _finalize_transition_outcome(
+                state,
+                step_map=step_map,
+                entry_step_id=entry_step_id,
+                new_step_id=new_step_id,
+                collected_update=collected_update,
+                quick_replies_from_resolved_step=True,
+            )
+
+        # ---- Node: post_transition (full transitions after LLM; no collection gate) ----
+        async def node_post_transition(state: WorkflowState) -> dict:
+            """Apply fallback transitions and re-evaluate conditionals after the reply text exists."""
+            wf = agent_config.workflow
+            if not wf.enabled or not wf.steps:
+                return {}
+            step_id = state.get("current_step_id") or wf.start_step_id
+            entry_step_id = step_id
+            step_map = {s.id: s for s in wf.steps}
+            step = step_map.get(step_id)
+            if step is None:
+                return {}
+
+            new_step_id = step_id
+
+            if step.transitions:
+                llm = None
+                conversation_summary: str | None = None
+
+                fallback_transition = None
+
+                for transition in step.transitions:
+                    if transition.is_fallback or not transition.condition.strip():
+                        if fallback_transition is None:
+                            fallback_transition = transition
+                            logger.debug(
+                                "Fallback transition collected for step %s → %s",
+                                step_id,
+                                transition.next_step_id,
+                            )
+                        continue
+
+                    if llm is None:
+                        llm = _get_service("llm")
+                        if llm is None:
+                            from app.services.llm_factory import get_llm_factory
+                            llm = await get_llm_factory().get_chat_model(
+                                agent_config, org_id=self._organization_id
+                            )
+                    if conversation_summary is None:
+                        conversation_summary = _transition_conversation_sample(
+                            state, include_current_user_message=False
                         )
 
                     eval_prompt = (
@@ -929,8 +1141,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                         new_step_id = step_id
                         break
                 else:
-                    # Loop exhausted without a break — no conditional transition matched.
-                    # Apply the fallback branch if one was configured.
                     if fallback_transition is not None and new_step_id == step_id:
                         if step_map.get(fallback_transition.next_step_id) is not None:
                             logger.debug(
@@ -948,120 +1158,21 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                                 extra={"conversation_id": state["conversation_id"]},
                             )
 
-            history = list(state.get("step_history") or [])
-            if not history or history[-1] != new_step_id:
-                history.append(new_step_id)
-
-            if new_step_id != step_id:
-                # Stepped into a new step — always reset/set its timer.
-                new_step = step_map.get(new_step_id)
-                if new_step and new_step.timer_trigger:
-                    tt = new_step.timer_trigger
-                    fire_at_ms = int(time.time() * 1000) + tt.delay_seconds * 1000
-                    timer_to_schedule = {
-                        "delay_seconds": tt.delay_seconds,
-                        "action_type": tt.action_type,
-                        "message_template": tt.message_template,
-                        "prompt": tt.prompt,
-                        "step_id": new_step_id,
-                        "fire_at_ms": fire_at_ms,
-                    }
-                    logger.info(
-                        "Timer scheduled for new step %s in conversation %s (delay=%ds)",
-                        new_step_id,
-                        state.get("conversation_id", "?"),
-                        tt.delay_seconds,
-                    )
-                else:
-                    timer_to_schedule = None
-
-                # Cancel existing auto-steps and schedule new ones for this transition:
-                # - on_step_enter: delay starts when entering new_step_id (source_id == new_step_id)
-                # - on_step_exit: delay starts when leaving step_id (source_id == previous step)
-                cancel_auto_steps = True
-                enter_autos = [
-                    {
-                        "auto_step_id": a.id,
-                        "delay_seconds": a.delay_seconds,
-                        "auto_step": a.model_dump(),
-                    }
-                    for a in agent_config.workflow.auto_steps
-                    if a.source_id == new_step_id and a.schedule_anchor == "on_step_enter"
-                ]
-                exit_autos = [
-                    {
-                        "auto_step_id": a.id,
-                        "delay_seconds": a.delay_seconds,
-                        "auto_step": a.model_dump(),
-                    }
-                    for a in agent_config.workflow.auto_steps
-                    if a.source_id == step_id and a.schedule_anchor == "on_step_exit"
-                ]
-                pending_auto = enter_autos + exit_autos
-            else:
-                # Staying on the same step.  Always recalculate fire_at_ms from *now* so
-                # the inactivity countdown resets with each user message.
-                # This covers three cases:
-                #   (a) first turn on step (timer_to_schedule is None → set it)
-                #   (b) timer already fired (stale fire_at_ms in checkpoint → would
-                #       fire again immediately if we reused the old value)
-                #   (c) normal active conversation (timer resets from last user message)
-                current_step = step_map.get(new_step_id)
-                if current_step and current_step.timer_trigger:
-                    tt = current_step.timer_trigger
-                    fire_at_ms = int(time.time() * 1000) + tt.delay_seconds * 1000
-                    timer_to_schedule = {
-                        "delay_seconds": tt.delay_seconds,
-                        "action_type": tt.action_type,
-                        "message_template": tt.message_template,
-                        "prompt": tt.prompt,
-                        "step_id": new_step_id,
-                        "fire_at_ms": fire_at_ms,
-                    }
-                    logger.debug(
-                        "Timer reset for step %s in conversation %s (delay=%ds)",
-                        new_step_id,
-                        state.get("conversation_id", "?"),
-                        tt.delay_seconds,
-                    )
-                else:
-                    timer_to_schedule = None
-
-                # Auto-steps are NOT cancelled when staying on the same step.
-                cancel_auto_steps = False
-                pending_auto = []
-
-                # On the very first turn, schedule auto-steps for the starting step.
-                if _is_first_turn:
-                    cancel_auto_steps = True
-                    # First graph turn: only enter-anchored autos (no "exit from virtual step").
-                    pending_auto = [
-                        {
-                            "auto_step_id": a.id,
-                            "delay_seconds": a.delay_seconds,
-                            "auto_step": a.model_dump(),
-                        }
-                        for a in agent_config.workflow.auto_steps
-                        if a.source_id == new_step_id and a.schedule_anchor == "on_step_enter"
-                    ]
-
-            # quick_replies come from the step that *generated* the current response
-            # (step_id), not from the step we're transitioning to (new_step_id).
-            # Example: step_1 greets the user and offers buttons; after the response
-            # is sent the conversation moves to step_3, but the buttons shown to the
-            # user belong to step_1.
-            responding_step = step_map.get(step_id)
-            result_state: dict = {
-                "current_step_id": new_step_id,
-                "step_history": history,
-                "pending_timer": timer_to_schedule,
-                "cancel_all_auto_steps": cancel_auto_steps if cancel_auto_steps else None,
-                "pending_auto_schedules": pending_auto if pending_auto else None,
-                "quick_replies": responding_step.quick_replies if responding_step and responding_step.quick_replies else None,
-            }
-            if collected_update is not None:
-                result_state["collected"] = collected_update
-            return result_state
+            out = _finalize_transition_outcome(
+                state,
+                step_map=step_map,
+                entry_step_id=entry_step_id,
+                new_step_id=new_step_id,
+                collected_update=None,
+                quick_replies_from_resolved_step=False,
+            )
+            # Pre-transition may have scheduled enter/exit auto-steps; if post-transition
+            # stays on the same step it recomputes empty pending_auto — preserve pre's list.
+            pre_pending = state.get("pending_auto_schedules") or []
+            post_pending = out.get("pending_auto_schedules") or []
+            if pre_pending and not post_pending:
+                out["pending_auto_schedules"] = pre_pending
+            return out
 
         # ---- Node: output_collector ----
         async def node_output_collector(state: WorkflowState) -> dict:
@@ -1110,29 +1221,31 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             return "workflow_router" if not state.get("result") else "output_collector"
 
         def _route_post_mod(state: WorkflowState) -> str:
-            return "transition_evaluator" if not state.get("result") else "output_collector"
+            return "post_transition" if not state.get("result") else "output_collector"
 
         # ---- Assemble ----
         g = StateGraph(WorkflowState)
         g.add_node("pre_moderation", node_pre_moderation)
         g.add_node("escalation", node_escalation)
         g.add_node("workflow_router", node_workflow_router)
+        g.add_node("pre_transition", node_pre_transition)
         g.add_node("step_executor", node_step_executor)
         g.add_node("rag_retrieval", node_rag_retrieval)
         g.add_node("llm_generate", node_llm_generate)
         g.add_node("post_moderation", node_post_moderation)
-        g.add_node("transition_evaluator", node_transition_evaluator)
+        g.add_node("post_transition", node_post_transition)
         g.add_node("output_collector", node_output_collector)
 
         g.set_entry_point("pre_moderation")
         g.add_conditional_edges("pre_moderation", _route_pre_mod)
         g.add_conditional_edges("escalation", _route_escalation)
-        g.add_edge("workflow_router", "step_executor")
+        g.add_edge("workflow_router", "pre_transition")
+        g.add_edge("pre_transition", "step_executor")
         g.add_edge("step_executor", "rag_retrieval")
         g.add_edge("rag_retrieval", "llm_generate")
         g.add_edge("llm_generate", "post_moderation")
         g.add_conditional_edges("post_moderation", _route_post_mod)
-        g.add_edge("transition_evaluator", "output_collector")
+        g.add_edge("post_transition", "output_collector")
         g.add_edge("output_collector", END)
 
         try:
