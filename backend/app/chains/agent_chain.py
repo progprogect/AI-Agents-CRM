@@ -129,8 +129,23 @@ def workflow_config_hash(workflow: WorkflowConfig) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:12]
 
 
-def _graph_cache_key(agent_id: str, workflow: WorkflowConfig) -> str:
-    return f"{agent_id}:{workflow_config_hash(workflow)}"
+def _graph_cache_key(agent_id: str, agent_config: AgentConfig) -> str:
+    """Cache graphs per workflow *and* moderation/escalation gates.
+
+    Nodes close over ``agent_config`` at compile time; if only moderation or
+    escalation toggles change while the workflow JSON stays identical, we must
+    rebuild the graph — otherwise a stale cached graph keeps running old gates.
+    """
+    wf_hash = workflow_config_hash(agent_config.workflow)
+    mod = agent_config.moderation
+    esc = agent_config.escalation
+    gate = (
+        bool(mod.enabled) if mod else False,
+        getattr(mod, "mode", None) if mod else None,
+        bool(esc.enabled) if esc else False,
+    )
+    gate_hash = hashlib.sha256(json.dumps(gate, sort_keys=True).encode()).hexdigest()[:8]
+    return f"{agent_id}:{wf_hash}:{gate_hash}"
 
 
 # ---------------------------------------------------------------------------
@@ -1259,7 +1274,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
     def _get_compiled_graph(self) -> Any:
         """Return cached compiled graph; build on first call."""
-        key = _graph_cache_key(self.agent_config.agent_id, self.agent_config.workflow)
+        key = _graph_cache_key(self.agent_config.agent_id, self.agent_config)
         if key not in _graph_cache:
             _graph_cache[key] = self._build_graph()
         return _graph_cache[key]
