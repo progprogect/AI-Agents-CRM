@@ -487,6 +487,86 @@ async def _load_current_step_from_graph(agent_config: Any, conversation_id: str)
     return None
 
 
+_PROMPTS_TEMPLATE_PREFIX = "__prompts_template__:"
+
+
+async def _load_collected_from_checkpoint(conversation_id: str) -> dict[str, str]:
+    """Load workflow ``collected`` variables from the LangGraph checkpoint."""
+    try:
+        from app.storage.postgres_checkpointer import get_checkpointer
+        checkpointer = get_checkpointer()
+        config = {"configurable": {"thread_id": conversation_id}}
+        checkpoint_tuple = await checkpointer.aget_tuple(config)
+        if checkpoint_tuple and checkpoint_tuple.checkpoint:
+            channel_values = checkpoint_tuple.checkpoint.get("channel_values", {})
+            raw = channel_values.get("collected") or {}
+            if isinstance(raw, dict):
+                return {str(k): str(v) for k, v in raw.items() if v is not None}
+    except Exception as exc:
+        logger.debug(
+            "Could not load collected from checkpoint for %s: %s",
+            conversation_id,
+            exc,
+        )
+    return {}
+
+
+async def _enrich_substitution_map_for_auto_step(
+    *,
+    db: Any,
+    conversation: Any,
+    _agent_config: Any,
+    collected: dict[str, str],
+) -> dict[str, str]:
+    """Merge checkpoint-collected fields with user/pet names for ``{placeholder}`` substitution."""
+    subst: dict[str, str] = dict(collected)
+    ext_uid = getattr(conversation, "external_user_id", None)
+    agent_id = getattr(conversation, "agent_id", None)
+    if ext_uid and agent_id:
+        try:
+            from app.services import questionnaire_service as _qs
+            qvals = await _qs.get_current_values(agent_id, ext_uid)
+            for key in ("pet_name", "pet_nickname", "имя_питомца", "кличка"):
+                if key in qvals and qvals[key] and "pet_name" not in subst:
+                    subst["pet_name"] = str(qvals[key]).strip()
+                    break
+        except Exception:
+            pass
+    display = (getattr(conversation, "external_user_name", None) or "").strip()
+    if display:
+        subst.setdefault("user_name", display.split()[0])
+    else:
+        subst.setdefault("user_name", "друг")
+    subst.setdefault("pet_name", subst.get("pet_name") or "питомца")
+    return subst
+
+
+def _replace_template_placeholders(message_text: str, subst: dict[str, str]) -> str:
+    out = message_text
+    for k, v in subst.items():
+        out = out.replace(f"{{{k}}}", str(v))
+    return out
+
+
+async def _substitute_agent_auto_step_prompt(
+    prompt_instruction: str,
+    *,
+    db: Any,
+    conversation: Any,
+    agent_config: Any,
+    conversation_id: str,
+) -> str:
+    """Replace ``{user_name}`` / ``{pet_name}`` in agent auto-step prompts."""
+    collected = await _load_collected_from_checkpoint(conversation_id)
+    subst = await _enrich_substitution_map_for_auto_step(
+        db=db,
+        conversation=conversation,
+        _agent_config=agent_config,
+        collected=collected,
+    )
+    return _replace_template_placeholders(prompt_instruction, subst)
+
+
 async def execute_timer_trigger(conversation_id: str) -> None:
     """Fire a scheduled workflow timer trigger for a conversation."""
     import json as _json
@@ -1031,7 +1111,13 @@ async def execute_auto_step_trigger(member: str) -> None:
     action_type = payload.get("action_type", "static")
 
     # Load conversation history from the database (reliable canonical source).
-    collected: dict = {}
+    collected_raw = await _load_collected_from_checkpoint(conversation_id)
+    subst = await _enrich_substitution_map_for_auto_step(
+        db=db,
+        conversation=conversation,
+        _agent_config=agent_config,
+        collected=collected_raw,
+    )
     conversation_history = await _load_conversation_history_from_db(db, conversation_id)
 
     # Optional condition check.
@@ -1059,16 +1145,32 @@ async def execute_auto_step_trigger(member: str) -> None:
             return
 
     if action_type == "agent":
+        raw_prompt = await _substitute_agent_auto_step_prompt(
+            payload.get("prompt", "") or "",
+            db=db,
+            conversation=conversation,
+            agent_config=agent_config,
+            conversation_id=conversation_id,
+        )
         message_text = await _generate_agent_timer_message(
             agent_config=agent_config,
-            prompt_instruction=payload.get("prompt", ""),
+            prompt_instruction=raw_prompt,
             conversation_history=conversation_history,
             conversation_id=conversation_id,
         )
     else:
-        message_text = payload.get("message_template", "")
-        for k, v in collected.items():
-            message_text = message_text.replace(f"{{{k}}}", str(v))
+        message_text = payload.get("message_template", "") or ""
+        mt_stripped = message_text.strip()
+        if mt_stripped.startswith(_PROMPTS_TEMPLATE_PREFIX):
+            key = mt_stripped[len(_PROMPTS_TEMPLATE_PREFIX) :].strip()
+            tpl_dict = getattr(agent_config.prompts, "templates", None) or {}
+            if isinstance(tpl_dict, dict):
+                message_text = tpl_dict.get(key, "")
+        elif not mt_stripped and auto_step_id == "auto_after_share_followup":
+            tpl_dict = getattr(agent_config.prompts, "templates", None) or {}
+            if isinstance(tpl_dict, dict):
+                message_text = tpl_dict.get("after_share_followup_message", "")
+        message_text = _replace_template_placeholders(message_text, subst)
 
     tg_attach = payload.get("telegram_attachment_type") or "none"
     out_media_url: str | None = None

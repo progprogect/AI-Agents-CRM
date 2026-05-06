@@ -200,15 +200,9 @@ async def handle_restart(
         # Send welcome message: use agent-configured restart_welcome template if set,
         # otherwise fall back to the built-in default greeting.
         _DEFAULT_RESTART_WELCOME = (
-            "Привет 😊 🐾\n\n"
-            "Я — твой личный помощник в любых вопросах о питомце.\n"
-            "Помогу разобраться, если что-то беспокоит, подскажу по уходу, "
-            "питанию, поведению или здоровью.\n\n"
-            "Давай познакомимся 😊\n\n"
-            "Кто у тебя?\n"
-            "🐶 Собака или 🐱 Кошка?\n\n"
-            "Или можешь сразу написать свой вопрос или наговорить голосом - я рядом\n"
-            "Давай начнём 💛"
+            "Привет! Я Татьяна, твой личный помощник с любыми вопросами о питомце 🐾\n\n"
+            "Пиши текстом, отправляй голосовые или загружай фото - я пойму и помогу разобраться.\n\n"
+            "Скажи, у тебя кошка 🐈 или собака 🐩?"
         )
         welcome_text = _DEFAULT_RESTART_WELCOME
         agent_data = None
@@ -237,16 +231,9 @@ async def handle_restart(
             logger.debug("Could not load restart_welcome template: %s", exc)
             video_note_file_id = ""
 
-        await _send_telegram_message(
-            bot_token=bot_token,
-            chat_id=chat_id,
-            text=welcome_text,
-        )
-
-        # Intro video note: same Telegram path as workflow auto-steps (file_id → sendVideoNote)
+        # Intro video note first, then pause, then welcome text (same Telegram path as workflow auto-steps).
         if video_note_file_id:
             try:
-                await asyncio.sleep(1)
                 logger.info(
                     "Sending intro video note binding=%s agent=%s chat_id=%s",
                     binding.binding_id,
@@ -284,6 +271,13 @@ async def handle_restart(
                     exc,
                     exc_info=True,
                 )
+            await asyncio.sleep(3)
+
+        await _send_telegram_message(
+            bot_token=bot_token,
+            chat_id=chat_id,
+            text=welcome_text,
+        )
 
     except Exception as exc:
         logger.error(

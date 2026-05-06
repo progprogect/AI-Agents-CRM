@@ -35,6 +35,15 @@ def _merge_agent_config(existing: dict[str, Any], incoming: dict[str, Any]) -> d
             merged["moderation"] = {**old_mod, **incoming["moderation"]}
         else:
             merged["moderation"] = dict(incoming["moderation"])
+    if "prompts" in incoming and isinstance(incoming.get("prompts"), dict):
+        old_p = existing.get("prompts")
+        old_p = old_p if isinstance(old_p, dict) else {}
+        inc_p = incoming["prompts"]
+        merged_p = {**old_p, **inc_p}
+        if isinstance(inc_p.get("templates"), dict):
+            old_t = old_p.get("templates") if isinstance(old_p.get("templates"), dict) else {}
+            merged_p["templates"] = {**old_t, **inc_p["templates"]}
+        merged["prompts"] = merged_p
     return merged
 
 

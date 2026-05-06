@@ -171,6 +171,9 @@ export interface AgentConfigFormData {
   system_hard_rules?: string;
   system_goal?: string;
 
+  /** Editable string templates (restart welcome, workflow static messages, etc.) */
+  prompt_templates?: Record<string, string>;
+
   /** Moderation (Step 7 — Review) */
   moderation_provider?: string;
   moderation_model?: string;
@@ -220,6 +223,7 @@ export function generateDefaultConfig(): Partial<AgentConfigFormData> {
     system_persona: "",
     system_hard_rules: "",
     system_goal: "",
+    prompt_templates: {},
     // Workflow defaults (Step 8)
     workflow_enabled: false,
     workflow_start_step_id: "step_1",
@@ -284,6 +288,10 @@ export function agentConfigToFormData(
     system_persona: agentConfig.prompts?.system?.persona || "",
     system_hard_rules: agentConfig.prompts?.system?.hard_rules || "",
     system_goal: agentConfig.prompts?.system?.goal || "",
+    prompt_templates:
+      agentConfig.prompts?.templates && typeof agentConfig.prompts.templates === "object"
+        ? { ...agentConfig.prompts.templates }
+        : {},
 
     // LLM
     llm_provider: agentConfig.llm?.provider || "openai",
@@ -413,6 +421,10 @@ export function formDataToAgentConfig(
               category: ex.category,
             }))
           : [],
+      templates:
+        formData.prompt_templates && Object.keys(formData.prompt_templates).length > 0
+          ? { ...formData.prompt_templates }
+          : {},
     },
     rag: {
       enabled: formData.rag_enabled,

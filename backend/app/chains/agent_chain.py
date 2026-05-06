@@ -340,9 +340,8 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 """)
         return "\n\n".join(parts)
 
-    @staticmethod
     def _build_step_system_prompt(
-        base_prompt: str, step: WorkflowStep, collected: dict[str, str]
+        self, base_prompt: str, step: WorkflowStep, collected: dict[str, str]
     ) -> str:
         is_mandatory = step.required or any(tr.is_forced for tr in step.transitions)
         label = "ОБЯЗАТЕЛЬНЫЙ ЭТАП" if is_mandatory else "Текущий этап"
@@ -384,6 +383,16 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             if forced_conditions:
                 criteria = "; ".join(forced_conditions)
                 lines.append(f"Критерий завершения этапа: {criteria}.")
+
+        tpls = getattr(self.agent_config.prompts, "templates", None) or {}
+        if isinstance(tpls, dict):
+            share_tpl = (tpls.get("recommendation_share_message") or "").strip()
+            if share_tpl and step.id == "step_1776714328598":
+                lines.append(
+                    "\n\nОтветь пользователю ТОЛЬКО следующим текстом, дословно, "
+                    "без изменений, без добавлений и без преамбулы:\n\n"
+                    + share_tpl
+                )
 
         return "\n".join(lines)
 
@@ -526,7 +535,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             step_map = {s.id: s for s in (wf.steps or [])}
             step = step_map.get(step_id)
             if step is not None:
-                system_text = AgentChain._build_step_system_prompt(
+                system_text = agent_chain_self._build_step_system_prompt(
                     base_prompt, step, state.get("collected") or {}
                 )
             else:

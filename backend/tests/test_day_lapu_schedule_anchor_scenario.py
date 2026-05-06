@@ -1,7 +1,7 @@
 """Сценарий «Дай Лапу»: конфиг с on_step_exit у авто-шага после «Дать ответ».
 
 Проверяем ту же валидацию, что и PUT /api/v1/agents/{id}, и ожидаемый набор
-pending_auto при переходе step_1776689159495 → step_1776709554108 (как в agent_chain).
+pending_auto при переходе step_1776689159495 → step_1776714328598 (как в agent_chain).
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def test_day_lapu_config_parses_like_api_validation(day_lapu_config: dict) -> No
     assert auto.id == "auto_1776696721697"
     assert auto.source_id == "step_1776689159495"
     assert auto.schedule_anchor == "on_step_exit"
-    assert auto.delay_seconds == 3600
+    assert auto.delay_seconds == 86400
 
 
 def test_pending_auto_when_leaving_answer_step(day_lapu_config: dict) -> None:
@@ -45,7 +45,7 @@ def test_pending_auto_when_leaving_answer_step(day_lapu_config: dict) -> None:
     cfg = AgentConfig.from_dict(day_lapu_config)
     wf = cfg.workflow
     step_id = "step_1776689159495"
-    new_step_id = "step_1776709554108"
+    new_step_id = "step_1776714328598"
 
     enter_autos = [
         a.id
@@ -58,11 +58,15 @@ def test_pending_auto_when_leaving_answer_step(day_lapu_config: dict) -> None:
         if a.source_id == step_id and a.schedule_anchor == "on_step_exit"
     ]
 
-    assert enter_autos == []
+    assert set(enter_autos) == {"auto_after_share_followup", "auto_7day_reactivation"}
     assert exit_autos == ["auto_1776696721697"]
 
     pending_ids = enter_autos + exit_autos
-    assert pending_ids == ["auto_1776696721697"]
+    assert set(pending_ids) == {
+        "auto_1776696721697",
+        "auto_after_share_followup",
+        "auto_7day_reactivation",
+    }
 
 
 def test_put_agent_endpoint_validates_fixture(day_lapu_config: dict) -> None:
@@ -104,15 +108,26 @@ def test_put_agent_endpoint_validates_fixture(day_lapu_config: dict) -> None:
 
 
 def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu_config: dict) -> None:
-    """POST /api/v1/chat/.../messages: после «ответа» граф отдаёт exit-авто — вызывается schedule_auto_step.
+    """POST /api/v1/chat/.../messages: после «ответа» граф отдаёт exit + enter авто — вызывается schedule_auto_step.
 
-    Граф (LLM, чекпоинт) замокан; payload pending_auto такой же, как даёт agent_chain при
-    переходе step_1776689159495 → step_1776709554108. Проверяем сквозной HTTP→AgentService→Redis.
+    Граф (LLM, чекпоинт) замокан; payload pending_auto как у agent_chain при
+    переходе step_1776689159495 → step_1776714328598. Проверяем сквозной HTTP→AgentService→Redis.
     """
     agent_id = day_lapu_config["agent_id"]
     cfg = AgentConfig.from_dict(day_lapu_config)
     step_answer = "step_1776689159495"
-    pending_schedules = [
+    new_step_id = "step_1776714328598"
+
+    enter_schedules = [
+        {
+            "auto_step_id": a.id,
+            "delay_seconds": a.delay_seconds,
+            "auto_step": a.model_dump(),
+        }
+        for a in cfg.workflow.auto_steps
+        if a.source_id == new_step_id and a.schedule_anchor == "on_step_enter"
+    ]
+    exit_schedules = [
         {
             "auto_step_id": a.id,
             "delay_seconds": a.delay_seconds,
@@ -121,7 +136,8 @@ def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu
         for a in cfg.workflow.auto_steps
         if a.source_id == step_answer and a.schedule_anchor == "on_step_exit"
     ]
-    assert len(pending_schedules) == 1
+    pending_schedules = enter_schedules + exit_schedules
+    assert len(pending_schedules) == 3
 
     graph_return = {
         "response": "Спасибо, что обратились! Если что — я рядом 🐾",
@@ -193,11 +209,13 @@ def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu
         assert r.json()["role"] == "agent"
 
     mock_cancel_all.assert_awaited_once()
-    mock_schedule_auto.assert_awaited_once()
-    _args, _kwargs = mock_schedule_auto.await_args
-    auto_payload = _kwargs["auto_step"]
-    assert auto_payload.get("id") == "auto_1776696721697"
-    assert auto_payload.get("schedule_anchor") == "on_step_exit"
-    assert auto_payload.get("source_id") == step_answer
+    assert mock_schedule_auto.await_count == 3
+    first_call_kwargs = mock_schedule_auto.await_args_list[0].kwargs
+    auto_payload = first_call_kwargs["auto_step"]
+    assert auto_payload.get("id") in (
+        "auto_after_share_followup",
+        "auto_7day_reactivation",
+        "auto_1776696721697",
+    )
 
     app.dependency_overrides.clear()
