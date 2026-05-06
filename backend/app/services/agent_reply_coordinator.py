@@ -459,7 +459,7 @@ async def _load_current_step_from_graph(agent_config: Any, conversation_id: str)
             )
         # Fallback: try the in-memory graph cache (less reliable but available)
         from app.chains.agent_chain import _graph_cache, _graph_cache_key
-        cache_key = _graph_cache_key(agent_config.agent_id, agent_config.workflow)
+        cache_key = _graph_cache_key(agent_config.agent_id, agent_config)
         graph = _graph_cache.get(cache_key)
         if graph is None:
             logger.info(

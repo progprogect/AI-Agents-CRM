@@ -327,8 +327,8 @@ class TestAgentChainGraphCache(unittest.TestCase):
 
     def test_same_config_returns_same_graph_key(self) -> None:
         cfg = _minimal_agent_config()
-        key1 = _graph_cache_key(cfg.agent_id, cfg.workflow)
-        key2 = _graph_cache_key(cfg.agent_id, cfg.workflow)
+        key1 = _graph_cache_key(cfg.agent_id, cfg)
+        key2 = _graph_cache_key(cfg.agent_id, cfg)
         self.assertEqual(key1, key2)
 
     def test_different_workflow_gives_different_key(self) -> None:
@@ -337,8 +337,8 @@ class TestAgentChainGraphCache(unittest.TestCase):
             workflow=WorkflowConfig(enabled=True, start_step_id="s1", steps=[])
         )
         self.assertNotEqual(
-            _graph_cache_key(cfg1.agent_id, cfg1.workflow),
-            _graph_cache_key(cfg2.agent_id, cfg2.workflow),
+            _graph_cache_key(cfg1.agent_id, cfg1),
+            _graph_cache_key(cfg2.agent_id, cfg2),
         )
 
 
