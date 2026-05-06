@@ -513,9 +513,7 @@ async def _load_collected_from_checkpoint(conversation_id: str) -> dict[str, str
 
 async def _enrich_substitution_map_for_auto_step(
     *,
-    db: Any,
     conversation: Any,
-    _agent_config: Any,
     collected: dict[str, str],
 ) -> dict[str, str]:
     """Merge checkpoint-collected fields with user/pet names for ``{placeholder}`` substitution."""
@@ -551,17 +549,13 @@ def _replace_template_placeholders(message_text: str, subst: dict[str, str]) -> 
 async def _substitute_agent_auto_step_prompt(
     prompt_instruction: str,
     *,
-    db: Any,
     conversation: Any,
-    agent_config: Any,
     conversation_id: str,
 ) -> str:
     """Replace ``{user_name}`` / ``{pet_name}`` in agent auto-step prompts."""
     collected = await _load_collected_from_checkpoint(conversation_id)
     subst = await _enrich_substitution_map_for_auto_step(
-        db=db,
         conversation=conversation,
-        _agent_config=agent_config,
         collected=collected,
     )
     return _replace_template_placeholders(prompt_instruction, subst)
@@ -1113,9 +1107,7 @@ async def execute_auto_step_trigger(member: str) -> None:
     # Load conversation history from the database (reliable canonical source).
     collected_raw = await _load_collected_from_checkpoint(conversation_id)
     subst = await _enrich_substitution_map_for_auto_step(
-        db=db,
         conversation=conversation,
-        _agent_config=agent_config,
         collected=collected_raw,
     )
     conversation_history = await _load_conversation_history_from_db(db, conversation_id)
@@ -1147,9 +1139,7 @@ async def execute_auto_step_trigger(member: str) -> None:
     if action_type == "agent":
         raw_prompt = await _substitute_agent_auto_step_prompt(
             payload.get("prompt", "") or "",
-            db=db,
             conversation=conversation,
-            agent_config=agent_config,
             conversation_id=conversation_id,
         )
         message_text = await _generate_agent_timer_message(
