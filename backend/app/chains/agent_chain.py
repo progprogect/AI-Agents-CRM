@@ -156,6 +156,12 @@ ATTACH_MEDIA_MARKER = "[ATTACH_MEDIA]"
 
 
 def _normalise_llm_text(content: Any) -> str:
+    """Flatten LangChain / provider message content to plain text.
+
+    Handles str, list-of-blocks (OpenAI multimodal / Responses API), and nested dicts.
+    """
+    if content is None:
+        return ""
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
@@ -163,11 +169,27 @@ def _normalise_llm_text(content: Any) -> str:
         for block in content:
             if isinstance(block, str):
                 parts.append(block)
-            elif isinstance(block, dict) and "text" in block:
-                parts.append(str(block["text"]))
+            elif isinstance(block, dict):
+                # OpenAI chat: {'type': 'text', 'text': '...'}
+                if "text" in block and block.get("text") is not None:
+                    parts.append(str(block["text"]))
+                elif block.get("type") == "text" and isinstance(block.get("text"), str):
+                    parts.append(block["text"])
+                # Some Responses shapes nest content
+                elif "content" in block:
+                    parts.append(_normalise_llm_text(block["content"]))
+                elif isinstance(block.get("delta"), dict) and "content" in block["delta"]:
+                    parts.append(_normalise_llm_text(block["delta"]["content"]))
+                else:
+                    parts.append(str(block))
             else:
                 parts.append(str(block))
         return "".join(parts).strip()
+    if isinstance(content, dict):
+        if content.get("text") is not None:
+            return str(content["text"]).strip()
+        if isinstance(content.get("content"), (list, str)):
+            return _normalise_llm_text(content["content"])
     return str(content).strip()
 
 
@@ -786,13 +808,29 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
             try:
                 ai_msg: AIMessage = await llm.ainvoke(msgs)
-                response_text = _clean_response(_normalise_llm_text(ai_msg.content))
+                raw_inner = getattr(ai_msg, "content", None)
+                response_text = _clean_response(_normalise_llm_text(raw_inner))
                 if (
                     agent_config.workflow.enabled
                     and (state.get("current_step_id") or "") == _STEP_AFTER_CHANNEL_WELCOME
                 ):
                     response_text = _sanitize_step_after_channel_welcome(response_text or "")
                 if not (response_text or "").strip():
+                    meta = getattr(ai_msg, "response_metadata", None) or {}
+                    logger.warning(
+                        "LLM returned empty text after normalise/sanitize "
+                        "conversation_id=%s agent_id=%s step=%s raw_type=%s meta=%s raw_preview=%s",
+                        state.get("conversation_id"),
+                        state.get("agent_id"),
+                        state.get("current_step_id"),
+                        type(raw_inner).__name__,
+                        meta if isinstance(meta, dict) else str(meta)[:200],
+                        repr(raw_inner)[:800],
+                        extra={
+                            "conversation_id": state.get("conversation_id"),
+                            "agent_id": state.get("agent_id"),
+                        },
+                    )
                     if (state.get("current_step_id") or "") == _STEP_AFTER_CHANNEL_WELCOME:
                         response_text = "Отлично! 🐾 Как зовут твоего питомца?"
                     else:
