@@ -271,6 +271,7 @@ class AgentService:
             }
 
         # --- Persist agent message ---
+        quick_replies: list[str] = graph_result.get("quick_replies") or []
         agent_message_id = None
         agent_message_ts = None
         if conversation:
@@ -279,6 +280,8 @@ class AgentService:
             if rag_media_url:
                 msg_metadata["media_url"] = rag_media_url
                 msg_metadata["media_type"] = rag_media_type
+            if quick_replies:
+                msg_metadata["quick_replies"] = quick_replies
             agent_message = Message(
                 message_id=agent_message_id,
                 conversation_id=conversation_id,
@@ -294,7 +297,6 @@ class AgentService:
             agent_message_ts = to_utc_iso_string(agent_message.timestamp)
 
         # --- Send via channel sender (non-web channels) ---
-        quick_replies: list[str] = graph_result.get("quick_replies") or []
 
         if self.channel_sender:
             try:
