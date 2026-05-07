@@ -1179,7 +1179,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 entry_step_id=entry_step_id,
                 new_step_id=new_step_id,
                 collected_update=None,
-                quick_replies_from_resolved_step=False,
+                quick_replies_from_resolved_step=True,
             )
             # Pre-transition may have scheduled enter/exit auto-steps; if post-transition
             # stays on the same step it recomputes empty pending_auto — preserve pre's list.
