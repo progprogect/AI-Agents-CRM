@@ -1176,6 +1176,29 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
             new_step_id = step_id
 
+            # Mandatory data-collection step: do NOT apply empty-condition fallback to the next
+            # workflow step until collect[] is satisfied. Otherwise every LLM reply on step_3
+            # hits the fallback → "Дать ответ" and quick_replies (Все понятно / …) show during
+            # anamnesis — see post_transition fallback `else` branch below.
+            if step.required and step.collect:
+                _coll = dict(state.get("collected") or {})
+                _missing = [f for f in step.collect if not _coll.get(f)]
+                if _missing:
+                    logger.debug(
+                        "post_transition: stay on %s — collect still missing %s",
+                        step_id,
+                        _missing,
+                        extra={"conversation_id": state.get("conversation_id", "?")},
+                    )
+                    return _finalize_transition_outcome(
+                        state,
+                        step_map=step_map,
+                        entry_step_id=entry_step_id,
+                        new_step_id=step_id,
+                        collected_update=None,
+                        quick_replies_from_resolved_step=True,
+                    )
+
             if step.transitions:
                 llm = None
                 conversation_summary: str | None = None
