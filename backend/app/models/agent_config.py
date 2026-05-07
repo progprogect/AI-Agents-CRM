@@ -160,7 +160,12 @@ class LLMConfig(BaseModel):
     model: str = Field(default="gpt-4o-mini")
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     max_output_tokens: int = Field(default=600, ge=1, le=4096)
-    timeout: int = Field(default=30)
+    timeout: int = Field(
+        default=180,
+        ge=10,
+        le=600,
+        description="Chat completion HTTP timeout (seconds); raise for long RAG + reasoning turns",
+    )
 
     @field_validator("provider")
     @classmethod
@@ -187,6 +192,15 @@ class LLMConfig(BaseModel):
             raise ValueError("max_output_tokens must be at least 1")
         if v > 4096:
             raise ValueError("max_output_tokens cannot exceed 4096")
+        return v
+
+    @field_validator("timeout")
+    @classmethod
+    def validate_timeout(cls, v: int) -> int:
+        if v < 10:
+            raise ValueError("timeout must be at least 10 seconds")
+        if v > 600:
+            raise ValueError("timeout cannot exceed 600 seconds")
         return v
 
 

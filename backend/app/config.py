@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     )
     openai_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     openai_max_tokens: int = Field(default=600, ge=1, le=4096)
-    openai_timeout: int = Field(default=30, description="OpenAI API timeout in seconds")
+    openai_timeout: int = Field(
+        default=180,
+        description="OpenAI HTTP client default timeout in seconds (embeddings/moderation/raw client)",
+    )
 
     # OpenAI Embeddings
     openai_embedding_model: str = Field(

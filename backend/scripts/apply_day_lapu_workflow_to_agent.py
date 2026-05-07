@@ -51,6 +51,7 @@ def main() -> None:
             "system": fixture["prompts"]["system"],
         },
         "workflow": fixture["workflow"],
+        "llm": {"timeout": fixture["llm"]["timeout"]},
     }
     body = json.dumps(payload).encode("utf-8")
     url = f"{app_url.rstrip('/')}/api/v1/agents/{agent_id}"
@@ -72,7 +73,9 @@ def main() -> None:
 
     print("OK updated agent", out.get("agent_id"))
     wf = (out.get("config") or {}).get("workflow") or {}
+    llm = (out.get("config") or {}).get("llm") or {}
     print("workflow enabled:", wf.get("enabled"), "start:", wf.get("start_step_id"), "steps:", len(wf.get("steps") or []))
+    print("llm.timeout:", llm.get("timeout"))
 
 
 if __name__ == "__main__":

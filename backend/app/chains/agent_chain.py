@@ -796,7 +796,10 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                     if (state.get("current_step_id") or "") == _STEP_AFTER_CHANNEL_WELCOME:
                         response_text = "Отлично! 🐾 Как зовут твоего питомца?"
                     else:
-                        response_text = "I apologize, but I couldn't generate a response. Please try again."
+                        response_text = (
+                            "Не удалось сформировать ответ — возможно, запрос был слишком длинным "
+                            "или сервис ответил с задержкой. Попробуй ещё раз или отправь короче."
+                        )
                 # Store BOTH the user's message and the AI response so that
                 # transition_evaluator can see the user's actual text when
                 # evaluating conditions (e.g. "user said thanks").

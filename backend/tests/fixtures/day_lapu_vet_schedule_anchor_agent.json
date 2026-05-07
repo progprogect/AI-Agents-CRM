@@ -20,7 +20,7 @@
     "model": "gpt-4o",
     "temperature": 0.2,
     "max_output_tokens": 2000,
-    "timeout": 30
+    "timeout": 300
   },
   "prompts": {
     "system": {
