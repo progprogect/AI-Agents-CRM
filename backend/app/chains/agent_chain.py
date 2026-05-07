@@ -201,6 +201,43 @@ def _clean_response(text: str) -> str:
     ).strip()
 
 
+# First LLM turn after a channel-sent welcome (restart_welcome). Display name kept as step_1 for workflow refs.
+_STEP_AFTER_CHANNEL_WELCOME = "step_1"
+
+_GREETING_OPEN_LINE = re.compile(
+    r"(?is)^[\s🐾😊💛🐶🐱]*(?:привет|здравствуй|здорово|добрый\s+(?:день|вечер|утро))\b",
+)
+_SELF_INTRO_LINE = re.compile(
+    r"(?is)^.*(?:я\s*[—\-–]\s*татьяна|я\s+татьяна\b).*$",
+)
+_HELPER_INTRO_LINE = re.compile(
+    r"(?is)^.*(?:твой\s+помощник\s+по|помощник\s+по\s+питомц).*$",
+)
+
+
+def _sanitize_step_after_channel_welcome(text: str) -> str:
+    """Remove leading greeting/self-intro lines when the model ignored prompt rules (Telegram welcome already sent)."""
+    if not (text or "").strip():
+        return text
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines) and i < 16:
+        s = lines[i].strip()
+        if not s:
+            i += 1
+            continue
+        if (
+            _GREETING_OPEN_LINE.match(s)
+            or _SELF_INTRO_LINE.match(s)
+            or _HELPER_INTRO_LINE.match(s)
+        ):
+            i += 1
+            continue
+        break
+    out = "\n".join(lines[i:]).strip()
+    return out if out else text.strip()
+
+
 def _get_service(key: str) -> Any:
     """Read a per-request dependency from RunnableConfig.configurable."""
     try:
@@ -400,7 +437,22 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 if tr.is_forced and tr.condition.strip()
             ]
 
-            if getattr(step, "hard_block_until_complete", False):
+            if step.id == _STEP_AFTER_CHANNEL_WELCOME:
+                # Channel bots send restart_welcome separately; the default mandatory wording
+                # ("задай нужные вопросы и получи ответы") triggers huge questionnaire dumps + repeated greetings.
+                lines.append(
+                    "\n⛔ РЕЖИМ ПЕРВОГО ОТВЕТА ПОСЛЕ ВВОДНОГО СООБЩЕНИЯ В КАНАЛЕ:\n"
+                    "Пользователь УЖЕ получил отдельное приветствие с именем Татьяна — повторять приветствие "
+                    "или представляться ЗАПРЕЩЕНО под любым видом.\n"
+                    "Ответ строго до ~350 символов, не более 2 коротких предложений ИЛИ один абзац без списков.\n"
+                    "Задача: только подтвердить выбор «кошка/собака» из сообщения пользователя и задать РОВНО ОДИН "
+                    "следующий вопрос (обычно кличка питомца).\n"
+                    "КАТЕГОРИЧЕСКИ запрещено в этом сообщении: слова «Привет», «Здравствуй», «Здорово» в начале, "
+                    "«Я Татьяна», «Я —», «помощник», «Давай познакомимся», длинные маркированные списки анкеты, "
+                    "медсоветы и перечисление прививок/корма — это будет на следующих шагах.\n"
+                    "Начни текст сразу с подтверждения (например: «Отлично, собака! 🐾») без преамбулы."
+                )
+            elif getattr(step, "hard_block_until_complete", False):
                 # Hard-block mode: used for consent/legal steps where answering
                 # off-topic questions before completion is absolutely forbidden.
                 lines.append(
@@ -735,8 +787,16 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             try:
                 ai_msg: AIMessage = await llm.ainvoke(msgs)
                 response_text = _clean_response(_normalise_llm_text(ai_msg.content))
-                if not response_text:
-                    response_text = "I apologize, but I couldn't generate a response. Please try again."
+                if (
+                    agent_config.workflow.enabled
+                    and (state.get("current_step_id") or "") == _STEP_AFTER_CHANNEL_WELCOME
+                ):
+                    response_text = _sanitize_step_after_channel_welcome(response_text or "")
+                if not (response_text or "").strip():
+                    if (state.get("current_step_id") or "") == _STEP_AFTER_CHANNEL_WELCOME:
+                        response_text = "Отлично! 🐾 Как зовут твоего питомца?"
+                    else:
+                        response_text = "I apologize, but I couldn't generate a response. Please try again."
                 # Store BOTH the user's message and the AI response so that
                 # transition_evaluator can see the user's actual text when
                 # evaluating conditions (e.g. "user said thanks").
