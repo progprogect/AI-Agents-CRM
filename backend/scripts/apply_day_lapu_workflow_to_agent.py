@@ -46,7 +46,10 @@ def main() -> None:
         app_url = "https://" + app_url.lstrip("/")
 
     payload = {
-        "prompts": {"templates": fixture["prompts"]["templates"]},
+        "prompts": {
+            "templates": fixture["prompts"]["templates"],
+            "system": fixture["prompts"]["system"],
+        },
         "workflow": fixture["workflow"],
     }
     body = json.dumps(payload).encode("utf-8")
