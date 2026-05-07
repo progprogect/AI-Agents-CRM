@@ -430,6 +430,14 @@ class WorkflowStep(BaseModel):
             "Replaces the soft 'collect first, then answer' wording with an absolute prohibition."
         ),
     )
+    static_template_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "When set, the LLM is bypassed entirely and the step's response is taken verbatim "
+            "from prompts.templates[static_template_key]. Supports {user_name} placeholder. "
+            "Use for mandatory static messages like share/referral prompts."
+        ),
+    )
 
 
 class WorkflowAutoStep(BaseModel):

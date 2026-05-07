@@ -639,6 +639,28 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         # ---- Node: llm_generate ----
         async def node_llm_generate(state: WorkflowState) -> dict:
+            # --- Static template short-circuit ---
+            # When the current step has static_template_key, skip LLM entirely and
+            # return the template text verbatim (supports {user_name} substitution).
+            if agent_config.workflow.enabled and agent_config.workflow.steps:
+                _step_id_sg = state.get("current_step_id")
+                _step_map_sg = {s.id: s for s in agent_config.workflow.steps}
+                _step_sg = _step_map_sg.get(_step_id_sg)
+                if _step_sg and getattr(_step_sg, "static_template_key", None):
+                    _tpls_sg = getattr(agent_config.prompts, "templates", None) or {}
+                    _tpl_text = (_tpls_sg.get(_step_sg.static_template_key) or "").strip()
+                    if _tpl_text:
+                        _user_name_sg = state.get("user_name") or state.get("external_user_id") or ""
+                        _tpl_text = _tpl_text.replace("{user_name}", _user_name_sg)
+                        _user_msg_sg = state.get("user_message") or ""
+                        return {
+                            "messages": [
+                                HumanMessage(content=_user_msg_sg),
+                                AIMessage(content=_tpl_text),
+                            ],
+                            "llm_response": _tpl_text,
+                        }
+
             llm = _get_service("llm")
             if llm is None:
                 from app.services.llm_factory import get_llm_factory

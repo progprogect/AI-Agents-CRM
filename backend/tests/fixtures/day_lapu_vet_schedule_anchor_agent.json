@@ -149,9 +149,10 @@
       {
         "id": "step_1776714328598",
         "name": "Рекомендация",
-        "instructions": "Текст финального сообщения задаётся в prompts.templates.recommendation_share_message; ответь строго по системной директиве (дословно).",
+        "instructions": "Отправь пользователю финальное сообщение из шаблона (задано в static_template_key).",
         "collect": [],
         "required": false,
+        "static_template_key": "recommendation_share_message",
         "transitions": [],
         "timer_trigger": null,
         "quick_replies": []
