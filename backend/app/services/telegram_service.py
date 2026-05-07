@@ -17,6 +17,10 @@ from app.utils.enum_helpers import get_enum_value
 
 logger = logging.getLogger(__name__)
 
+# Stable namespace for deterministic UUID5 per Telegram message.
+# Same (binding_id, chat_id, telegram_message_id) → same message_id → idempotent DB insert.
+_TG_MSG_NS = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+
 # https://core.telegram.org/bots/api#sendmessage — text max 4096 characters
 TELEGRAM_MESSAGE_MAX_LENGTH = 4096
 
@@ -284,9 +288,16 @@ class TelegramService:
             if media_type:
                 msg_metadata["media_type"] = media_type
 
-            # Create user message
+            # Create user message — use a deterministic UUID based on binding+chat+tg_message_id
+            # so that duplicate webhook deliveries produce the same message_id and the
+            # ON CONFLICT DO NOTHING guard in try_create_message silently drops the retry.
+            dedup_id = (
+                str(uuid.uuid5(_TG_MSG_NS, f"{binding_id}:{chat_id}:{message_id}"))
+                if message_id
+                else str(uuid.uuid4())
+            )
             user_message = Message(
-                message_id=str(uuid.uuid4()),
+                message_id=dedup_id,
                 conversation_id=conversation.conversation_id,
                 agent_id=binding.agent_id,
                 role=MessageRole.USER,
@@ -299,7 +310,13 @@ class TelegramService:
                 media_url=media_url,
                 media_type=media_type,
             )
-            await self.db.create_message(user_message)
+            inserted = await self.db.try_create_message(user_message)
+            if not inserted:
+                logger.info(
+                    "Duplicate Telegram webhook for message_id=%s chat=%s — skipping",
+                    message_id, chat_id,
+                )
+                return
 
             # Skip AI for media-only messages (no text to process) OR if human is handling
             status_value = get_enum_value(conversation.status)
