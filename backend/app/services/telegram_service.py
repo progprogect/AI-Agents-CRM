@@ -290,7 +290,10 @@ class TelegramService:
                         rw_st = await rw_load_wizard(binding.binding_id, chat_id)
                     except Exception:
                         rw_st = None
-                    if rw_st is not None and rw_st.mode.value == "note":
+                    if rw_st is not None and rw_st.mode.value in (
+                        "note",
+                        "once_custom_time",
+                    ):
                         if bot_token is None:
                             try:
                                 bot_token = await self.channel_binding_service.get_access_token(binding_id)

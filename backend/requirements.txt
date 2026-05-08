@@ -39,6 +39,7 @@ email-validator>=2.0.0
 
 # Utilities
 python-dotenv==1.0.0
+dateparser>=1.2.0
 httpx==0.25.2
 cloudinary>=1.36.0
 tenacity==8.2.3

@@ -13,6 +13,7 @@ from app.models.channel_binding import ChannelBinding
 from app.services import reminder_wizard_service as rw
 from app.services.reminder_wizard_service import WizardMode, WizardState
 from app.storage import postgres_user_reminders as ur_repo
+from app.services.reminder_time_parse import parse_user_datetime_moscow
 from app.services.user_reminder_scheduler import dequeue_user_reminder, enqueue_user_reminder
 from app.utils.datetime_utils import utc_now
 
@@ -38,6 +39,7 @@ CB_KIND_REC = "r:k:r"
 CB_ONCE_1H = "r:p:1"
 CB_ONCE_TOM = "r:p:2"
 CB_ONCE_7D = "r:p:3"
+CB_ONCE_CUSTOM = "r:p:9"
 
 CB_REC_D = "r:q:1"
 CB_REC_W = "r:q:2"
@@ -68,6 +70,51 @@ def _fmt_short(dt: datetime) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
+
+
+def _fmt_short_msk(dt: datetime) -> str:
+    """Показать то же мгновение в МСК для пользователя."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ZoneInfo("Europe/Moscow")).strftime("%d.%m.%Y %H:%M МСК")
+
+
+CUSTOM_TIME_HELP_TEXT = (
+    "Напиши одним сообщением, когда напомнить.\n\n"
+    "Время и дату воспринимаю как московские (МСК) — как обычные часы в Москве.\n\n"
+    "Примеры формата:\n"
+    "• 25.05.2026 14:30 или 25.05.2026 в 14:30\n"
+    "• только дату: 25.05.2026 — тогда возьму 10:00 МСК\n"
+    "• по-русски: завтра в 15:00, 15 мая в 10 утра, через 3 дня в 12:00\n\n"
+    "Если что-то не так распознается — переформулируй, и попробуем ещё раз 😊"
+)
+
+CUSTOM_TIME_ERR_EMPTY = (
+    "Пока не вижу дату и время 😊 Напиши одним сообщением, например: "
+    "25.05.2026 14:30 или «завтра в 15:00». Всё время считаю по московскому (МСК)."
+)
+
+CUSTOM_TIME_ERR_UNPARSED = (
+    "Не получилось разобрать формат — давай ещё раз, спокойно и по шагам 🙂 "
+    "Можно так: 25.05.2026 14:30, или своими словами: «через 2 дня в 10 утра». "
+    "Дата и время всегда в московском времени (МСК)."
+)
+
+CUSTOM_TIME_ERR_PAST = (
+    "Это время уже прошло относительно «сейчас». Выбери момент в будущем — "
+    "например «завтра в 12:00» или конкретную дату. Всё по МСК."
+)
+
+
+async def _send_custom_time_prompt(bot_token: str, chat_id: str) -> None:
+    await _send(
+        bot_token,
+        chat_id,
+        CUSTOM_TIME_HELP_TEXT,
+        inline_keyboard=[
+            [{"text": "Отмена", "callback_data": CB_CANCEL_WIZARD}],
+        ],
+    )
 
 
 def next_fire_once_1h() -> datetime:
@@ -293,6 +340,7 @@ async def handle_callback_query(
                         {"text": "Завтра 10:00 (МСК)", "callback_data": CB_ONCE_TOM},
                     ],
                     [{"text": "Через 7 дней", "callback_data": CB_ONCE_7D}],
+                    [{"text": "Своё время (текстом)", "callback_data": CB_ONCE_CUSTOM}],
                     [{"text": "Отмена", "callback_data": CB_CANCEL_WIZARD}],
                 ],
             )
@@ -336,6 +384,15 @@ async def handle_callback_query(
                 [{"text": "Отмена", "callback_data": CB_CANCEL_WIZARD}],
             ],
         )
+        return
+
+    if data == CB_ONCE_CUSTOM:
+        if not st or not st.category or st.schedule_kind != "once":
+            await handle_command_entry(db=db, chat_id=chat_id, binding=binding, bot_token=bot_token)
+            return
+        st.mode = WizardMode.ONCE_CUSTOM_TIME
+        await rw.save_wizard(st)
+        await _send_custom_time_prompt(bot_token, chat_id)
         return
 
     rec_map = {
@@ -384,7 +441,39 @@ async def handle_user_message(
     text: str,
 ) -> None:
     st = await rw.load_wizard(binding.binding_id, chat_id)
-    if st is None or st.mode != WizardMode.NOTE:
+    if st is None:
+        return
+    if st.mode == WizardMode.ONCE_CUSTOM_TIME:
+        utc_dt, err = parse_user_datetime_moscow(text.strip())
+        if err == "empty":
+            await _send(bot_token, chat_id, CUSTOM_TIME_ERR_EMPTY)
+            return
+        if err == "unparsed":
+            await _send(bot_token, chat_id, CUSTOM_TIME_ERR_UNPARSED)
+            return
+        if err == "past":
+            await _send(bot_token, chat_id, CUSTOM_TIME_ERR_PAST)
+            return
+        if utc_dt is None:
+            await _send(bot_token, chat_id, CUSTOM_TIME_ERR_UNPARSED)
+            return
+        st.mode = WizardMode.NOTE
+        st.next_fire_iso = utc_dt.isoformat()
+        raw_note = text.strip()
+        st.pending_schedule_spec = {"preset": "custom_text", "user_input": raw_note[:500]}
+        await rw.save_wizard(st)
+        await _send(
+            bot_token,
+            chat_id,
+            f"Отлично, напомню {_fmt_short_msk(utc_dt)} 🙂\n\n"
+            "Напишите, о чём напомнить (или нажмите «Пропустить»).",
+            inline_keyboard=[
+                [{"text": "Пропустить", "callback_data": CB_SKIP_NOTE}],
+                [{"text": "Отмена", "callback_data": CB_CANCEL_WIZARD}],
+            ],
+        )
+        return
+    if st.mode != WizardMode.NOTE:
         return
     await _finalize_reminder(
         db=db,

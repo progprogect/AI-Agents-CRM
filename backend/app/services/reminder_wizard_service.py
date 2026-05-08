@@ -22,6 +22,7 @@ class WizardMode(str, Enum):
     ONCE_PRESET = "once_preset"
     RECURRING_PRESET = "recurring_preset"
     NOTE = "note"
+    ONCE_CUSTOM_TIME = "once_custom_time"
     LIST_PICK_CANCEL = "list_pick_cancel"
 
 
