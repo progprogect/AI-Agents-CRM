@@ -457,6 +457,7 @@ async def _finalize_reminder(
     await _send(
         bot_token,
         chat_id,
-        f"Готово! Напоминание «{LABEL_RU.get(cat, cat)}» создано. "
-        f"Ближайшее: {_fmt_short(reminder.next_fire_at)}.",
+        "Готово! ✨\n\n"
+        f"Напоминание «{LABEL_RU.get(cat, cat)}» настроено — ближайшее: {_fmt_short(reminder.next_fire_at)}.\n\n"
+        "Можем продолжить общение 😊 Чем я могу тебе помочь?",
     )
