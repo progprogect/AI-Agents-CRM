@@ -1,5 +1,5 @@
 -- Migration 015: Per-user Telegram reminders (vet care etc.)
--- Scoped to (agent_id, binding_id, external_user_id); independent of conversation /restart.
+-- Scoped to agent_id, binding_id, external_user_id (not tied to conversation restart).
 
 CREATE TABLE IF NOT EXISTS user_reminders (
     reminder_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
