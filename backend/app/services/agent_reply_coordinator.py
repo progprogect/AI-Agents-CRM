@@ -1278,7 +1278,11 @@ async def _schedule_chained_auto_steps(
     agent_config: "Any",
     config_hash: str,
 ) -> None:
-    """Schedule any auto-steps whose source_id matches the just-fired auto-step."""
+    """Schedule any auto-steps whose ``source_id`` matches the just-fired auto-step.
+
+    This implements auto→auto chaining: e.g. share message auto fires, then follow-ups
+    with ``source_id`` set to that auto's ``id`` are queued with their own delay_seconds.
+    """
     next_steps = [
         a for a in agent_config.workflow.auto_steps
         if a.source_id == fired_auto_step_id

@@ -44,6 +44,8 @@ export interface WorkflowStep {
   skip_if_questionnaire_field?: string | null;
   /** Also write extracted collect[] values to questionnaire_responses (no FSM). */
   collect_to_questionnaire?: boolean;
+  /** Evaluate conditional transitions before collect[] is complete (sufficiency advance). */
+  evaluate_transition_conditions_when_collect_incomplete?: boolean;
 }
 
 export type TelegramAutoStepAttachment = "none" | "video_url" | "video_note";
@@ -334,6 +336,8 @@ export function agentConfigToFormData(
       quick_replies: Array.isArray(s.quick_replies) ? s.quick_replies : [],
       skip_if_questionnaire_field: s.skip_if_questionnaire_field ?? null,
       collect_to_questionnaire: s.collect_to_questionnaire ?? false,
+      evaluate_transition_conditions_when_collect_incomplete:
+        s.evaluate_transition_conditions_when_collect_incomplete ?? false,
     })) as WorkflowFormStep[],
     workflow_auto_steps: (agentConfig.workflow?.auto_steps || []).map((a: any) => ({
       id: a.id || "",
@@ -497,6 +501,8 @@ export function formDataToAgentConfig(
         quick_replies: Array.isArray(s.quick_replies) ? s.quick_replies : [],
         skip_if_questionnaire_field: s.skip_if_questionnaire_field ?? null,
         collect_to_questionnaire: s.collect_to_questionnaire ?? false,
+        evaluate_transition_conditions_when_collect_incomplete:
+          s.evaluate_transition_conditions_when_collect_incomplete ?? false,
       })),
       auto_steps: (formData.workflow_auto_steps || []).map((a) => ({
         id: a.id,

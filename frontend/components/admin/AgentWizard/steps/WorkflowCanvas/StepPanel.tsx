@@ -439,6 +439,27 @@ export function StepPanel({
                       в анкету пользователя и видны в разделе «Анкеты».
                     </p>
                   )}
+                  <div className="flex items-center gap-3">
+                    <Toggle
+                      checked={selectedStep.evaluate_transition_conditions_when_collect_incomplete ?? false}
+                      onChange={() =>
+                        onUpdateStep(selectedStep.id, {
+                          evaluate_transition_conditions_when_collect_incomplete: !(
+                            selectedStep.evaluate_transition_conditions_when_collect_incomplete ?? false
+                          ),
+                        })
+                      }
+                    />
+                    <span className="text-sm text-[#443C3C]">
+                      Условные переходы при неполном сборе
+                    </span>
+                  </div>
+                  {(selectedStep.evaluate_transition_conditions_when_collect_incomplete ?? false) && (
+                    <p className="text-[10px] text-[#9A9590]">
+                      Если включено, переходы с текстовым условием оцениваются даже пока не все поля из
+                      «Переменные для сбора» заполнены (например «достаточно данных для ответа»).
+                    </p>
+                  )}
                 </div>
               </Section>
 

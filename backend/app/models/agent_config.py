@@ -444,6 +444,15 @@ class WorkflowStep(BaseModel):
             "Replaces the soft 'collect first, then answer' wording with an absolute prohibition."
         ),
     )
+    evaluate_transition_conditions_when_collect_incomplete: bool = Field(
+        default=False,
+        description=(
+            "When True, non-fallback transitions with a non-empty condition are still evaluated "
+            "via the LLM even if required collect[] fields are not all filled yet. "
+            "Use when a step may advance (e.g. to give an answer) based on 'sufficient context' "
+            "before every collect key is present."
+        ),
+    )
     static_template_key: Optional[str] = Field(
         default=None,
         description=(
@@ -479,7 +488,12 @@ class WorkflowAutoStep(BaseModel):
     name: str = Field(..., description="Human-readable display name shown on the canvas")
     source_id: str = Field(
         ...,
-        description="ID of the step or auto-step that directly precedes this one in the chain",
+        description=(
+            "ID of the step or auto-step that directly precedes this one in the chain. "
+            "For schedule_anchor=on_step_exit, must be a WorkflowStep.id (see WorkflowConfig validator). "
+            "For on_step_enter, may reference another WorkflowAutoStep.id — after that auto fires, "
+            "downstream autos with this source_id are scheduled (_schedule_chained_auto_steps)."
+        ),
     )
     schedule_anchor: Literal["on_step_enter", "on_step_exit"] = Field(
         default="on_step_enter",

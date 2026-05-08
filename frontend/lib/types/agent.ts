@@ -197,6 +197,8 @@ export interface WorkflowStep {
   skip_if_questionnaire_field?: string | null;
   /** When true, extracted collect[] values are also written to questionnaire_responses. */
   collect_to_questionnaire?: boolean;
+  /** When true, LLM-evaluated transitions run even if collect[] is not yet complete (sufficiency-style advance). */
+  evaluate_transition_conditions_when_collect_incomplete?: boolean;
 }
 
 export interface WorkflowAutoStep {

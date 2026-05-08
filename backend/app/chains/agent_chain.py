@@ -10,7 +10,7 @@ Architecture:
   only, before LLM) so intents like «Все понятно» advance the step before the
   reply is generated; **post_transition** (full logic including fallback routes
   after LLM) so empty-condition transitions still fire after the greeting/collect
-  reply (e.g. step_1 → step_3).
+  reply (e.g. privacy → step_3).
 - Per-request dependencies (services, LLM, stale-callback) are passed through
   RunnableConfig.configurable so they never enter the persisted checkpoint.
 - LangGraph's AsyncPostgresSaver stores state keyed by thread_id = conversation_id.
@@ -223,8 +223,8 @@ def _clean_response(text: str) -> str:
     ).strip()
 
 
-# First LLM turn after a channel-sent welcome (restart_welcome). Display name kept as step_1 for workflow refs.
-_STEP_AFTER_CHANNEL_WELCOME = "step_1"
+# First LLM turn after a channel-sent welcome (restart_welcome). Vets: anamnesis step after privacy.
+_STEP_AFTER_CHANNEL_WELCOME = "step_3"
 
 _GREETING_OPEN_LINE = re.compile(
     r"(?is)^[\s🐾😊💛🐶🐱]*(?:привет|здравствуй|здорово|добрый\s+(?:день|вечер|утро))\b",
@@ -501,12 +501,23 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
         tpls = getattr(self.agent_config.prompts, "templates", None) or {}
         if isinstance(tpls, dict):
-            share_tpl = (tpls.get("recommendation_share_message") or "").strip()
-            if share_tpl and step.id == "step_1776714328598":
+            privacy_tpl = (tpls.get("privacy_consent_notice") or "").strip()
+            if privacy_tpl and step.id == "step_privacy":
                 lines.append(
-                    "\n\nОтветь пользователю ТОЛЬКО следующим текстом, дословно, "
-                    "без изменений, без добавлений и без преамбулы:\n\n"
-                    + share_tpl
+                    "\n\nТекст политики конфиденциальности для пользователя (передай дословно, "
+                    "URL не сокращай; если пользователь уже явно согласился — не повторяй весь блок):\n\n"
+                    + privacy_tpl
+                )
+            invite_tpl = (tpls.get("questionnaire_invite_once") or "").strip()
+            if invite_tpl and step.id == "step_3":
+                lines.append(
+                    "\n\nТекст опционального приглашения в анкету (максимум один раз за диалог — см. инструкции этапа):\n\n"
+                    + invite_tpl
+                )
+            if step.id == "step_consult_complete":
+                lines.append(
+                    "\n\nНе включай в ответ текст приглашения «поделись с друзьями» — оно уходит отдельным "
+                    "автоматическим сообщением сразу после твоего короткого прощания."
                 )
 
         return "\n".join(lines)
@@ -524,6 +535,64 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
         """
         agent_config = self.agent_config
         agent_chain_self = self
+
+        async def _first_matching_conditional_transition(
+            state: WorkflowState,
+            step: WorkflowStep,
+            step_map: dict[str, WorkflowStep],
+            *,
+            include_current_user_message: bool,
+        ) -> Optional[str]:
+            """Return target step id if a non-fallback transition with non-empty condition matches YES."""
+            if not step.transitions:
+                return None
+            llm = None
+            conversation_summary: str | None = None
+            for transition in step.transitions:
+                if transition.is_fallback or not transition.condition.strip():
+                    continue
+                if llm is None:
+                    llm = _get_service("llm")
+                    if llm is None:
+                        from app.services.llm_factory import get_llm_factory
+
+                        llm = await get_llm_factory().get_chat_model(
+                            agent_config, org_id=agent_chain_self._organization_id
+                        )
+                if conversation_summary is None:
+                    conversation_summary = _transition_conversation_sample(
+                        state, include_current_user_message=include_current_user_message
+                    )
+                eval_prompt = (
+                    f"Evaluate whether the following condition is satisfied based on the conversation.\n"
+                    f"Condition: {transition.condition}\n\n"
+                    f"Recent conversation:\n{conversation_summary}\n\n"
+                    "Reply with exactly 'YES' or 'NO'."
+                )
+                try:
+                    eval_result = await llm.ainvoke([HumanMessage(content=eval_prompt)])
+                    answer = _normalise_llm_text(eval_result.content).upper().strip()
+                except Exception as exc:
+                    logger.warning("Conditional transition evaluator LLM error: %s", exc)
+                    answer = "NO"
+                if answer.startswith("YES"):
+                    if step_map.get(transition.next_step_id) is not None:
+                        return transition.next_step_id
+                    logger.warning(
+                        "Transition target %s not found in steps (step %s) — staying",
+                        transition.next_step_id,
+                        step.id,
+                        extra={"conversation_id": state.get("conversation_id")},
+                    )
+                    return None
+                if transition.is_forced:
+                    logger.debug(
+                        "Forced transition condition not met for step %s; staying",
+                        step.id,
+                        extra={"conversation_id": state.get("conversation_id")},
+                    )
+                    return None
+            return None
 
         # ---- Node: pre_moderation ----
         async def node_pre_moderation(state: WorkflowState) -> dict:
@@ -899,8 +968,8 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
               True: buttons belong to *new_step_id* (the step whose prompt drives the
               upcoming LLM call — used after pre-transition).
               False: buttons belong to *entry_step_id* (frozen step before this phase's
-              internal transitions — used after post-transition so step_1's buttons
-              still attach to the greeting before fallback moves to step_3).
+              internal transitions — used after post-transition so the prior step's buttons
+              still attach before fallback advances).
             """
             _is_first_turn = not state.get("current_step_id")
             history = list(state.get("step_history") or [])
@@ -1110,6 +1179,33 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
 
                     still_missing = [f for f in step.collect if not existing_collected.get(f)]
                     if still_missing:
+                        if getattr(
+                            step,
+                            "evaluate_transition_conditions_when_collect_incomplete",
+                            False,
+                        ):
+                            suff_next = await _first_matching_conditional_transition(
+                                state,
+                                step,
+                                step_map,
+                                include_current_user_message=True,
+                            )
+                            if suff_next is not None and suff_next != step_id:
+                                logger.info(
+                                    "Pre-transition: incomplete collect but advancing %s → %s "
+                                    "(evaluate_transition_conditions_when_collect_incomplete)",
+                                    step_id,
+                                    suff_next,
+                                    extra={"conversation_id": state.get("conversation_id")},
+                                )
+                                return _finalize_transition_outcome(
+                                    state,
+                                    step_map=step_map,
+                                    entry_step_id=entry_step_id,
+                                    new_step_id=suff_next,
+                                    collected_update=collected_update,
+                                    quick_replies_from_resolved_step=True,
+                                )
                         # Not all required fields collected — stay on step.
                         # Fallback transitions are also blocked here (early return).
                         logger.info(
@@ -1225,6 +1321,33 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 _coll = dict(state.get("collected") or {})
                 _missing = [f for f in step.collect if not _coll.get(f)]
                 if _missing:
+                    if getattr(
+                        step,
+                        "evaluate_transition_conditions_when_collect_incomplete",
+                        False,
+                    ):
+                        suff_next = await _first_matching_conditional_transition(
+                            state,
+                            step,
+                            step_map,
+                            include_current_user_message=False,
+                        )
+                        if suff_next is not None and suff_next != step_id:
+                            logger.info(
+                                "Post-transition: incomplete collect but advancing %s → %s "
+                                "(evaluate_transition_conditions_when_collect_incomplete)",
+                                step_id,
+                                suff_next,
+                                extra={"conversation_id": state.get("conversation_id")},
+                            )
+                            return _finalize_transition_outcome(
+                                state,
+                                step_map=step_map,
+                                entry_step_id=entry_step_id,
+                                new_step_id=suff_next,
+                                collected_update=None,
+                                quick_replies_from_resolved_step=True,
+                            )
                     logger.debug(
                         "post_transition: stay on %s — collect still missing %s",
                         step_id,
