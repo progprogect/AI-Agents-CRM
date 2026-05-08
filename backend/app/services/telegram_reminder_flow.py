@@ -149,10 +149,17 @@ async def handle_command_entry(
         logger.debug("reminder entry questionnaire check: %s", exc)
 
     await rw.open_menu(binding.binding_id, chat_id)
+    intro = (
+        "Напоминания 🔔\n\n"
+        "Если хочешь, чтобы я напомнила тебе о чём-то важном — давай настроим это вместе 😊\n"
+        "Выбери тему кнопкой ниже, потом — разовое или регулярное напоминание и удобное время. "
+        "На последнем шаге можешь своими словами написать, о чём именно не забыть — это попадёт в напоминание.\n\n"
+        "О чём тебе напомнить? Выбери тип:"
+    )
     await _send(
         bot_token,
         chat_id,
-        "Напоминания 🔔\n\nВыберите тип:",
+        intro,
         inline_keyboard=_main_keyboard(),
     )
 
