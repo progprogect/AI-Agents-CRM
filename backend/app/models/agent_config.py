@@ -530,6 +530,14 @@ class WorkflowAutoStep(BaseModel):
             "fire_at or until a full cancel (e.g. /restart)."
         ),
     )
+    once_per_conversation: bool = Field(
+        default=False,
+        description=(
+            "If True, after this auto-step successfully sends a user-visible message in this "
+            "conversation, it will not be scheduled again until a new conversation (e.g. /restart). "
+            "Skipped or failed sends do not count."
+        ),
+    )
     telegram_attachment_type: Literal["none", "video_url", "video_note"] = Field(
         default="none",
         description=(

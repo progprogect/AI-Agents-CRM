@@ -177,6 +177,27 @@ export function AutoStepPanel({ autoStep, onUpdate, onDelete, onClose }: AutoSte
           </label>
         </Section>
 
+        {/* Once per conversation */}
+        <Section title="Частота">
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#BEBAB7] bg-white p-3 text-sm text-[#443C3C] hover:border-[#7C3AED]">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[#7C3AED]"
+              checked={autoStep.once_per_conversation === true}
+              onChange={(e) =>
+                onUpdate({ once_per_conversation: e.target.checked })
+              }
+            />
+            <span>
+              <span className="font-medium">Один раз за диалог (до рестарта чата)</span>
+              <span className="mt-1 block text-[11px] text-[#9A9590]">
+                После успешной отправки сообщения этот авто-шаг не будет ставиться в очередь снова в том же
+                диалоге. Новый диалог после /restart — снова можно один раз.
+              </span>
+            </span>
+          </label>
+        </Section>
+
         {/* Telegram media (auto-step) */}
         <Section title="Медиа в Telegram (необязательно)">
           <p className="mb-3 text-[11px] leading-relaxed text-[#9A9590]">

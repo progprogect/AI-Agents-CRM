@@ -164,6 +164,20 @@ class RedisClient:
             return set()
         return set(await self.client.smembers(key))
 
+    async def sismember(self, key: str, member: str) -> bool:
+        """SISMEMBER — True if member is in set."""
+        await self.connect()
+        if not self.client:
+            return False
+        return bool(await self.client.sismember(key, member))
+
+    async def expire(self, key: str, seconds: int) -> bool:
+        """EXPIRE — set TTL on key; returns True if timeout was set."""
+        await self.connect()
+        if not self.client:
+            return False
+        return bool(await self.client.expire(key, seconds))
+
     async def srem(self, key: str, *members: str) -> int:
         """SREM — remove members from a set."""
         await self.connect()

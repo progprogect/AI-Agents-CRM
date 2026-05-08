@@ -214,6 +214,8 @@ export interface WorkflowAutoStep {
   condition?: string | null;
   /** Default true: pending job cleared on workflow step change; false keeps until fire or hard reset. */
   cancel_on_workflow_step_change?: boolean;
+  /** If true, after a successful user-visible send this auto-step id is not scheduled again until /restart (new conversation). */
+  once_per_conversation?: boolean;
   telegram_attachment_type?: "none" | "video_url" | "video_note";
   telegram_video_url?: string | null;
   telegram_video_note_file_id?: string | null;

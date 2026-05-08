@@ -887,6 +887,8 @@ async def run_timer_poll_loop(shutdown: asyncio.Event) -> None:
 KEY_AUTO_DUE = "agent_reply:auto_step_due"
 KEY_AUTO_PAY = "agent_reply:auto_step_payload:"  # + "{conv_id}:{auto_step_id}"
 KEY_AUTO_IDX = "agent_reply:auto_step_idx:"      # SET per conversation — active members
+KEY_AUTO_ONCE_PREFIX = "agent_reply:auto_once:"  # + conversation_id — SET of fired auto_step_id
+AUTO_ONCE_TTL_SECONDS = 90 * 24 * 3600  # long-lived dialog safety valve
 AUTO_STEP_LOCK_PREFIX = "agent_reply:auto_step_lock:"
 AUTO_STEP_DEAD_LETTER_TTL = 86400  # 24 h
 
@@ -909,6 +911,25 @@ async def schedule_auto_step(
     import json as _json
 
     auto_step_id = auto_step["id"]
+    if auto_step.get("once_per_conversation"):
+        once_key = f"{KEY_AUTO_ONCE_PREFIX}{conversation_id}"
+        try:
+            if await redis.sismember(once_key, auto_step_id):
+                logger.info(
+                    "Auto-step %s not scheduled for %s: once_per_conversation already satisfied",
+                    auto_step_id,
+                    conversation_id,
+                    extra={"conversation_id": conversation_id},
+                )
+                return
+        except Exception as exc:
+            logger.warning(
+                "Redis once_per_conversation check failed for %s; scheduling anyway: %s",
+                conversation_id,
+                exc,
+                extra={"conversation_id": conversation_id},
+            )
+
     member = f"{conversation_id}:{auto_step_id}"
     payload = _json.dumps({**auto_step, "config_hash": config_hash, "conversation_id": conversation_id})
     ttl = auto_step.get("delay_seconds", 3600) * 2 + 300
@@ -990,6 +1011,7 @@ async def cancel_all_auto_steps(conversation_id: str) -> None:
             for m in members:
                 await redis.delete(f"{KEY_AUTO_PAY}{m}")
         await redis.delete(idx_key)
+        await redis.delete(f"{KEY_AUTO_ONCE_PREFIX}{conversation_id}")
     except Exception as exc:
         logger.debug("cancel_all_auto_steps error for %s: %s", conversation_id, exc)
 
@@ -1250,6 +1272,17 @@ async def execute_auto_step_trigger(member: str) -> None:
                 conversation_id,
                 extra={"conversation_id": conversation_id},
             )
+            if payload.get("once_per_conversation"):
+                try:
+                    once_key = f"{KEY_AUTO_ONCE_PREFIX}{conversation_id}"
+                    await redis.sadd(once_key, auto_step_id)
+                    await redis.expire(once_key, AUTO_ONCE_TTL_SECONDS)
+                except Exception as exc:
+                    logger.debug(
+                        "once_per_conversation mark failed for %s: %s",
+                        conversation_id,
+                        exc,
+                    )
         except Exception as exc:
             logger.error(
                 "Auto-step send failed for %s: %s",

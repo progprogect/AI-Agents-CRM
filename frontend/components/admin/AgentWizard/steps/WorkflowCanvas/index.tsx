@@ -90,6 +90,7 @@ function makeDefaultAutoStep(id: string, sourceId: string): WorkflowFormAutoStep
     source_id: sourceId,
     schedule_anchor: "on_step_enter",
     cancel_on_workflow_step_change: true,
+    once_per_conversation: false,
     delay_seconds: 86400, // 1 day default
     action_type: "static",
     message_template: "",

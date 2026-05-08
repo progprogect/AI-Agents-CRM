@@ -62,6 +62,8 @@ export interface WorkflowAutoStep {
   prompt: string;
   condition?: string | null;
   cancel_on_workflow_step_change?: boolean;
+  /** After successful send, do not schedule this auto-step again until chat restart. */
+  once_per_conversation?: boolean;
   /** Telegram-only: optional video (URL) or video note (file_id). Ignored on other channels. */
   telegram_attachment_type?: TelegramAutoStepAttachment;
   telegram_video_url?: string | null;
@@ -353,6 +355,8 @@ export function agentConfigToFormData(
         typeof a.cancel_on_workflow_step_change === "boolean"
           ? a.cancel_on_workflow_step_change
           : true,
+      once_per_conversation:
+        typeof a.once_per_conversation === "boolean" ? a.once_per_conversation : false,
       telegram_attachment_type:
         (a.telegram_attachment_type as TelegramAutoStepAttachment) || "none",
       telegram_video_url: a.telegram_video_url ?? null,
@@ -515,6 +519,7 @@ export function formDataToAgentConfig(
         prompt: a.prompt || "",
         condition: a.condition ?? null,
         cancel_on_workflow_step_change: a.cancel_on_workflow_step_change ?? true,
+        once_per_conversation: a.once_per_conversation ?? false,
         telegram_attachment_type: a.telegram_attachment_type ?? "none",
         telegram_video_url:
           a.telegram_attachment_type === "video_url"
