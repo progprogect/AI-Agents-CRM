@@ -45,10 +45,15 @@ def test_configured_reply_text_custom_message() -> None:
     assert configured_reply_text(binding, "supportproject").startswith("Спасибо")
 
 
-def test_configured_reply_text_fallback_when_empty() -> None:
+def test_configured_reply_text_defaults_when_empty() -> None:
     binding = SimpleNamespace(metadata={})
-    t = configured_reply_text(binding, "feedback").lower()
-    assert "не настроен" in t or "админ" in t
+    sp = configured_reply_text(binding, "supportproject")
+    assert "бесплатн" in sp.lower()
+    assert "href=" in sp
+    assert "qr.nspk.ru" in sp
+    fb = configured_reply_text(binding, "feedback")
+    assert "naumkina.t@inbox.ru" in fb.lower()
+    assert "mailto:" in fb
 
 
 def test_get_commands_status_includes_custom_fields() -> None:

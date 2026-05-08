@@ -428,18 +428,46 @@ async def handle_paysupport(
         logger.error("handle_paysupport failed for chat_id=%s: %s", chat_id, exc, exc_info=True)
 
 
+_SUPPORT_PROJECT_PAYMENT_URL = (
+    "https://qr.nspk.ru/AS1A00389H5IVAVP8GAA7G2Q5KM6946D"
+    "?type=01&bank=100000000008&crc=3A25"
+)
+_SUPPORT_PROJECT_PAYMENT_URL_HTML_HREF = _SUPPORT_PROJECT_PAYMENT_URL.replace("&", "&amp;")
+
+DEFAULT_SUPPORT_PROJECT_MESSAGE_HTML = (
+    "Привет! Сейчас этот бот для тебя полностью бесплатный — мы рады помогать тебе и питомцу 🐾\n\n"
+    "Если захочешь поддержать проект, нам будет очень приятно: это только по твоему желанию. "
+    "Оплатить можно через QR (НСПК) — достаточно нажать на ссылку ниже.\n\n"
+    f'<a href="{_SUPPORT_PROJECT_PAYMENT_URL_HTML_HREF}">Оплатить по QR-коду</a>'
+)
+
+DEFAULT_FEEDBACK_MESSAGE_HTML = (
+    "Если нужно связаться со мной напрямую — напиши на почту, отвечу, как только смогу:\n\n"
+    '<a href="mailto:Naumkina.t@inbox.ru">Naumkina.t@inbox.ru</a>'
+)
+
 _FALLBACK_CONFIGURED_COMMAND_TEXT = (
     "Текст этой команды ещё не настроен в админ-панели. "
     "Загляни позже или напиши нам в обычном чате — мы рядом 🙂"
 )
 
 
+def _has_custom_command_message(binding: ChannelBinding, cmd_key: str) -> bool:
+    settings = _command_settings_map(binding).get(cmd_key) or {}
+    raw = settings.get("message") if isinstance(settings, dict) else None
+    return isinstance(raw, str) and bool(raw.strip())
+
+
 def configured_reply_text(binding: ChannelBinding, cmd_key: str) -> str:
-    """Resolved message body for supportproject / feedback (admin or fallback)."""
+    """Resolved message body for supportproject / feedback (admin text or built-in default)."""
     settings = _command_settings_map(binding).get(cmd_key) or {}
     raw = settings.get("message") if isinstance(settings, dict) else None
     if isinstance(raw, str) and raw.strip():
         return raw.strip()[:TELEGRAM_COMMAND_MESSAGE_MAX]
+    if cmd_key == "supportproject":
+        return DEFAULT_SUPPORT_PROJECT_MESSAGE_HTML
+    if cmd_key == "feedback":
+        return DEFAULT_FEEDBACK_MESSAGE_HTML
     return _FALLBACK_CONFIGURED_COMMAND_TEXT
 
 
@@ -450,10 +478,12 @@ async def handle_supportproject(
     bot_token: str,
 ) -> None:
     try:
+        custom = _has_custom_command_message(binding, "supportproject")
         await _send_telegram_message(
             bot_token,
             chat_id,
             configured_reply_text(binding, "supportproject"),
+            parse_mode=None if custom else "HTML",
         )
     except Exception as exc:
         logger.error(
@@ -471,10 +501,12 @@ async def handle_feedback(
     bot_token: str,
 ) -> None:
     try:
+        custom = _has_custom_command_message(binding, "feedback")
         await _send_telegram_message(
             bot_token,
             chat_id,
             configured_reply_text(binding, "feedback"),
+            parse_mode=None if custom else "HTML",
         )
     except Exception as exc:
         logger.error(
@@ -485,12 +517,21 @@ async def handle_feedback(
         )
 
 
-async def _send_telegram_message(bot_token: str, chat_id: str, text: str) -> None:
-    """Send a plain text message to a Telegram chat."""
+async def _send_telegram_message(
+    bot_token: str,
+    chat_id: str,
+    text: str,
+    *,
+    parse_mode: Optional[str] = None,
+) -> None:
+    """Send a message to a Telegram chat (optionally HTML for default templates)."""
+    payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     url = f"{TELEGRAM_API_BASE}{bot_token}/sendMessage"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url, json={"chat_id": chat_id, "text": text})
+            resp = await client.post(url, json=payload)
             data = resp.json()
             if not data.get("ok"):
                 logger.warning("sendMessage returned not-ok: %s", data)
