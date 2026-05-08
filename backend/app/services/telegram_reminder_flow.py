@@ -178,7 +178,12 @@ async def handle_callback_query(
 
     if data == CB_CANCEL_WIZARD:
         await rw.clear_wizard(binding.binding_id, chat_id)
-        await _send(bot_token, chat_id, "Готово.")
+        await _send(
+            bot_token,
+            chat_id,
+            "Хорошо 😊 Настройку напоминания закрыла.\n\n"
+            "Можем продолжить общение — чем я могу тебе помочь?",
+        )
         return
 
     if data == CB_LIST:
