@@ -66,12 +66,6 @@ def is_reminder_callback(data: str) -> bool:
     return bool(data) and data.startswith("r:")
 
 
-def _fmt_short(dt: datetime) -> str:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
-
-
 def _fmt_short_msk(dt: datetime) -> str:
     """Показать то же мгновение в МСК для пользователя."""
     if dt.tzinfo is None:
@@ -242,7 +236,7 @@ async def handle_callback_query(
         ids: list[str] = []
         for i, r in enumerate(rows[:8]):
             label = LABEL_RU.get(r.category, r.category)
-            lines.append(f"{i + 1}. {label} — {_fmt_short(r.next_fire_at)}")
+            lines.append(f"{i + 1}. {label} — {_fmt_short_msk(r.next_fire_at)}")
             ids.append(r.reminder_id)
         st = await rw.load_wizard(binding.binding_id, chat_id) or WizardState(
             binding_id=binding.binding_id,
@@ -552,6 +546,6 @@ async def _finalize_reminder(
         bot_token,
         chat_id,
         "Готово! ✨\n\n"
-        f"Напоминание «{LABEL_RU.get(cat, cat)}» настроено — ближайшее: {_fmt_short(reminder.next_fire_at)}.\n\n"
+        f"Напоминание «{LABEL_RU.get(cat, cat)}» настроено — ближайшее: {_fmt_short_msk(reminder.next_fire_at)}.\n\n"
         "Можем продолжить общение 😊 Чем я могу тебе помочь?",
     )
