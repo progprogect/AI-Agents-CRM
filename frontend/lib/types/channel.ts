@@ -44,8 +44,15 @@ export interface UpdateChannelBindingRequest {
 /** A single bot command entry returned by GET /channel-bindings/{id}/commands */
 export interface TelegramCommand {
   key: string;
-  command: string;      // includes leading slash, e.g. "/restart"
+  command: string; // includes leading slash, e.g. "/restart"
+  /** Effective description shown in Telegram menu (may be overridden in admin). */
   description: string;
+  /** Catalog default before admin override (same as previous hardcoded description). */
+  default_description?: string;
   enabled: boolean;
+  /** supportproject / feedback — admin can set menu label + reply body */
+  supports_custom_content?: boolean;
+  menu_description?: string | null;
+  message?: string;
 }
 

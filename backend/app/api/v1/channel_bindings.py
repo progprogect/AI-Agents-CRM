@@ -63,6 +63,31 @@ class UpdateCommandsRequest(BaseModel):
         return v
 
 
+class CommandSettingPatch(BaseModel):
+    """Partial update for a configurable Telegram bot command (supportproject, feedback)."""
+
+    menu_description: Optional[str] = Field(None, max_length=256)
+    message: Optional[str] = Field(None, max_length=4096)
+
+
+class PatchTelegramCommandSettingsRequest(BaseModel):
+    """Merge admin-defined menu labels and reply texts into binding metadata."""
+
+    settings: dict[str, CommandSettingPatch] = Field(
+        ...,
+        description="Map command key → fields to set (omit a field to leave unchanged)",
+    )
+
+    @field_validator("settings")
+    @classmethod
+    def validate_settings_keys(cls, v: dict[str, CommandSettingPatch]) -> dict[str, CommandSettingPatch]:
+        from app.services.bot_commands_service import CONFIGURABLE_COMMAND_KEYS
+        unknown = set(v.keys()) - CONFIGURABLE_COMMAND_KEYS
+        if unknown:
+            raise ValueError(f"Unknown or non-configurable command key(s): {sorted(unknown)}")
+        return v
+
+
 class ChannelBindingResponse(BaseModel):
     """Response for channel binding."""
 
@@ -380,7 +405,7 @@ async def update_binding_commands(
     try:
         bot_token = await binding_service.get_access_token(binding_id)
         from app.services.bot_commands_service import sync_telegram_commands
-        await sync_telegram_commands(bot_token, existing_commands)
+        await sync_telegram_commands(bot_token, updated_binding)
     except Exception as exc:
         logger.warning(
             "Could not sync Telegram bot commands for binding %s: %s",
@@ -389,5 +414,74 @@ async def update_binding_commands(
         )
 
     from app.services.bot_commands_service import get_commands_status
+    return get_commands_status(updated_binding)
+
+
+@router.patch(
+    "/channel-bindings/{binding_id}/commands/settings",
+    response_model=list[dict[str, Any]],
+)
+async def patch_binding_command_settings(
+    binding_id: str,
+    request: PatchTelegramCommandSettingsRequest,
+    binding_service: ChannelBindingService = Depends(get_channel_binding_service),
+    _admin: str = require_admin(),
+):
+    """Update configurable bot command texts (menu description + message body) for Telegram."""
+    binding = await binding_service.get_binding(binding_id)
+    if not binding:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Binding not found")
+
+    if get_enum_value(binding.channel_type) != "telegram":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bot commands are only supported for Telegram bindings",
+        )
+
+    current_metadata = dict(binding.metadata)
+    raw_settings = current_metadata.get("telegram_command_settings")
+    merged: dict[str, Any] = dict(raw_settings) if isinstance(raw_settings, dict) else {}
+
+    for key, patch in request.settings.items():
+        nested: dict[str, Any]
+        if isinstance(merged.get(key), dict):
+            nested = dict(merged[key])
+        else:
+            nested = {}
+        if patch.menu_description is not None:
+            nested["menu_description"] = patch.menu_description
+        if patch.message is not None:
+            nested["message"] = patch.message
+        merged[key] = nested
+
+    current_metadata["telegram_command_settings"] = merged
+
+    try:
+        updated_binding = await binding_service.update_binding(
+            binding_id=binding_id,
+            metadata=current_metadata,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update command settings: {str(e)}",
+        )
+
+    try:
+        bot_token = await binding_service.get_access_token(binding_id)
+        from app.services.bot_commands_service import sync_telegram_commands
+
+        await sync_telegram_commands(bot_token, updated_binding)
+    except Exception as exc:
+        logger.warning(
+            "Could not sync Telegram bot commands after settings patch for binding %s: %s",
+            binding_id,
+            exc,
+        )
+
+    from app.services.bot_commands_service import get_commands_status
+
     return get_commands_status(updated_binding)
 

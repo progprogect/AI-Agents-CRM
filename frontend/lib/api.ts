@@ -375,6 +375,20 @@ export const api = {
     );
   },
 
+  async patchTelegramCommandSettings(
+    bindingId: string,
+    settings: Record<
+      string,
+      { menu_description?: string | null; message?: string | null }
+    >
+  ): Promise<import("./types/channel").TelegramCommand[]> {
+    return request<import("./types/channel").TelegramCommand[]>(
+      `/api/v1/channel-bindings/${bindingId}/commands/settings`,
+      { method: "PATCH", body: JSON.stringify({ settings }) },
+      true
+    );
+  },
+
   async transcribeVoice(
     conversationId: string,
     audioBlob: Blob,

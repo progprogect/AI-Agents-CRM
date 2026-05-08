@@ -5,6 +5,11 @@ Provides:
 - sync_telegram_commands — calls setMyCommands to update the bot menu in Telegram
 - get_commands_status    — returns catalog merged with enabled flags from binding metadata
 - handle_restart         — /restart command: close current conversation, open a new one
+
+Binding metadata (optional):
+- ``telegram_commands``: ``{command_key: bool}`` — toggles for menu entries.
+- ``telegram_command_settings``: ``{command_key: {"menu_description": str, "message": str}}``
+  — custom menu label (Telegram, max 256 chars) and reply text for configurable commands.
 """
 
 from __future__ import annotations
@@ -27,6 +32,12 @@ from app.utils.datetime_utils import utc_now
 logger = logging.getLogger(__name__)
 
 TELEGRAM_API_BASE = "https://api.telegram.org/bot"
+
+# Keys that use telegram_command_settings[].message / menu_description
+CONFIGURABLE_COMMAND_KEYS = frozenset({"supportproject", "feedback"})
+
+TELEGRAM_MENU_DESCRIPTION_MAX = 256
+TELEGRAM_COMMAND_MESSAGE_MAX = 4096
 
 # ---------------------------------------------------------------------------
 # Command catalog — add new commands here to make them available in the UI
@@ -53,14 +64,46 @@ TELEGRAM_BOT_COMMANDS: list[dict[str, str]] = [
         "command": "reminders",
         "description": "Напоминания",
     },
+    {
+        "key": "supportproject",
+        "command": "supportproject",
+        "description": "Поддержать проект",
+    },
+    {
+        "key": "feedback",
+        "command": "feedback",
+        "description": "Обратная связь",
+    },
 ]
 
 
-# ---------------------------------------------------------------------------
-# Telegram API helpers
-# ---------------------------------------------------------------------------
+def _catalog_by_key() -> dict[str, dict[str, str]]:
+    return {c["key"]: c for c in TELEGRAM_BOT_COMMANDS}
 
-async def sync_telegram_commands(bot_token: str, enabled_commands: dict[str, bool]) -> None:
+
+def _command_settings_map(binding: ChannelBinding) -> dict[str, Any]:
+    raw = binding.metadata.get("telegram_command_settings")
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for k, v in raw.items():
+        if isinstance(k, str) and isinstance(v, dict):
+            out[k] = v
+    return out
+
+
+def effective_menu_description(binding: ChannelBinding, cmd_key: str) -> str:
+    """Menu text sent to Telegram setMyCommands (catalog default or admin override)."""
+    catalog = _catalog_by_key().get(cmd_key) or {}
+    default = (catalog.get("description") or "").strip()
+    settings = _command_settings_map(binding).get(cmd_key) or {}
+    override = settings.get("menu_description") if isinstance(settings, dict) else None
+    if isinstance(override, str) and override.strip():
+        return override.strip()[:TELEGRAM_MENU_DESCRIPTION_MAX]
+    return default[:TELEGRAM_MENU_DESCRIPTION_MAX]
+
+
+async def sync_telegram_commands(bot_token: str, binding: ChannelBinding) -> None:
     """Push the current enabled command list to Telegram setMyCommands.
 
     Telegram displays the commands as a menu button inside the chat.
@@ -68,14 +111,17 @@ async def sync_telegram_commands(bot_token: str, enabled_commands: dict[str, boo
 
     Args:
         bot_token: The bot's access token.
-        enabled_commands: Mapping of command key → enabled flag,
-            e.g. ``{"restart": True}``.
+        binding: Channel binding (metadata enables commands and optional menu labels).
     """
-    commands_payload = [
-        {"command": cmd["command"], "description": cmd["description"]}
-        for cmd in TELEGRAM_BOT_COMMANDS
-        if enabled_commands.get(cmd["key"], False)
-    ]
+    enabled_commands: dict[str, bool] = binding.metadata.get("telegram_commands", {})
+    commands_payload = []
+    for cmd in TELEGRAM_BOT_COMMANDS:
+        if not enabled_commands.get(cmd["key"], False):
+            continue
+        desc = effective_menu_description(binding, cmd["key"])
+        if not desc:
+            desc = cmd["description"]
+        commands_payload.append({"command": cmd["command"], "description": desc})
 
     url = f"{TELEGRAM_API_BASE}{bot_token}/setMyCommands"
     try:
@@ -101,17 +147,33 @@ async def sync_telegram_commands(bot_token: str, enabled_commands: dict[str, boo
 # ---------------------------------------------------------------------------
 
 def get_commands_status(binding: ChannelBinding) -> list[dict[str, Any]]:
-    """Return the command catalog annotated with per-binding enabled flags."""
+    """Return the command catalog annotated with per-binding enabled flags and settings."""
     enabled: dict[str, bool] = binding.metadata.get("telegram_commands", {})
-    return [
-        {
-            "key": cmd["key"],
+    settings_map = _command_settings_map(binding)
+    rows: list[dict[str, Any]] = []
+    for cmd in TELEGRAM_BOT_COMMANDS:
+        key = cmd["key"]
+        st = settings_map.get(key) if isinstance(settings_map.get(key), dict) else {}
+        menu_override = (
+            (st.get("menu_description") or "").strip()
+            if isinstance(st.get("menu_description"), str)
+            else ""
+        )
+        message_val = st.get("message") if isinstance(st, dict) else None
+        message_str = message_val.strip() if isinstance(message_val, str) else ""
+        row: dict[str, Any] = {
+            "key": key,
             "command": f"/{cmd['command']}",
-            "description": cmd["description"],
-            "enabled": bool(enabled.get(cmd["key"], False)),
+            "description": effective_menu_description(binding, key),
+            "default_description": cmd["description"],
+            "enabled": bool(enabled.get(key, False)),
+            "supports_custom_content": key in CONFIGURABLE_COMMAND_KEYS,
         }
-        for cmd in TELEGRAM_BOT_COMMANDS
-    ]
+        if key in CONFIGURABLE_COMMAND_KEYS:
+            row["menu_description"] = menu_override or None
+            row["message"] = message_str
+        rows.append(row)
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +428,63 @@ async def handle_paysupport(
         logger.error("handle_paysupport failed for chat_id=%s: %s", chat_id, exc, exc_info=True)
 
 
+_FALLBACK_CONFIGURED_COMMAND_TEXT = (
+    "Текст этой команды ещё не настроен в админ-панели. "
+    "Загляни позже или напиши нам в обычном чате — мы рядом 🙂"
+)
+
+
+def configured_reply_text(binding: ChannelBinding, cmd_key: str) -> str:
+    """Resolved message body for supportproject / feedback (admin or fallback)."""
+    settings = _command_settings_map(binding).get(cmd_key) or {}
+    raw = settings.get("message") if isinstance(settings, dict) else None
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()[:TELEGRAM_COMMAND_MESSAGE_MAX]
+    return _FALLBACK_CONFIGURED_COMMAND_TEXT
+
+
+async def handle_supportproject(
+    db: Any,
+    chat_id: str,
+    binding: ChannelBinding,
+    bot_token: str,
+) -> None:
+    try:
+        await _send_telegram_message(
+            bot_token,
+            chat_id,
+            configured_reply_text(binding, "supportproject"),
+        )
+    except Exception as exc:
+        logger.error(
+            "handle_supportproject failed for chat_id=%s: %s",
+            chat_id,
+            exc,
+            exc_info=True,
+        )
+
+
+async def handle_feedback(
+    db: Any,
+    chat_id: str,
+    binding: ChannelBinding,
+    bot_token: str,
+) -> None:
+    try:
+        await _send_telegram_message(
+            bot_token,
+            chat_id,
+            configured_reply_text(binding, "feedback"),
+        )
+    except Exception as exc:
+        logger.error(
+            "handle_feedback failed for chat_id=%s: %s",
+            chat_id,
+            exc,
+            exc_info=True,
+        )
+
+
 async def _send_telegram_message(bot_token: str, chat_id: str, text: str) -> None:
     """Send a plain text message to a Telegram chat."""
     url = f"{TELEGRAM_API_BASE}{bot_token}/sendMessage"
@@ -388,6 +507,8 @@ COMMAND_HANDLERS: dict[str, Any] = {
     "paysupport": handle_paysupport,
     "questionnaire": handle_questionnaire,
     "reminders": handle_reminders,
+    "supportproject": handle_supportproject,
+    "feedback": handle_feedback,
 }
 
 
