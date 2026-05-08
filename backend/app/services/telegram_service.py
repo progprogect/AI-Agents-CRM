@@ -281,6 +281,34 @@ class TelegramService:
                         )
                         return
 
+                # Reminder wizard: free-text note step
+                if message_text:
+                    try:
+                        from app.services.reminder_wizard_service import (
+                            load_wizard as rw_load_wizard,
+                        )
+                        rw_st = await rw_load_wizard(binding.binding_id, chat_id)
+                    except Exception:
+                        rw_st = None
+                    if rw_st is not None and rw_st.mode.value == "note":
+                        if bot_token is None:
+                            try:
+                                bot_token = await self.channel_binding_service.get_access_token(binding_id)
+                            except Exception:
+                                pass
+                        if bot_token:
+                            from app.services.telegram_reminder_flow import (
+                                handle_user_message as rem_handle_msg,
+                            )
+                            await rem_handle_msg(
+                                db=self.db,
+                                chat_id=chat_id,
+                                binding=binding,
+                                bot_token=bot_token,
+                                text=message_text,
+                            )
+                        return
+
             # Build metadata for the message
             msg_metadata: dict[str, Any] = {}
             if media_url:
@@ -483,6 +511,16 @@ class TelegramService:
                     f"{self.TELEGRAM_API_BASE_URL}{bot_token}/answerCallbackQuery",
                     json={"callback_query_id": query_id},
                 )
+
+            # User reminder wizard (r:*): before payment / questionnaire-style handlers.
+            if data.startswith("r:") and chat_id:
+                from app.services.telegram_reminder_flow import (
+                    handle_callback_query as rem_handle_cb,
+                )
+                await rem_handle_cb(
+                    db=self.db, query=query, binding=binding, bot_token=bot_token
+                )
+                return
 
             # Plan selection: send the actual invoice for the chosen plan
             if data.startswith("pay_plan:") and chat_id:

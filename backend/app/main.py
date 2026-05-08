@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("All caches cleared on startup")
 
+    from app.services.user_reminder_scheduler import run_user_reminder_poll_loop
     from app.services.agent_reply_coordinator import (
         run_debounce_poll_loop,
         run_timer_poll_loop,
@@ -96,6 +97,9 @@ async def lifespan(app: FastAPI):
     # Auto-step poll loop — always started, fires scheduled auto-steps.
     auto_step_task = asyncio.create_task(run_auto_step_poll_loop(shutdown_event))
 
+    # User reminders (Telegram) — scheduled in Postgres + Redis ZSET.
+    user_reminder_task = asyncio.create_task(run_user_reminder_poll_loop(shutdown_event))
+
     debounce_task: Optional[asyncio.Task] = None
     if settings.agent_reply_debounce_seconds > 0:
         debounce_task = asyncio.create_task(run_debounce_poll_loop(shutdown_event))
@@ -105,6 +109,7 @@ async def lifespan(app: FastAPI):
     shutdown_event.set()
     await timer_task
     await auto_step_task
+    await user_reminder_task
     if debounce_task is not None:
         await debounce_task
     from app.storage.postgres_checkpointer import close_checkpointer

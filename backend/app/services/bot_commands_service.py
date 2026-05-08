@@ -48,6 +48,11 @@ TELEGRAM_BOT_COMMANDS: list[dict[str, str]] = [
         "command": "questionnaire",
         "description": "Моя анкета",
     },
+    {
+        "key": "reminders",
+        "command": "reminders",
+        "description": "Напоминания",
+    },
 ]
 
 
@@ -167,6 +172,16 @@ async def handle_restart(
                     conv.conversation_id,
                     exc,
                 )
+
+        try:
+            from app.services.reminder_wizard_service import clear_wizard as clear_reminder_wizard
+            await clear_reminder_wizard(binding.binding_id, chat_id)
+        except Exception as exc:
+            logger.debug(
+                "Could not clear reminder wizard FSM during /restart for chat_id=%s: %s",
+                chat_id,
+                exc,
+            )
 
         try:
             from app.services.questionnaire_service import clear_fsm as clear_questionnaire_fsm
@@ -289,6 +304,26 @@ async def handle_restart(
         )
 
 
+async def handle_reminders(
+    db: Any,
+    chat_id: str,
+    binding: ChannelBinding,
+    bot_token: str,
+) -> None:
+    try:
+        from app.services.telegram_reminder_flow import handle_command_entry
+        await handle_command_entry(
+            db=db, chat_id=chat_id, binding=binding, bot_token=bot_token
+        )
+    except Exception as exc:
+        logger.error(
+            "handle_reminders failed for chat_id=%s: %s",
+            chat_id,
+            exc,
+            exc_info=True,
+        )
+
+
 async def handle_questionnaire(
     db: Any,
     chat_id: str,
@@ -352,6 +387,7 @@ COMMAND_HANDLERS: dict[str, Any] = {
     "restart": handle_restart,
     "paysupport": handle_paysupport,
     "questionnaire": handle_questionnaire,
+    "reminders": handle_reminders,
 }
 
 

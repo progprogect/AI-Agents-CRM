@@ -12,6 +12,7 @@ from app.services.agent_reply_coordinator import (
     KEY_AUTO_DUE,
     KEY_AUTO_IDX,
     KEY_AUTO_PAY,
+    KEY_AUTO_ONCE_PREFIX,
     _payload_cancel_on_workflow_step_change,
     cancel_all_auto_steps,
     cancel_auto_steps_for_workflow_transition,
@@ -113,7 +114,8 @@ async def test_cancel_all_auto_steps_removes_all_members() -> None:
     zargs = redis.zrem.call_args[0]
     assert zargs[0] == KEY_AUTO_DUE
     assert set(zargs[1:]) == members
-    assert redis.delete.await_count == 3
+    assert redis.delete.await_count == 4
     redis.delete.assert_any_call(f"{KEY_AUTO_PAY}{conv}:a")
     redis.delete.assert_any_call(f"{KEY_AUTO_PAY}{conv}:b")
     redis.delete.assert_any_call(idx_key)
+    redis.delete.assert_any_call(f"{KEY_AUTO_ONCE_PREFIX}{conv}")
