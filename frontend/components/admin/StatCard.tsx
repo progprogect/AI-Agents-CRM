@@ -1,6 +1,7 @@
 /** Stat card component with change indicator. */
 
 import React from "react";
+import Link from "next/link";
 import { formatChange } from "@/lib/utils/statsHelpers";
 
 interface StatCardProps {
@@ -9,6 +10,8 @@ interface StatCardProps {
   change?: number;
   icon?: string;
   colorClass?: string;
+  /** When set, the whole card links to this path (e.g. drill-down from stats). */
+  href?: string;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
@@ -17,13 +20,12 @@ export const StatCard: React.FC<StatCardProps> = ({
   change,
   icon,
   colorClass = "bg-[#EEEAE7]/10 text-[#443C3C] border-[#251D1C]/30",
+  href,
 }) => {
   const changeDisplay = change !== undefined ? formatChange(change) : null;
 
-  return (
-    <div
-      className={`p-6 rounded-sm border border-[#251D1C]/20 bg-white shadow-sm hover:shadow-md transition-all duration-200 ${colorClass}`}
-    >
+  const inner = (
+    <>
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p className="text-sm font-medium mb-2">{label}</p>
@@ -40,6 +42,21 @@ export const StatCard: React.FC<StatCardProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </>
   );
+
+  const shellClass = `p-6 rounded-sm border border-[#251D1C]/20 bg-white shadow-sm hover:shadow-md transition-all duration-200 ${colorClass}`;
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={`${shellClass} block focus:outline-none focus-visible:ring-2 focus-visible:ring-[#251D1C] focus-visible:ring-offset-2`}
+      >
+        {inner}
+      </Link>
+    );
+  }
+
+  return <div className={shellClass}>{inner}</div>;
 };

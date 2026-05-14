@@ -757,6 +757,39 @@ async def update_marketing_status(
         )
 
 
+class EndUserRow(BaseModel):
+    """One aggregated end-user row for admin stats."""
+
+    agent_id: str
+    agent_display_name: Optional[str] = None
+    channel: str
+    external_user_id: str
+    display_name: Optional[str] = None
+    username: Optional[str] = None
+    last_seen_at: Optional[str] = None
+    conversation_count: int = Field(..., ge=0)
+
+
+class EndUsersPageResponse(BaseModel):
+    """Paginated distinct end users."""
+
+    total: int = Field(..., ge=0)
+    items: list[EndUserRow]
+
+
+@router.get("/stats/end-users", response_model=EndUsersPageResponse)
+async def list_stats_end_users(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    deps: CommonDependencies = Depends(),
+    _admin: str = require_admin(),
+):
+    """List unique end users (by agent + channel + external_user_id), paginated."""
+    total = await deps.db.count_distinct_end_users()
+    rows = await deps.db.list_distinct_end_users(limit=limit, offset=offset)
+    return EndUsersPageResponse(total=total, items=[EndUserRow(**r) for r in rows])
+
+
 @router.get("/stats")
 async def get_stats(
     period: Optional[str] = Query(
@@ -819,6 +852,8 @@ async def get_stats(
         if _start <= created_dt <= _end:
             period_conversations.append(c)
 
+    unique_end_users = await deps.db.count_distinct_end_users()
+
     # Calculate technical status metrics
     stats = {
         "total_conversations": len(period_conversations),
@@ -864,6 +899,7 @@ async def get_stats(
             if get_enum_value(c.marketing_status) == MarketingStatus.REJECTED.value
         ),
         "period": period,
+        "unique_end_users": unique_end_users,
     }
 
     # Add dynamic CRM stage stats using SQL aggregation

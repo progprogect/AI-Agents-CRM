@@ -590,39 +590,32 @@ export const api = {
   async getStats(params?: {
     period?: string;
     include_comparison?: boolean;
-  }): Promise<{
-    total_conversations: number;
-    ai_active: number;
-    needs_human: number;
-    human_active: number;
-    closed: number;
-    marketing_new: number;
-    marketing_booked: number;
-    marketing_no_response: number;
-    marketing_rejected: number;
-    period: string;
-    comparison?: {
-      total_conversations: number;
-      ai_active: number;
-      needs_human: number;
-      human_active: number;
-      closed: number;
-      marketing_new: number;
-      marketing_booked: number;
-      marketing_no_response: number;
-      marketing_rejected: number;
-    };
-  }> {
+  }): Promise<import("./types/stats").Stats> {
     const queryParams = new URLSearchParams();
     if (params?.period) queryParams.append("period", params.period);
     if (params?.include_comparison !== undefined)
       queryParams.append("include_comparison", params.include_comparison.toString());
 
-    return request(
+    return request<import("./types/stats").Stats>(
       `/api/v1/admin/stats?${queryParams.toString()}`,
       {},
       true
     ); // require auth
+  },
+
+  async getAdminStatsEndUsers(params?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<import("./types/stats").EndUsersPage> {
+    const queryParams = new URLSearchParams();
+    if (params?.limit != null) queryParams.append("limit", String(params.limit));
+    if (params?.offset != null) queryParams.append("offset", String(params.offset));
+    const qs = queryParams.toString();
+    return request<import("./types/stats").EndUsersPage>(
+      `/api/v1/admin/stats/end-users${qs ? `?${qs}` : ""}`,
+      {},
+      true
+    );
   },
 
   // Channel bindings endpoints

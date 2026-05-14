@@ -323,6 +323,76 @@ class PostgreSQLClient:
             )
         return [Conversation(**_row_to_conv(r)) for r in rows]
 
+    async def count_distinct_end_users(self) -> int:
+        """Count unique end users (agent_id + channel + external_user_id) with non-empty external id.
+
+        Uses the same FROM/WHERE as ``list_distinct_end_users`` (including join to ``agents``)
+        so the total matches paginated list rows.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT COUNT(*)::bigint AS n FROM (
+                    SELECT 1
+                    FROM conversations c
+                    INNER JOIN agents a ON a.agent_id = c.agent_id
+                    WHERE c.external_user_id IS NOT NULL
+                      AND btrim(c.external_user_id::text) <> ''
+                    GROUP BY c.agent_id, c.channel, c.external_user_id
+                ) t
+                """
+            )
+        return int(row["n"]) if row and row["n"] is not None else 0
+
+    async def list_distinct_end_users(
+        self,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        """Paginated distinct end users with aggregates (newest activity first)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT
+                    c.agent_id,
+                    MAX(a.config #>> '{profile,agent_display_name}') AS agent_display_name,
+                    c.channel,
+                    c.external_user_id,
+                    MAX(NULLIF(btrim(c.external_user_name::text), '')) AS display_name,
+                    MAX(NULLIF(btrim(c.external_user_username::text), '')) AS username,
+                    MAX(c.updated_at) AS last_seen_at,
+                    COUNT(*)::bigint AS conversation_count
+                FROM conversations c
+                INNER JOIN agents a ON a.agent_id = c.agent_id
+                WHERE c.external_user_id IS NOT NULL
+                  AND btrim(c.external_user_id::text) <> ''
+                GROUP BY c.agent_id, c.channel, c.external_user_id
+                ORDER BY MAX(c.updated_at) DESC NULLS LAST
+                LIMIT $1 OFFSET $2
+                """,
+                limit,
+                offset,
+            )
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            ls = r["last_seen_at"]
+            out.append(
+                {
+                    "agent_id": r["agent_id"],
+                    "agent_display_name": r["agent_display_name"] or None,
+                    "channel": r["channel"],
+                    "external_user_id": r["external_user_id"],
+                    "display_name": r["display_name"],
+                    "username": r["username"],
+                    "last_seen_at": to_utc_iso_string(ls) if ls else None,
+                    "conversation_count": int(r["conversation_count"]),
+                }
+            )
+        return out
+
     # Message operations
     async def create_message(self, message: Message) -> Message:
         ttl = self._calculate_ttl(message.timestamp)

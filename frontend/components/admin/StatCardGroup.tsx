@@ -11,6 +11,7 @@ interface StatCardGroupProps {
     change?: number;
     icon?: string;
     colorClass?: string;
+    href?: string;
   }>;
   columns?: number;
 }

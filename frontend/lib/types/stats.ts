@@ -19,6 +19,8 @@ export interface Stats {
   marketing_no_response: number;
   marketing_rejected: number;
   period: string;
+  /** Distinct end users (agent + channel + external_user_id), all time; excludes chats without external id. */
+  unique_end_users?: number;
   crm_stage_stats?: CRMStageStat[];
   comparison?: StatsComparison;
 }
@@ -36,3 +38,20 @@ export interface StatsComparison {
 }
 
 export type Period = "today" | "last_7_days" | "last_30_days";
+
+/** One row from GET /admin/stats/end-users */
+export interface EndUserRow {
+  agent_id: string;
+  agent_display_name: string | null;
+  channel: string;
+  external_user_id: string;
+  display_name: string | null;
+  username: string | null;
+  last_seen_at: string | null;
+  conversation_count: number;
+}
+
+export interface EndUsersPage {
+  total: number;
+  items: EndUserRow[];
+}

@@ -125,9 +125,17 @@ export default function StatsPage() {
             icon: "💬",
             colorClass: "bg-[#EEEAE7]/10 text-[#443C3C] border-[#251D1C]/30",
           },
+          {
+            label: t("uniqueEndUsers"),
+            value: stats.unique_end_users ?? 0,
+            icon: "👥",
+            colorClass: "bg-[#E8F4EC]/30 text-[#251D1C] border-[#251D1C]/25",
+            href: "/admin/stats/users",
+          },
         ]}
-        columns={1}
+        columns={2}
       />
+      <p className="text-xs text-gray-500 -mt-6 mb-8 max-w-3xl">{t("uniqueEndUsersHint")}</p>
 
       <StatCardGroup
         title={t("technicalStatuses")}
