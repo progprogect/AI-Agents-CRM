@@ -335,10 +335,15 @@ function ConnectForm({ agentId, channelType, onSuccess, onCancel }: ConnectFormP
     setSubmitting(true);
     try {
       const binding = await api.createChannelBinding(agentId, form);
-      // Auto-verify Telegram (sets webhook automatically) and Twilio (validates credentials)
+      // Auto-verify channels that self-register their webhook on verify:
+      // - Telegram: setWebhook is called automatically
+      // - Max: POST /subscriptions + setMyCommands registered automatically
+      // - Twilio: validates credentials
+      // VK is NOT auto-verified: user must configure Callback API in VK settings first
       const isTwilio =
         channelType === "whatsapp" && form.metadata?.provider === "twilio";
-      if ((channelType === "telegram" || isTwilio) && binding.binding_id) {
+      const autoVerify = channelType === "telegram" || channelType === "max" || isTwilio;
+      if (autoVerify && binding.binding_id) {
         await api.verifyChannelBinding(binding.binding_id).catch(() => {});
       }
       onSuccess(binding);
@@ -461,6 +466,129 @@ function ConnectForm({ agentId, channelType, onSuccess, onCancel }: ConnectFormP
           inputClass={inputClass}
           labelClass={labelClass}
         />
+      )}
+
+      {channelType === "vk" && (
+        <>
+          <div>
+            <label className={labelClass}>Community Token *</label>
+            <input
+              ref={firstInput}
+              className={inputClass}
+              type="password"
+              value={form.access_token}
+              onChange={(e) => set("access_token", e.target.value)}
+              placeholder="vk1.a.AbCdEf..."
+              required
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              Settings → API → Generate key (needs <strong>Messages</strong> access)
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Group ID *</label>
+            <input
+              className={inputClass}
+              value={form.channel_account_id}
+              onChange={(e) => set("channel_account_id", e.target.value)}
+              placeholder="123456789"
+              required
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              Numeric group ID from the community URL
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Confirmation Code *</label>
+            <input
+              className={inputClass}
+              value={(form.metadata?.confirmation_code as string) ?? ""}
+              onChange={(e) => setMeta("confirmation_code", e.target.value)}
+              placeholder="abc12345"
+              required
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              From Settings → API → Callback API → Confirmation string
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>Community Username (optional)</label>
+            <input
+              className={inputClass}
+              value={form.channel_username ?? ""}
+              onChange={(e) => set("channel_username", e.target.value)}
+              placeholder="@mygroup"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Webhook Secret (optional)</label>
+            <input
+              className={inputClass}
+              type="password"
+              value={(form.metadata?.webhook_secret as string) ?? ""}
+              onChange={(e) => setMeta("webhook_secret", e.target.value)}
+              placeholder="my-secret-key"
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              Secret key to verify incoming requests from VK (optional but recommended)
+            </p>
+          </div>
+        </>
+      )}
+
+      {channelType === "max" && (
+        <>
+          <div>
+            <label className={labelClass}>Bot Token *</label>
+            <input
+              ref={firstInput}
+              className={inputClass}
+              type="password"
+              value={form.access_token}
+              onChange={(e) => {
+                const token = e.target.value;
+                set("access_token", token);
+              }}
+              placeholder="your-max-bot-token"
+              required
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Bot Username / ID *</label>
+            <input
+              className={inputClass}
+              value={form.channel_account_id}
+              onChange={(e) => set("channel_account_id", e.target.value)}
+              placeholder="mybot or 123456"
+              required
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Display Username (optional)</label>
+            <input
+              className={inputClass}
+              value={form.channel_username ?? ""}
+              onChange={(e) => set("channel_username", e.target.value)}
+              placeholder="@mybot"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Webhook Secret (optional)</label>
+            <input
+              className={inputClass}
+              type="password"
+              value={(form.metadata?.webhook_secret as string) ?? ""}
+              onChange={(e) => setMeta("webhook_secret", e.target.value)}
+              placeholder="my-secret-key"
+            />
+            <p className="text-xs text-[#9A9590] mt-1">
+              Used for <code className="bg-[#EEEAE7] px-1 rounded">X-Max-Bot-Api-Secret</code> header verification
+            </p>
+          </div>
+          <p className="text-xs text-[#9A9590]">
+            Webhook and bot commands will be registered automatically on connect.
+          </p>
+        </>
       )}
 
       <div className="flex gap-2 pt-1">

@@ -490,11 +490,10 @@ class MaxService:
             max_sender = MaxSender(self, self.db)
             agent_service = create_agent_service(agent_config, self.db, max_sender)
             await agent_service.process_message(
+                user_message=message_text,
                 conversation_id=conversation.conversation_id,
-                message=message_text,
                 conversation_history=conversation_history,
                 user_media_url=vision_url,
-                user_media_type=media_type if vision_url else None,
             )
         except Exception as exc:
             logger.exception("Max agent processing error (chat=%s): %s", chat_id, exc)
