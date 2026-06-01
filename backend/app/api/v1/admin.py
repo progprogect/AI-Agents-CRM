@@ -492,13 +492,22 @@ async def send_admin_message(
 
             instagram_service = None
             telegram_service = None
+            vk_service = None
+            max_service = None
             if conversation_channel == MessageChannel.INSTAGRAM.value:
                 instagram_service = InstagramService(binding_service, deps.db, settings)
             elif conversation_channel == MessageChannel.TELEGRAM.value:
                 telegram_service = TelegramService(binding_service, deps.db, settings)
+            elif conversation_channel == MessageChannel.VK.value:
+                from app.services.vk_service import VKService
+                vk_service = VKService(binding_service, deps.db, settings)
+            elif conversation_channel == MessageChannel.MAX.value:
+                from app.services.max_service import MaxService
+                max_service = MaxService(binding_service, deps.db, settings)
 
             channel_sender = get_channel_sender(
-                channel_enum, deps.db, instagram_service, telegram_service
+                channel_enum, deps.db, instagram_service, telegram_service,
+                vk_service=vk_service, max_service=max_service,
             )
 
             try:
@@ -1053,6 +1062,8 @@ async def get_channel_config(_admin: str = require_admin()):
         "whatsapp_webhook_url": f"{base}/api/v1/whatsapp/webhook",
         "whatsapp_verify_token": wa_verify_token,
         "whatsapp_app_secret_configured": wa_app_secret_set,
+        "vk_webhook_base": f"{base}/api/v1/vk/webhook",
+        "max_webhook_base": f"{base}/api/v1/max/webhook",
     }
 
 

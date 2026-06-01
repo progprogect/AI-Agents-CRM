@@ -24,7 +24,7 @@ from app.api.middleware import (
 )
 from app.config import get_settings
 from app.utils.logging_config import setup_logging, get_logger
-from app.api.v1 import chat, agents, admin, channel_bindings, instagram, telegram, rag
+from app.api.v1 import chat, agents, admin, channel_bindings, instagram, telegram, rag, vk, max as max_router
 from app.api.v1 import instagram_test, whatsapp_test, debug, webhook_test, webhook_events, notifications
 from app.api.v1 import auth_router, crm, whatsapp, twilio_whatsapp, media
 from app.api.v1 import payments
@@ -290,6 +290,8 @@ def create_app() -> FastAPI:
     )
     app.include_router(instagram.router, prefix="/api/v1", tags=["instagram"])
     app.include_router(telegram.router, prefix="/api/v1", tags=["telegram"])
+    app.include_router(vk.router, prefix="/api/v1", tags=["vk"])
+    app.include_router(max_router.router, prefix="/api/v1", tags=["max"])
     app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
     app.include_router(agents.router, prefix="/api/v1/agents", tags=["agents"])
     app.include_router(rag.router, prefix="/api/v1/agents", tags=["rag"])
