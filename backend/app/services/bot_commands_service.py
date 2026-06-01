@@ -602,3 +602,83 @@ async def dispatch_command(
         bot_token=bot_token,
     )
     return True
+
+
+async def dispatch_command_generic(
+    command: str,
+    chat_id: str,
+    binding: ChannelBinding,
+    send_fn: Any,
+    db: Any,
+) -> bool:
+    """Channel-agnostic command dispatcher for VK, Max, and other non-Telegram channels.
+
+    Unlike ``dispatch_command``, this variant accepts a ``send_fn`` callable
+    ``async (text: str) -> None`` instead of a ``bot_token``, so it works with
+    any channel that can send text messages.
+
+    Command enablement is checked against ``binding.metadata.telegram_commands``
+    (same key as Telegram) so the admin panel controls all channels uniformly.
+    ``/start`` and ``/restart`` are always dispatched regardless of the toggle.
+
+    Args:
+        command: Raw command text, e.g. ``"/restart"``.
+        chat_id: External user ID / peer ID string for this channel.
+        binding: The ChannelBinding for the bot.
+        send_fn: Async callable ``(text: str) -> None`` to send a reply.
+        db: Database client.
+
+    Returns:
+        True if the command was recognised and handled; False otherwise.
+    """
+    from app.services.telegram_service import TelegramService
+
+    cmd_key = command.lstrip("/").split("@")[0].lower()
+    if cmd_key == "start":
+        cmd_key = "restart"
+
+    # /restart is always allowed (entry point for new users)
+    if cmd_key != "restart":
+        enabled: dict[str, bool] = (binding.metadata or {}).get("telegram_commands", {})
+        if not enabled.get(cmd_key, False):
+            return False
+
+    handler = COMMAND_HANDLERS.get(cmd_key)
+    if handler is None:
+        return False
+
+    logger.info(
+        "Dispatching generic bot command /%s for chat_id=%s binding=%s channel=%s",
+        cmd_key,
+        chat_id,
+        binding.binding_id,
+        binding.channel_type,
+    )
+
+    # We build a thin wrapper: the standard handlers expect (db, chat_id, binding, bot_token).
+    # For generic channels we create a fake bot_token placeholder and patch _send_telegram_message
+    # locally so messages are routed through send_fn instead of the Telegram API.
+    # This avoids duplicating all handler logic.
+    _FAKE_TOKEN = "__generic_channel__"
+
+    original_send = _send_telegram_message
+
+    async def _patched_send(bot_token: str, chat_id_: str, text: str, **kwargs: Any) -> None:
+        try:
+            await send_fn(text)
+        except Exception as exc:
+            logger.warning("dispatch_command_generic send_fn error: %s", exc)
+
+    import app.services.bot_commands_service as _self
+    _self._send_telegram_message = _patched_send  # type: ignore[attr-defined]
+    try:
+        await handler(
+            db=db,
+            chat_id=chat_id,
+            binding=binding,
+            bot_token=_FAKE_TOKEN,
+        )
+    finally:
+        _self._send_telegram_message = original_send  # type: ignore[attr-defined]
+
+    return True

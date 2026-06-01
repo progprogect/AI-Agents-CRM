@@ -9,8 +9,10 @@ from app.utils.datetime_utils import to_utc_iso_string, utc_now
 
 if TYPE_CHECKING:
     from app.services.instagram_service import InstagramService
+    from app.services.max_service import MaxService
     from app.services.telegram_service import TelegramService
     from app.services.twilio_service import TwilioWhatsAppService
+    from app.services.vk_service import VKService
     from app.services.whatsapp_service import WhatsAppService
 
 logger = logging.getLogger(__name__)
@@ -388,6 +390,120 @@ class WhatsAppSender(ChannelSender):
                 raise
 
 
+class VkSender(ChannelSender):
+    """Sender for VK (ВКонтакте) channel."""
+
+    def __init__(self, vk_service: "VKService", db: Any):
+        self.vk_service = vk_service
+        self.db = db
+
+    async def send_message(
+        self,
+        conversation_id: str,
+        message_text: str,
+        binding_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
+        media_url: Optional[str] = None,
+        media_type: Optional[str] = None,
+        quick_replies: Optional[list[str]] = None,
+        **kwargs,
+    ) -> None:
+        """Send message via VK messages.send with optional inline keyboard."""
+        if not binding_id or not external_user_id:
+            conversation = await self.db.get_conversation(conversation_id)
+            if not conversation:
+                raise ValueError(f"Conversation {conversation_id} not found")
+
+            from app.utils.enum_helpers import get_enum_value
+            if get_enum_value(conversation.channel) != MessageChannel.VK.value:
+                raise ValueError(f"Conversation {conversation_id} is not a VK conversation")
+
+            from app.services.channel_binding_service import ChannelBindingService
+            from app.storage.resolver import get_secrets_manager
+            binding_service = ChannelBindingService(self.db, get_secrets_manager())
+            bindings = await binding_service.get_bindings_by_agent(
+                agent_id=conversation.agent_id,
+                channel_type=MessageChannel.VK.value,
+                active_only=True,
+            )
+            if not bindings:
+                raise ValueError(f"No active VK binding for agent {conversation.agent_id}")
+            binding_id = bindings[0].binding_id
+            external_user_id = conversation.external_user_id
+
+        if not external_user_id:
+            raise ValueError("external_user_id (peer_id) is required for VK messages")
+
+        from app.services.vk_service import _build_vk_inline_keyboard
+        keyboard = _build_vk_inline_keyboard(quick_replies) if quick_replies else None
+
+        await self.vk_service.send_message(
+            binding_id=binding_id,
+            peer_id=external_user_id,
+            message_text=message_text,
+            media_url=media_url,
+            media_type=media_type,
+            keyboard=keyboard,
+        )
+
+
+class MaxSender(ChannelSender):
+    """Sender for Max messenger channel."""
+
+    def __init__(self, max_service: "MaxService", db: Any):
+        self.max_service = max_service
+        self.db = db
+
+    async def send_message(
+        self,
+        conversation_id: str,
+        message_text: str,
+        binding_id: Optional[str] = None,
+        external_user_id: Optional[str] = None,
+        media_url: Optional[str] = None,
+        media_type: Optional[str] = None,
+        quick_replies: Optional[list[str]] = None,
+        **kwargs,
+    ) -> None:
+        """Send message via Max POST /messages with optional inline keyboard."""
+        if not binding_id or not external_user_id:
+            conversation = await self.db.get_conversation(conversation_id)
+            if not conversation:
+                raise ValueError(f"Conversation {conversation_id} not found")
+
+            from app.utils.enum_helpers import get_enum_value
+            if get_enum_value(conversation.channel) != MessageChannel.MAX.value:
+                raise ValueError(f"Conversation {conversation_id} is not a Max conversation")
+
+            from app.services.channel_binding_service import ChannelBindingService
+            from app.storage.resolver import get_secrets_manager
+            binding_service = ChannelBindingService(self.db, get_secrets_manager())
+            bindings = await binding_service.get_bindings_by_agent(
+                agent_id=conversation.agent_id,
+                channel_type=MessageChannel.MAX.value,
+                active_only=True,
+            )
+            if not bindings:
+                raise ValueError(f"No active Max binding for agent {conversation.agent_id}")
+            binding_id = bindings[0].binding_id
+            external_user_id = conversation.external_user_id
+
+        if not external_user_id:
+            raise ValueError("external_user_id (chat_id) is required for Max messages")
+
+        from app.services.max_service import _build_max_inline_keyboard
+        keyboard = _build_max_inline_keyboard(quick_replies) if quick_replies else None
+
+        await self.max_service.send_message(
+            binding_id=binding_id,
+            chat_id=external_user_id,
+            message_text=message_text,
+            media_url=media_url,
+            media_type=media_type,
+            keyboard=keyboard,
+        )
+
+
 def get_channel_sender(
     channel: MessageChannel,
     db: Any,
@@ -395,6 +511,8 @@ def get_channel_sender(
     telegram_service: Optional["TelegramService"] = None,
     whatsapp_service: Optional["WhatsAppService"] = None,
     twilio_service: Optional["TwilioWhatsAppService"] = None,
+    vk_service: Optional["VKService"] = None,
+    max_service: Optional["MaxService"] = None,
 ) -> ChannelSender:
     """Get appropriate channel sender for the given channel."""
     if channel == MessageChannel.WEB_CHAT:
@@ -409,6 +527,22 @@ def get_channel_sender(
         return TelegramSender(telegram_service, db)
     elif channel == MessageChannel.WHATSAPP:
         return WhatsAppSender(whatsapp_service, db, twilio_service=twilio_service)
+    elif channel == MessageChannel.VK:
+        if not vk_service:
+            from app.services.channel_binding_service import ChannelBindingService
+            from app.services.vk_service import VKService
+            from app.storage.resolver import get_secrets_manager
+            binding_service = ChannelBindingService(db, get_secrets_manager())
+            vk_service = VKService(binding_service, db)
+        return VkSender(vk_service, db)
+    elif channel == MessageChannel.MAX:
+        if not max_service:
+            from app.services.channel_binding_service import ChannelBindingService
+            from app.services.max_service import MaxService
+            from app.storage.resolver import get_secrets_manager
+            binding_service = ChannelBindingService(db, get_secrets_manager())
+            max_service = MaxService(binding_service, db)
+        return MaxSender(max_service, db)
     else:
         raise ValueError(f"Unsupported channel: {channel}")
 
