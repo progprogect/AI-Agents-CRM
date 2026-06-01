@@ -21,6 +21,33 @@ TELEGRAM_API_BASE = "https://api.telegram.org/bot"
 
 class ExternalLinkProvider(AbstractPaymentProvider):
 
+    async def get_payment_message(
+        self,
+        plans: list[PaymentPlan],
+        settings: PaymentSettings,
+    ) -> tuple[str, list[dict]]:
+        """Build payment text and button list — channel-agnostic.
+
+        Returns:
+            (text, buttons) where buttons is a list of {"name": str, "url": str | None, "plan_id": str}
+            Callers use this to build native keyboard for their channel (VK openlink, Max link, etc.)
+        """
+        if not plans:
+            return settings.payment_title, []
+
+        lines = [f"{settings.payment_title}\n{settings.payment_description}\n"]
+        for p in plans:
+            limit_text = f", {p.messages_limit} сообщений" if p.messages_limit else ""
+            lines.append(f"• {p.name}: {_format_price(p.price_amount, p.currency)}{limit_text}")
+        text = "\n".join(lines) + "\n\nВыберите план для оплаты:"
+
+        buttons = []
+        for p in plans:
+            pay_url = await self._get_checkout_url(settings, p)
+            buttons.append({"name": p.name, "url": pay_url, "plan_id": p.plan_id})
+
+        return text, buttons
+
     async def send_plans_keyboard(
         self,
         bot_token: str,
@@ -28,26 +55,23 @@ class ExternalLinkProvider(AbstractPaymentProvider):
         plans: list[PaymentPlan],
         settings: PaymentSettings,
     ) -> None:
-        """Show available plans as text with inline "Pay" buttons that link to external URL."""
+        """Show available plans via Telegram inline keyboard with external URL buttons."""
         if not plans:
             return
 
-        lines = [f"*{settings.payment_title}*\n{settings.payment_description}\n"]
-        for p in plans:
-            limit_text = f", {p.messages_limit} сообщений" if p.messages_limit else ""
-            lines.append(f"• {p.name}: {_format_price(p.price_amount, p.currency)}{limit_text}")
+        text, pay_buttons = await self.get_payment_message(plans, settings)
+        # Re-add markdown formatting for Telegram
+        lines = text.split("\n")
+        if lines:
+            lines[0] = f"*{settings.payment_title}*"
+        text = "\n".join(lines)
 
-        text = "\n".join(lines) + "\n\nВыберите план для оплаты:"
-
-        # Buttons link directly to external payment URL (if configured)
-        buttons = []
-        for p in plans:
-            pay_url = await self._get_checkout_url(settings, p)
-            if pay_url:
-                buttons.append([{"text": p.name, "url": pay_url}])
+        inline_buttons = []
+        for btn in pay_buttons:
+            if btn["url"]:
+                inline_buttons.append([{"text": btn["name"], "url": btn["url"]}])
             else:
-                # Fallback: callback for manual handling
-                buttons.append([{"text": p.name, "callback_data": f"pay_plan:{p.plan_id}"}])
+                inline_buttons.append([{"text": btn["name"], "callback_data": f"pay_plan:{btn['plan_id']}"}])
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
@@ -56,7 +80,7 @@ class ExternalLinkProvider(AbstractPaymentProvider):
                     "chat_id": chat_id,
                     "text": text,
                     "parse_mode": "Markdown",
-                    "reply_markup": {"inline_keyboard": buttons},
+                    "reply_markup": {"inline_keyboard": inline_buttons},
                 },
             )
             if resp.status_code != 200:
@@ -70,7 +94,7 @@ class ExternalLinkProvider(AbstractPaymentProvider):
         payload: str,
         settings: PaymentSettings,
     ) -> None:
-        """Send payment URL as a text message."""
+        """Send payment URL as a text message via Telegram."""
         pay_url = await self._get_checkout_url(settings, plan)
         if not pay_url:
             logger.warning("No checkout URL available for plan %s", plan.plan_id)
