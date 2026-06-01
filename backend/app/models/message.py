@@ -24,6 +24,8 @@ class MessageChannel(str, Enum):
     INSTAGRAM = "instagram"
     TELEGRAM = "telegram"
     WHATSAPP = "whatsapp"
+    VK = "vk"
+    MAX = "max"
 
 
 class Message(BaseModel):
