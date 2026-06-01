@@ -1279,6 +1279,112 @@ export default function AgentChannelsPage() {
     </div>
   );
 
+  // ── VK guide ─────────────────────────────────────────────────────────────────
+
+  const vkWebhookBase = config?.vk_webhook_base || (appBase ? `${appBase}/api/v1/vk/webhook` : "");
+  const vkBindings = byType("vk");
+  const vkFirstBinding = vkBindings[0];
+  const vkWebhookUrl = vkFirstBinding ? `${vkWebhookBase}/${vkFirstBinding.binding_id}` : "";
+  const vkConfirmationCode = vkFirstBinding?.metadata?.confirmation_code as string | undefined;
+
+  const vkGuide = (
+    <div className="space-y-4">
+      <div className="text-xs text-[#9A9590] bg-[#EEEAE7]/60 rounded p-3 space-y-1">
+        <div className="font-semibold text-[#443C3C] mb-1.5">What you'll need</div>
+        <div>• A <strong>VK Community (Group)</strong> with admin access</div>
+        <div>• Community Access Token from <strong>Settings → API → Generate key</strong></div>
+      </div>
+
+      <div className="space-y-3">
+        <Step n={1}>
+          Open your community on VK and go to{" "}
+          <ExtLink href="https://vk.com/groups">Manage</ExtLink> →{" "}
+          <strong>Settings → API</strong>. Generate a community token with{" "}
+          <strong>Messages access</strong>. Copy the token.
+        </Step>
+
+        <Step n={2}>
+          Enter the community token and <strong>Group ID</strong> (numeric, visible in
+          the community URL, e.g.{" "}
+          <code className="bg-[#EEEAE7] px-1 rounded text-xs">123456789</code>) below and click{" "}
+          <strong>Connect</strong>.
+        </Step>
+
+        <Step n={3}>
+          In VK community settings go to <strong>Settings → API → Callback API</strong>.
+          Add a new server with this URL:
+          {vkWebhookUrl ? (
+            <CopyField value={vkWebhookUrl} />
+          ) : (
+            <div className="text-xs text-[#9A9590] mt-1">
+              Connect the binding first — the webhook URL will appear here.
+            </div>
+          )}
+          {vkConfirmationCode && (
+            <div className="mt-2 space-y-0.5">
+              <div className="text-xs font-medium text-[#443C3C]">Confirmation code (copy it into VK settings):</div>
+              <CopyField value={vkConfirmationCode} />
+            </div>
+          )}
+        </Step>
+
+        <Step n={4}>
+          In VK Callback API settings, choose event types:{" "}
+          <strong>Message received</strong> and <strong>Message event</strong>.
+          Set the API version to <code className="bg-[#EEEAE7] px-1 rounded text-xs">5.199</code>.
+          Click <strong>Verify</strong> in the admin panel once done.
+        </Step>
+      </div>
+    </div>
+  );
+
+  // ── Max guide ─────────────────────────────────────────────────────────────────
+
+  const maxWebhookBase = config?.max_webhook_base || (appBase ? `${appBase}/api/v1/max/webhook` : "");
+  const maxBindings = byType("max");
+  const maxFirstBinding = maxBindings[0];
+  const maxWebhookUrl = maxFirstBinding ? `${maxWebhookBase}/${maxFirstBinding.binding_id}` : "";
+
+  const maxGuide = (
+    <div className="space-y-4">
+      <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+        <p className="text-xs text-amber-800 font-medium">⚠️ Требование: юрлицо или ИП в РФ</p>
+        <p className="text-xs text-amber-700 mt-1">
+          С августа 2025 регистрация ботов в Max доступна только юридическим лицам и ИП,
+          зарегистрированным в России. Убедитесь, что ваша организация соответствует этому требованию.
+        </p>
+      </div>
+
+      <div className="text-xs text-[#9A9590] bg-[#EEEAE7]/60 rounded p-3 space-y-1">
+        <div className="font-semibold text-[#443C3C] mb-1.5">What you'll need</div>
+        <div>• A verified <strong>Max bot</strong> (registered at{" "}
+          <ExtLink href="https://dev.max.ru">dev.max.ru</ExtLink>)
+        </div>
+        <div>• Bot access token</div>
+      </div>
+
+      <div className="space-y-3">
+        <Step n={1}>
+          Register a bot at{" "}
+          <ExtLink href="https://dev.max.ru">dev.max.ru</ExtLink>. After approval,
+          copy the <strong>Bot Token</strong>.
+        </Step>
+
+        <Step n={2}>
+          Enter the bot token and bot username/ID below and click <strong>Connect</strong>.
+          Webhook subscription and bot commands will be registered automatically.
+        </Step>
+
+        {maxWebhookUrl && (
+          <Step n={3}>
+            Webhook URL (registered automatically on Verify):
+            <CopyField value={maxWebhookUrl} />
+          </Step>
+        )}
+      </div>
+    </div>
+  );
+
   // ── WhatsApp guide ───────────────────────────────────────────────────────────
 
   const twilioWebhookUrl = appBase ? `${appBase}/api/v1/twilio/whatsapp/webhook` : "";
@@ -1376,6 +1482,28 @@ export default function AgentChannelsPage() {
               />
             ) : undefined
           }
+        />
+
+        <ChannelCard
+          title="ВКонтакте"
+          icon="💙"
+          bindings={vkBindings}
+          config={config}
+          agentId={agentId}
+          channelType="vk"
+          onBindingsChange={load}
+          guide={vkGuide}
+        />
+
+        <ChannelCard
+          title="Max"
+          icon="🔵"
+          bindings={maxBindings}
+          config={config}
+          agentId={agentId}
+          channelType="max"
+          onBindingsChange={load}
+          guide={maxGuide}
         />
       </div>
     </div>

@@ -5,6 +5,7 @@
 import React, { useState } from "react";
 import { TelegramBotCommandsPanel } from "@/components/admin/TelegramBotCommandsPanel";
 import type { ChannelBinding } from "@/lib/types/channel";
+import { getChannelLabel } from "@/lib/utils/channelDisplay";
 
 interface ChannelBindingsListProps {
   bindings: ChannelBinding[];
@@ -36,7 +37,7 @@ export function ChannelBindingsList({
             No channel bindings yet
           </h2>
           <p className="text-gray-600">
-            Connect a channel (Instagram or Telegram) to start receiving messages.
+            Connect a channel (Instagram, Telegram, WhatsApp, VK, or Max) to start receiving messages.
           </p>
         </div>
       </div>
@@ -71,7 +72,10 @@ export function ChannelBindingsList({
         <tbody className="bg-white divide-y divide-gray-200">
           {bindings.map((binding) => {
             const isTelegram = binding.channel_type === "telegram";
+            const isVk = binding.channel_type === "vk";
+            const isMax = binding.channel_type === "max";
             const commandsOpen = expandedCommands === binding.binding_id;
+            const vkConfirmationCode = isVk ? (binding.metadata?.confirmation_code as string | undefined) : undefined;
 
             return (
               <React.Fragment key={binding.binding_id}>
@@ -79,11 +83,7 @@ export function ChannelBindingsList({
                   className="hover:bg-[#EEEAE7]/5 transition-colors duration-150"
                 >
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {binding.channel_type === "instagram"
-                      ? "Instagram"
-                      : isTelegram
-                        ? "Telegram"
-                      : binding.channel_type}
+                    {getChannelLabel(binding.channel_type)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {binding.channel_account_id}
@@ -149,6 +149,22 @@ export function ChannelBindingsList({
                           Команды
                           <span className="text-xs">{commandsOpen ? "\u25b2" : "\u25bc"}</span>
                         </button>
+                      )}
+                      {isVk && vkConfirmationCode && (
+                        <span
+                          className="text-xs text-[#9A9590] font-mono bg-[#EEEAE7] px-1.5 py-0.5 rounded select-all"
+                          title="VK confirmation code — copy into Callback API settings"
+                        >
+                          code: {vkConfirmationCode}
+                        </span>
+                      )}
+                      {(isVk || isMax) && binding.metadata?.webhook_url && (
+                        <span
+                          className="text-xs text-[#9A9590] truncate max-w-[180px] block"
+                          title={binding.metadata.webhook_url as string}
+                        >
+                          🔗 {(binding.metadata.webhook_url as string).split("/").slice(-3).join("/")}
+                        </span>
                       )}
                     </div>
                   </td>

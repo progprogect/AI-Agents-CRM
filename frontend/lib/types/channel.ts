@@ -1,6 +1,6 @@
 /** Types for channel bindings. */
 
-export type ChannelType = "web_chat" | "instagram" | "telegram" | "whatsapp";
+export type ChannelType = "web_chat" | "instagram" | "telegram" | "whatsapp" | "vk" | "max";
 
 export interface ChannelConfig {
   app_url: string;
@@ -11,6 +11,10 @@ export interface ChannelConfig {
   whatsapp_webhook_url: string;
   whatsapp_verify_token: string;
   whatsapp_app_secret_configured: boolean;
+  /** Base webhook URL for VK bindings. Append /{binding_id} to get the per-binding URL. */
+  vk_webhook_base: string;
+  /** Base webhook URL for Max bindings. Append /{binding_id} to get the per-binding URL. */
+  max_webhook_base: string;
 }
 
 export interface ChannelBinding {
