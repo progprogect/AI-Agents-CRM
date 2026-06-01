@@ -15,9 +15,10 @@ Binding metadata (optional):
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any, Callable, Coroutine, Optional
 
 import httpx
 
@@ -255,12 +256,15 @@ async def handle_restart(
                 exc,
             )
 
-        # Create a new conversation
+        # Create a new conversation — use the binding's channel type so /restart
+        # works correctly on VK, Max, and future channels (not just Telegram).
         new_conv_id = str(uuid.uuid4())
+        from app.models.message import MessageChannel
+        _channel_value = getattr(binding.channel_type, "value", str(binding.channel_type))
         new_conversation = Conversation(
             conversation_id=new_conv_id,
             agent_id=binding.agent_id,
-            channel="telegram",
+            channel=_channel_value,
             external_user_id=chat_id,
             status=ConversationStatus.AI_ACTIVE,
             marketing_status=MarketingStatus.NEW,
@@ -308,8 +312,11 @@ async def handle_restart(
             logger.debug("Could not load restart_welcome template: %s", exc)
             video_note_file_id = ""
 
-        # Intro video note first, then pause, then welcome text (same Telegram path as workflow auto-steps).
-        if video_note_file_id:
+        # Intro video note is a Telegram-only feature (file_id format, video_note API).
+        # Skip for VK, Max, and other non-Telegram channels.
+        from app.models.channel_binding import ChannelType
+        _is_telegram = getattr(binding.channel_type, "value", str(binding.channel_type)) == ChannelType.TELEGRAM.value
+        if video_note_file_id and _is_telegram:
             try:
                 logger.info(
                     "Sending intro video note binding=%s agent=%s chat_id=%s",
@@ -517,6 +524,13 @@ async def handle_feedback(
         )
 
 
+# Context variable for non-Telegram send function — set per-coroutine in
+# dispatch_command_generic so concurrent VK/Max requests don't interfere.
+_generic_channel_send_fn: contextvars.ContextVar[
+    Optional[Callable[[str], Coroutine[Any, Any, None]]]
+] = contextvars.ContextVar("_generic_channel_send_fn", default=None)
+
+
 async def _send_telegram_message(
     bot_token: str,
     chat_id: str,
@@ -524,7 +538,15 @@ async def _send_telegram_message(
     *,
     parse_mode: Optional[str] = None,
 ) -> None:
-    """Send a message to a Telegram chat (optionally HTML for default templates)."""
+    """Send a message — routes through non-Telegram send_fn if set for this coroutine."""
+    send_fn = _generic_channel_send_fn.get()
+    if send_fn is not None:
+        try:
+            await send_fn(text)
+        except Exception as exc:
+            logger.warning("_send_telegram_message via generic send_fn failed: %s", exc)
+        return
+
     payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
     if parse_mode:
         payload["parse_mode"] = parse_mode
@@ -631,8 +653,6 @@ async def dispatch_command_generic(
     Returns:
         True if the command was recognised and handled; False otherwise.
     """
-    from app.services.telegram_service import TelegramService
-
     cmd_key = command.lstrip("/").split("@")[0].lower()
     if cmd_key == "start":
         cmd_key = "restart"
@@ -655,22 +675,11 @@ async def dispatch_command_generic(
         binding.channel_type,
     )
 
-    # We build a thin wrapper: the standard handlers expect (db, chat_id, binding, bot_token).
-    # For generic channels we create a fake bot_token placeholder and patch _send_telegram_message
-    # locally so messages are routed through send_fn instead of the Telegram API.
-    # This avoids duplicating all handler logic.
+    # Route messages through send_fn by setting a per-coroutine ContextVar.
+    # This is asyncio-safe: each coroutine has its own context, so concurrent
+    # VK/Max requests cannot interfere with each other.
     _FAKE_TOKEN = "__generic_channel__"
-
-    original_send = _send_telegram_message
-
-    async def _patched_send(bot_token: str, chat_id_: str, text: str, **kwargs: Any) -> None:
-        try:
-            await send_fn(text)
-        except Exception as exc:
-            logger.warning("dispatch_command_generic send_fn error: %s", exc)
-
-    import app.services.bot_commands_service as _self
-    _self._send_telegram_message = _patched_send  # type: ignore[attr-defined]
+    token = _generic_channel_send_fn.set(send_fn)
     try:
         await handler(
             db=db,
@@ -679,6 +688,6 @@ async def dispatch_command_generic(
             bot_token=_FAKE_TOKEN,
         )
     finally:
-        _self._send_telegram_message = original_send  # type: ignore[attr-defined]
+        _generic_channel_send_fn.reset(token)
 
     return True

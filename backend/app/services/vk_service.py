@@ -711,16 +711,17 @@ class VKService:
             from app.models.payment import PaymentProvider, list_payment_plans
             from app.services.payment.factory import get_payment_provider
 
-            provider = get_payment_provider(pay_settings.provider)
             if pay_settings.provider == PaymentProvider.EXTERNAL_LINK:
+                provider = get_payment_provider(pay_settings)
                 plans = await list_payment_plans(binding_id, active_only=True)
                 if plans:
                     text, pay_buttons = await provider.get_payment_message(plans, pay_settings)
                     keyboard = _build_vk_payment_keyboard(pay_buttons)
+                    combined = f"{paywall_message}\n\n{text}" if text and text != paywall_message else paywall_message
                     await self._send_message_raw(
                         access_token=access_token,
                         peer_id=peer_id,
-                        text=f"{paywall_message}\n\n{text}" if text != paywall_message else text,
+                        text=combined,
                         keyboard=keyboard,
                     )
                     return
