@@ -278,6 +278,71 @@ class ChannelBindingService:
             # mark as verified if token exists and binding is active
             return binding.is_active
 
+        # For VK: verify community token via groups.getById and store webhook URL in metadata
+        elif binding.channel_type == ChannelType.VK:
+            try:
+                from app.config import get_settings
+                from app.services.vk_service import VKService
+
+                settings = get_settings()
+                vk_service = VKService(self, self.db, settings)
+                access_token = await self.get_access_token(binding_id)
+                group_id = str(binding.channel_account_id or "")
+
+                is_valid = await vk_service.verify_group_token(access_token, group_id)
+                if is_valid:
+                    # Store the webhook URL in metadata so it can be shown in UI
+                    base_url = (settings.app_url or "").rstrip("/")
+                    webhook_url = f"{base_url}/api/v1/vk/webhook/{binding_id}"
+                    metadata = dict(binding.metadata or {})
+                    metadata["webhook_url"] = webhook_url
+                    await self.update_binding(binding_id, is_verified=True, metadata=metadata)
+                    logger.info("VK binding %s verified; webhook URL: %s", binding_id, webhook_url)
+                else:
+                    await self.update_binding(binding_id, is_verified=False)
+
+                return is_valid
+            except Exception as exc:
+                logger.error("Failed to verify VK binding %s: %s", binding_id, exc)
+                await self.update_binding(binding_id, is_verified=False)
+                return False
+
+        # For Max: verify bot token, register webhook subscription, set bot commands
+        elif binding.channel_type == ChannelType.MAX:
+            try:
+                from app.config import get_settings
+                from app.services.max_service import MaxService
+
+                settings = get_settings()
+                max_service = MaxService(self, self.db, settings)
+                access_token = await self.get_access_token(binding_id)
+
+                bot_info = await max_service.verify_bot_token(access_token)
+                if not bot_info:
+                    await self.update_binding(binding_id, is_verified=False)
+                    return False
+
+                # Build and store webhook URL
+                base_url = (settings.app_url or "").rstrip("/")
+                webhook_url = f"{base_url}/api/v1/max/webhook/{binding_id}"
+                metadata = dict(binding.metadata or {})
+                metadata["webhook_url"] = webhook_url
+
+                # Register webhook subscription
+                webhook_secret = metadata.get("webhook_secret", "")
+                await max_service.register_webhook(access_token, webhook_url, webhook_secret)
+
+                # Register bot commands
+                await max_service.set_bot_commands(access_token)
+
+                await self.update_binding(binding_id, is_verified=True, metadata=metadata)
+                logger.info("Max binding %s verified; webhook: %s", binding_id, webhook_url)
+                return True
+            except Exception as exc:
+                logger.error("Failed to verify Max binding %s: %s", binding_id, exc)
+                await self.update_binding(binding_id, is_verified=False)
+                return False
+
         # For other channels, return True if binding exists and is active
         return binding.is_active
 
