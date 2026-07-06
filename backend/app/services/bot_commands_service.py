@@ -287,30 +287,18 @@ async def handle_restart(
         )
         welcome_text = _DEFAULT_RESTART_WELCOME
         agent_data = None
+        tpl: dict[str, str] = {}
+        video_note_file_id = ""
         try:
             agent_data = await db.get_agent(binding.agent_id)
             if agent_data and "config" in agent_data:
-                custom = (
-                    agent_data["config"]
-                    .get("prompts", {})
-                    .get("templates", {})
-                    .get("restart_welcome", "")
-                    .strip()
-                )
+                tpl = agent_data["config"].get("prompts", {}).get("templates", {}) or {}
+                custom = (tpl.get("restart_welcome") or "").strip()
                 if custom:
                     welcome_text = custom
-                video_note_file_id = (
-                    agent_data["config"]
-                    .get("prompts", {})
-                    .get("templates", {})
-                    .get("intro_video_note_file_id", "")
-                    .strip()
-                )
-            else:
-                video_note_file_id = ""
+                video_note_file_id = (tpl.get("intro_video_note_file_id") or "").strip()
         except Exception as exc:
             logger.debug("Could not load restart_welcome template: %s", exc)
-            video_note_file_id = ""
 
         # Intro video note is a Telegram-only feature (file_id format, video_note API).
         # Skip for VK, Max, and other non-Telegram channels.
@@ -356,6 +344,37 @@ async def handle_restart(
                     exc_info=True,
                 )
             await asyncio.sleep(3)
+
+        if not _is_telegram:
+            video_url = (tpl.get("max_intro_video_url") or "").strip()
+            if video_url:
+                try:
+                    logger.info(
+                        "Sending Max intro video binding=%s agent=%s chat_id=%s",
+                        binding.binding_id,
+                        binding.agent_id,
+                        chat_id,
+                    )
+                    await _send_telegram_message(
+                        bot_token=bot_token,
+                        chat_id=chat_id,
+                        text="",
+                        media_url=video_url,
+                        media_type="video",
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Max intro video failed binding=%s chat_id=%s: %s",
+                        binding.binding_id,
+                        chat_id,
+                        exc,
+                        exc_info=True,
+                    )
+                else:
+                    await asyncio.sleep(1)
+            followup = (tpl.get("restart_welcome_followup") or "").strip()
+            if followup:
+                await _send_telegram_message(bot_token=bot_token, chat_id=chat_id, text=followup)
 
         await _send_telegram_message(
             bot_token=bot_token,
@@ -527,7 +546,7 @@ async def handle_feedback(
 # Context variable for non-Telegram send function — set per-coroutine in
 # dispatch_command_generic so concurrent VK/Max requests don't interfere.
 _generic_channel_send_fn: contextvars.ContextVar[
-    Optional[Callable[[str], Coroutine[Any, Any, None]]]
+    Optional[Callable[..., Coroutine[Any, Any, None]]]
 ] = contextvars.ContextVar("_generic_channel_send_fn", default=None)
 
 
@@ -537,12 +556,18 @@ async def _send_telegram_message(
     text: str,
     *,
     parse_mode: Optional[str] = None,
+    media_url: Optional[str] = None,
+    media_type: Optional[str] = None,
 ) -> None:
     """Send a message — routes through non-Telegram send_fn if set for this coroutine."""
     send_fn = _generic_channel_send_fn.get()
     if send_fn is not None:
         try:
-            await send_fn(text)
+            await send_fn(
+                text,
+                media_url=media_url,
+                media_type=media_type,
+            )
         except Exception as exc:
             logger.warning("_send_telegram_message via generic send_fn failed: %s", exc)
         return
@@ -647,7 +672,7 @@ async def dispatch_command_generic(
         command: Raw command text, e.g. ``"/restart"``.
         chat_id: External user ID / peer ID string for this channel.
         binding: The ChannelBinding for the bot.
-        send_fn: Async callable ``(text: str) -> None`` to send a reply.
+        send_fn: Async callable ``async (text, *, media_url=None, media_type=None) -> None``.
         db: Database client.
 
     Returns:

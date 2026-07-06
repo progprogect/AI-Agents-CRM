@@ -40,7 +40,19 @@ AI-powered assistant platform for customer conversations and CRM workflows. Buil
 
 ## Installation
 
-### Backend
+### Local development (Docker Compose)
+
+Recommended for local work. Full stack in one command; secrets stay on your machine (not in git).
+
+```bash
+./scripts/dev-setup.sh   # once: env files + migrations
+# set OPENAI_API_KEY in backend/.env
+./scripts/dev-up.sh
+```
+
+See [docs/local-development.md](docs/local-development.md) for details.
+
+### Backend (manual)
 
 1. Navigate to backend directory:
 ```bash

@@ -1,4 +1,4 @@
-"""Сценарий «Дай Лапу»: exit-авто с шага «Дать ответ» и цепочка авто→авто.
+"""Сценарий «Дай Лапу»: enter-авто с шага consult_complete и цепочка авто→авто.
 
 Проверяем валидацию PUT /api/v1/agents/{id} и ожидаемый набор pending_auto
 при переходе step_1776689159495 → step_consult_complete (как в agent_chain).
@@ -34,9 +34,12 @@ def test_day_lapu_config_parses_like_api_validation(day_lapu_config: dict) -> No
     cfg = AgentConfig.from_dict(day_lapu_config)
     assert cfg.agent_id == "day_lapu_tat_yana_vetirinarnyy_pomoshchnik_2"
     auto_day = next(a for a in cfg.workflow.auto_steps if a.id == "auto_1776696721697")
-    assert auto_day.source_id == "step_1776689159495"
+    assert auto_day.source_id == "step_consult_complete"
     assert auto_day.schedule_anchor == "on_step_exit"
     assert auto_day.delay_seconds == 86400
+    share_auto = next(a for a in cfg.workflow.auto_steps if a.id == "auto_recommendation_share")
+    assert share_auto.source_id == "step_consult_complete"
+    assert share_auto.schedule_anchor == "on_step_enter"
 
 
 def test_day_lapu_step_3_collect_sufficiency_flag(day_lapu_config: dict) -> None:
@@ -46,13 +49,14 @@ def test_day_lapu_step_3_collect_sufficiency_flag(day_lapu_config: dict) -> None
     assert step_3.evaluate_transition_conditions_when_collect_incomplete is True
     assert step_3.collect_to_questionnaire is True
     assert cfg.workflow.start_step_id == "step_privacy"
+    answer_step = next(s for s in cfg.workflow.steps if s.id == "step_1776689159495")
+    assert answer_step.transitions[0].match_quick_reply == "Все понятно"
 
 
-def test_pending_auto_when_leaving_answer_step(day_lapu_config: dict) -> None:
-    """При смене шага answer→consult_complete: только exit-авто со шага «Дать ответ».
+def test_pending_auto_when_entering_consult_complete(day_lapu_config: dict) -> None:
+    """При переходе answer→consult_complete: share планируется on_step_enter consult_complete.
 
-    Цепочки auto_after_share и 7d висят от auto_recommendation_share и планируются
-    при срабатывании этого авто, не при workflow-переходе.
+    24h follow-up — on_step_exit consult_complete (при уходе с шага, не при входе).
     """
     cfg = AgentConfig.from_dict(day_lapu_config)
     wf = cfg.workflow
@@ -64,14 +68,14 @@ def test_pending_auto_when_leaving_answer_step(day_lapu_config: dict) -> None:
         for a in wf.auto_steps
         if a.source_id == new_step_id and a.schedule_anchor == "on_step_enter"
     ]
-    exit_autos = [
+    exit_autos_from_answer = [
         a.id
         for a in wf.auto_steps
         if a.source_id == step_id and a.schedule_anchor == "on_step_exit"
     ]
 
-    assert enter_autos == []
-    assert set(exit_autos) == {"auto_recommendation_share", "auto_1776696721697"}
+    assert enter_autos == ["auto_recommendation_share"]
+    assert exit_autos_from_answer == []
 
     chained_from_share = [
         a.id
@@ -117,14 +121,12 @@ def test_put_agent_endpoint_validates_fixture(day_lapu_config: dict) -> None:
     body = r.json()
     assert body["agent_id"] == agent_id
     anchors = [a["schedule_anchor"] for a in body["config"]["workflow"]["auto_steps"]]
+    assert "on_step_enter" in anchors
     assert "on_step_exit" in anchors
 
 
-def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu_config: dict) -> None:
-    """POST /api/v1/chat/.../messages: при переходе с «Дать ответ» планируются два exit-авто.
-
-    Граф замокан; pending_auto как у agent_chain при переходе на step_consult_complete.
-    """
+def test_chat_api_post_message_schedules_share_on_consult_complete_enter(day_lapu_config: dict) -> None:
+    """POST /api/v1/chat/.../messages: при переходе на consult_complete планируется share enter-авто."""
     agent_id = day_lapu_config["agent_id"]
     cfg = AgentConfig.from_dict(day_lapu_config)
     step_answer = "step_1776689159495"
@@ -149,7 +151,8 @@ def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu
         if a.source_id == step_answer and a.schedule_anchor == "on_step_exit"
     ]
     pending_schedules = enter_schedules + exit_schedules
-    assert len(pending_schedules) == 2
+    assert len(pending_schedules) == 1
+    assert pending_schedules[0]["auto_step_id"] == "auto_recommendation_share"
 
     graph_return = {
         "response": "Спасибо, что обратились! Если что — я рядом 🐾",
@@ -215,14 +218,14 @@ def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu
 
         r = client.post(
             f"/api/v1/chat/conversations/{conversation_id}/messages",
-            json={"content": "спасибо, вопрос решён"},
+            json={"content": "Все понятно"},
         )
         assert r.status_code == 201, r.text
         assert r.json()["role"] == "agent"
 
     mock_cancel_all.assert_awaited_once()
-    assert mock_schedule_auto.await_count == 2
+    assert mock_schedule_auto.await_count == 1
     scheduled_ids = {call.kwargs["auto_step"].get("id") for call in mock_schedule_auto.await_args_list}
-    assert scheduled_ids == {"auto_recommendation_share", "auto_1776696721697"}
+    assert scheduled_ids == {"auto_recommendation_share"}
 
     app.dependency_overrides.clear()

@@ -148,7 +148,8 @@
             "condition": "Пользователь нажал «Все понятно» или эквивалент (вопрос решён, всё понятно, спасибо хватит); не путать с «Еще есть вопросы»",
             "next_step_id": "step_consult_complete",
             "is_forced": false,
-            "is_fallback": false
+            "is_fallback": false,
+            "match_quick_reply": "Все понятно"
           }
         ],
         "timer_trigger": null,
@@ -169,8 +170,8 @@
       {
         "id": "auto_recommendation_share",
         "name": "Сообщение «поделись» (шаблон)",
-        "source_id": "step_1776689159495",
-        "schedule_anchor": "on_step_exit",
+        "source_id": "step_consult_complete",
+        "schedule_anchor": "on_step_enter",
         "delay_seconds": 1,
         "action_type": "static",
         "message_template": "__prompts_template__:recommendation_share_message",
@@ -181,7 +182,7 @@
       {
         "id": "auto_1776696721697",
         "name": "как дела у питомца?",
-        "source_id": "step_1776689159495",
+        "source_id": "step_consult_complete",
         "schedule_anchor": "on_step_exit",
         "delay_seconds": 86400,
         "action_type": "agent",

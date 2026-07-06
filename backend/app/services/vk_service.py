@@ -203,7 +203,9 @@ class VKService:
                     command="/restart",
                     chat_id=str(peer_id),
                     binding=binding,
-                    send_fn=lambda text: self._send_text(access_token, peer_id, text),
+                    send_fn=lambda text, *, media_url=None, media_type=None: self._send_text(
+                        access_token, peer_id, text
+                    ),
                     db=self.db,
                 )
             except Exception as exc:
@@ -361,7 +363,9 @@ class VKService:
                     command=message_text,
                     chat_id=peer_id_str,
                     binding=binding,
-                    send_fn=lambda text: self._send_text(access_token, int(peer_id_str), text),
+                    send_fn=lambda text, *, media_url=None, media_type=None: self._send_text(
+                        access_token, int(peer_id_str), text
+                    ),
                     db=self.db,
                 )
                 if handled:

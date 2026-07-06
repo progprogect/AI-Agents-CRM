@@ -29,6 +29,7 @@ export interface WorkflowTransition {
   next_step_id: string;
   is_forced: boolean;      // if true, user cannot advance until condition is met
   is_fallback: boolean;    // if true, this is the "else" branch (taken when no condition matched)
+  match_quick_reply?: string | null;
 }
 
 export interface WorkflowStep {
@@ -326,6 +327,7 @@ export function agentConfigToFormData(
         next_step_id: t.next_step_id || "",
         is_forced: t.is_forced || false,
         is_fallback: t.is_fallback || false,
+        match_quick_reply: t.match_quick_reply ?? null,
       })),
       timer_trigger: s.timer_trigger
         ? {
@@ -493,6 +495,7 @@ export function formDataToAgentConfig(
           next_step_id: t.next_step_id,
           is_forced: t.is_forced || false,
           is_fallback: t.is_fallback || false,
+          ...(t.match_quick_reply ? { match_quick_reply: t.match_quick_reply } : {}),
         })),
         timer_trigger: s.timer_trigger
           ? {

@@ -492,7 +492,11 @@ class MaxSender(ChannelSender):
             raise ValueError("external_user_id (chat_id) is required for Max messages")
 
         from app.services.max_service import _build_max_inline_keyboard
-        keyboard = _build_max_inline_keyboard(quick_replies) if quick_replies else None
+        keyboard = (
+            _build_max_inline_keyboard(quick_replies, conversation_id=conversation_id)
+            if quick_replies
+            else None
+        )
 
         await self.max_service.send_message(
             binding_id=binding_id,

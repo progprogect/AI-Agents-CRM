@@ -30,6 +30,12 @@ ENV/
 .env
 .env.local
 .env.*.local
+backend/.env
+frontend/.env.local
+
+# Local Docker dev
+docker-compose.override.yml
+docker/.data/
 
 # IDE
 .vscode/
@@ -38,6 +44,7 @@ ENV/
 *.swo
 *~
 .DS_Store
+.cursor/
 
 # Logs
 *.log

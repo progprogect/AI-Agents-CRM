@@ -58,18 +58,29 @@ def _truncate_max_text(text: str, max_len: int = MAX_MESSAGE_MAX_LENGTH) -> str:
     return text[:take] + suffix if take > 64 else text[:max_len]
 
 
-def _build_max_inline_keyboard(quick_replies: list[str]) -> Optional[dict]:
+def _build_max_inline_keyboard(
+    quick_replies: list[str],
+    conversation_id: Optional[str] = None,
+) -> Optional[dict]:
     """Build Max inline_keyboard attachment from quick_reply labels."""
     if not quick_replies:
         return None
     rows = [quick_replies[i:i + 2] for i in range(0, len(quick_replies), 2)]
+    conv_hint = (conversation_id or "")[:8] or None
     buttons = []
     for row in rows:
         buttons.append([
             {
                 "type": "callback",
                 "text": label[:40],
-                "payload": json.dumps({"cmd": "reply", "text": label}, ensure_ascii=False)[:1024],
+                "payload": json.dumps(
+                    {
+                        "cmd": "reply",
+                        "text": label,
+                        **({"conv": conv_hint} if conv_hint else {}),
+                    },
+                    ensure_ascii=False,
+                )[:1024],
             }
             for label in row
         ])
@@ -169,7 +180,13 @@ class MaxService:
                 command="/restart",
                 chat_id=chat_id,
                 binding=binding,
-                send_fn=lambda text: self._send_text(access_token, int(chat_id), text),
+                send_fn=lambda text, *, media_url=None, media_type=None: self._send_message_raw(
+                    access_token,
+                    int(chat_id),
+                    text,
+                    media_url=media_url,
+                    media_type=media_type,
+                ),
                 db=self.db,
             )
         except Exception as exc:
@@ -190,6 +207,7 @@ class MaxService:
 
         chat_id = str(chat_id_raw)
 
+        access_token: Optional[str] = None
         # Always answer callback
         try:
             access_token = await self.channel_binding_service.get_access_token(binding_id)
@@ -206,30 +224,52 @@ class MaxService:
         cmd = cb_payload.get("cmd", "")
         if cmd == "restart":
             try:
-                access_token = await self.channel_binding_service.get_access_token(binding_id)
+                token = access_token or await self.channel_binding_service.get_access_token(binding_id)
                 from app.services.bot_commands_service import dispatch_command_generic
                 await dispatch_command_generic(
                     command="/restart",
                     chat_id=chat_id,
                     binding=binding,
-                    send_fn=lambda text: self._send_text(access_token, int(chat_id), text),
+                    send_fn=lambda text, *, media_url=None, media_type=None, _token=token: self._send_message_raw(
+                        _token,
+                        int(chat_id),
+                        text,
+                        media_url=media_url,
+                        media_type=media_type,
+                    ),
                     db=self.db,
                 )
             except Exception as exc:
                 logger.warning("Max callback /restart failed: %s", exc)
         elif cmd == "reply":
             reply_text = cb_payload.get("text", "")
-            if reply_text:
-                synthetic = {
-                    "update_type": "message_created",
-                    "message": {
-                        "recipient": {"chat_id": chat_id_raw, "chat_type": "dialog", "user_id": chat_id_raw},
-                        "body": {"mid": "", "seq": 0, "text": reply_text},
-                        "sender": {"user_id": chat_id_raw, "is_bot": False},
-                        "timestamp": 0,
-                    },
-                }
-                await self._handle_message_created(synthetic, binding, binding_id)
+            if not reply_text:
+                return
+            conv_hint = (cb_payload.get("conv") or "").strip()
+            if conv_hint:
+                active = await self._get_active_conversation(binding.agent_id, chat_id)
+                if not active or active.conversation_id[:8] != conv_hint:
+                    try:
+                        if access_token is None:
+                            access_token = await self.channel_binding_service.get_access_token(binding_id)
+                        await self._send_text(
+                            access_token,
+                            int(chat_id),
+                            "Сессия устарела, нажмите /restart",
+                        )
+                    except Exception as exc:
+                        logger.warning("Max stale-session reply failed: %s", exc)
+                    return
+            synthetic = {
+                "update_type": "message_created",
+                "message": {
+                    "recipient": {"chat_id": chat_id_raw, "chat_type": "dialog", "user_id": chat_id_raw},
+                    "body": {"mid": "", "seq": 0, "text": reply_text},
+                    "sender": {"user_id": chat_id_raw, "is_bot": False},
+                    "timestamp": 0,
+                },
+            }
+            await self._handle_message_created(synthetic, binding, binding_id)
 
     async def _answer_callback(self, access_token: str, callback_id: str) -> None:
         """POST /answers to acknowledge callback press."""
@@ -348,7 +388,13 @@ class MaxService:
                     command=message_text,
                     chat_id=chat_id,
                     binding=binding,
-                    send_fn=lambda text: self._send_text(access_token, int(chat_id), text),
+                    send_fn=lambda text, *, media_url=None, media_type=None: self._send_message_raw(
+                        access_token,
+                        int(chat_id),
+                        text,
+                        media_url=media_url,
+                        media_type=media_type,
+                    ),
                     db=self.db,
                 )
                 if handled:
@@ -674,6 +720,32 @@ class MaxService:
     # -------------------------------------------------------------------------
     # Conversation management
     # -------------------------------------------------------------------------
+
+    async def _get_active_conversation(
+        self,
+        agent_id: str,
+        external_user_id: str,
+    ) -> Optional[Conversation]:
+        """Return the active Max conversation for a user, if any."""
+        try:
+            all_conversations = await self.db.list_conversations(
+                agent_id=agent_id,
+                status=ConversationStatus.AI_ACTIVE,
+                limit=200,
+            )
+            for conv in all_conversations or []:
+                if (
+                    get_enum_value(conv.channel) == MessageChannel.MAX.value
+                    and conv.external_user_id == external_user_id
+                ):
+                    return conv
+        except Exception as exc:
+            logger.warning(
+                "Error finding active Max conversation for user %s: %s",
+                external_user_id,
+                exc,
+            )
+        return None
 
     async def _find_or_create_conversation(
         self,

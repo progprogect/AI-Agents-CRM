@@ -197,10 +197,14 @@ header-includes:
 
 Bot ID определяется автоматически при верификации. Если вам нужно узнать его вручную:
 
-1. Отправьте GET-запрос к API:
+1. Отправьте GET-запрос к Max Bot API (базовый URL: `https://platform-api.max.ru`):
+
+```bash
+curl -s -H "Authorization: ВАШ_ТОКЕН" https://platform-api.max.ru/me
 ```
-GET https://botapi.max.ru/me?access_token=ВАШ_ТОКЕН
-```
+
+> Токен передаётся в заголовке `Authorization` **без** префикса `Bearer`. Передача токена через query-параметры (`?access_token=...`) больше не поддерживается.
+
 2. В ответе найдите поле `"user_id"` — это и есть Bot ID.
 
 ---
@@ -228,9 +232,9 @@ GET https://botapi.max.ru/me?access_token=ВАШ_ТОКЕН
 
 В отличие от VK, Max выполняет верификацию **автоматически** при нажатии «Подключить»:
 
-1. Платформа вызывает `GET /me` — проверяет токен.
-2. Регистрирует webhook (`POST /subscriptions`).
-3. Устанавливает команды бота (`POST /bots/my/commands`).
+1. Платформа вызывает `GET https://platform-api.max.ru/me` — проверяет токен.
+2. Регистрирует webhook (`POST https://platform-api.max.ru/subscriptions`).
+3. Устанавливает команды бота (`PATCH https://platform-api.max.ru/me`).
 4. Статус канала сразу меняется на **«Активен»**.
 
 Если верификация не прошла — проверьте корректность токена.

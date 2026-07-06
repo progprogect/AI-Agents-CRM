@@ -64,7 +64,7 @@ def test_workflow_auto_step_default_cancel_on_workflow_step_change() -> None:
     assert dumped.get("cancel_on_workflow_step_change") is True
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancel_auto_steps_for_workflow_transition_selective() -> None:
     conv = "conv-1"
     m_ephemeral = f"{conv}:ephemeral"
@@ -95,7 +95,7 @@ async def test_cancel_auto_steps_for_workflow_transition_selective() -> None:
     redis.srem.assert_called_once_with(idx_key, m_ephemeral)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancel_all_auto_steps_removes_all_members() -> None:
     conv = "conv-2"
     members = {f"{conv}:a", f"{conv}:b"}

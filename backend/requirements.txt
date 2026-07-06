@@ -24,8 +24,8 @@ sqlalchemy[asyncio]>=2.0.0
 # Encryption for secrets
 cryptography>=42.0.0
 
-# WebSocket
-websockets==12.0
+# WebSocket (>=14 required by langgraph-sdk; uvicorn[standard] accepts >=10.4)
+websockets>=14,<16
 
 # PDF
 PyPDF2>=3.0.0
