@@ -104,6 +104,71 @@ async def test_upload_media_returns_token_from_step1() -> None:
 
 
 @pytest.mark.anyio
+async def test_upload_media_returns_token_when_okcdn_body_empty() -> None:
+    svc = _make_service()
+
+    async def fake_post(self: httpx.AsyncClient, url: str, **kwargs: object) -> httpx.Response:
+        if url.startswith(f"{MAX_API_BASE}/uploads"):
+            return httpx.Response(
+                200,
+                json={"url": "https://omub.okcdn.ru/upload.do", "token": "tok-from-step1"},
+                request=httpx.Request("POST", url),
+            )
+        if url == "https://omub.okcdn.ru/upload.do":
+            return httpx.Response(200, text="", request=httpx.Request("POST", url))
+        raise AssertionError(f"unexpected post url: {url}")
+
+    async def fake_get(self: httpx.AsyncClient, url: str, **kwargs: object) -> httpx.Response:
+        if url == "https://cdn.example.com/intro.mp4":
+            return httpx.Response(
+                200,
+                content=b"fake-mp4-bytes",
+                request=httpx.Request("GET", url),
+            )
+        raise AssertionError(f"unexpected get url: {url}")
+
+    with (
+        patch.object(httpx.AsyncClient, "post", new=fake_post),
+        patch.object(httpx.AsyncClient, "get", new=fake_get),
+    ):
+        token = await svc._upload_media("bot-token", "https://cdn.example.com/intro.mp4", "video")
+
+    assert token == "tok-from-step1"
+
+
+@pytest.mark.anyio
+async def test_upload_media_raises_when_no_token_anywhere() -> None:
+    svc = _make_service()
+
+    async def fake_post(self: httpx.AsyncClient, url: str, **kwargs: object) -> httpx.Response:
+        if url.startswith(f"{MAX_API_BASE}/uploads"):
+            return httpx.Response(
+                200,
+                json={"url": "https://omub.okcdn.ru/upload.do"},
+                request=httpx.Request("POST", url),
+            )
+        if url == "https://omub.okcdn.ru/upload.do":
+            return httpx.Response(200, text="", request=httpx.Request("POST", url))
+        raise AssertionError(f"unexpected post url: {url}")
+
+    async def fake_get(self: httpx.AsyncClient, url: str, **kwargs: object) -> httpx.Response:
+        if url == "https://cdn.example.com/intro.mp4":
+            return httpx.Response(
+                200,
+                content=b"fake-mp4-bytes",
+                request=httpx.Request("GET", url),
+            )
+        raise AssertionError(f"unexpected get url: {url}")
+
+    with (
+        patch.object(httpx.AsyncClient, "post", new=fake_post),
+        patch.object(httpx.AsyncClient, "get", new=fake_get),
+    ):
+        with pytest.raises(ValueError, match="no attachment token"):
+            await svc._upload_media("bot-token", "https://cdn.example.com/intro.mp4", "video")
+
+
+@pytest.mark.anyio
 async def test_send_message_raw_retries_on_attachment_not_ready() -> None:
     svc = _make_service()
     message_calls = 0

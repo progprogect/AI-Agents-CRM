@@ -711,9 +711,23 @@ class MaxService:
             if r2.status_code not in (200, 201):
                 raise ValueError(f"Max upload POST failed: {r2.text}")
 
-            upload_result = r2.json()
-            # Token may be in response or pre-fetched from step 1
-            return upload_result.get("token") or token
+            upload_result: dict[str, Any] = {}
+            if r2.text.strip():
+                try:
+                    parsed = r2.json()
+                    if isinstance(parsed, dict):
+                        upload_result = parsed
+                except json.JSONDecodeError:
+                    logger.debug(
+                        "Max upload response is not JSON (status=%s, len=%d)",
+                        r2.status_code,
+                        len(r2.content),
+                    )
+
+            final_token = upload_result.get("token") or token
+            if not final_token:
+                raise ValueError("Max upload succeeded but no attachment token received")
+            return final_token
 
     # -------------------------------------------------------------------------
     # Payment helper
