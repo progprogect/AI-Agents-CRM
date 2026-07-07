@@ -16,6 +16,7 @@ Binding fields:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -40,6 +41,10 @@ MAX_MSG_NS = uuid.UUID("8ba7b810-9dad-11d1-80b4-00c04fd430c8")
 # Max text limit: 4000 chars
 MAX_MESSAGE_MAX_LENGTH = 4000
 
+# Retry POST /messages when video/audio is still processing on MAX servers
+_MAX_ATTACHMENT_NOT_READY_RETRIES = 5
+_MAX_ATTACHMENT_NOT_READY_DELAYS = (2, 4, 8, 16)
+
 # Bot commands registered on Max
 MAX_BOT_COMMANDS = [
     {"name": "restart", "description": "Начать новый чат"},
@@ -48,6 +53,17 @@ MAX_BOT_COMMANDS = [
     {"name": "feedback", "description": "Обратная связь"},
     {"name": "supportproject", "description": "Поддержать проект"},
 ]
+
+
+def _is_max_attachment_not_ready_response(status_code: int, response_text: str) -> bool:
+    """True when MAX has not finished processing an uploaded media attachment."""
+    if status_code in (200, 201):
+        return False
+    try:
+        data = json.loads(response_text)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return data.get("code") == "attachment.not.ready"
 
 
 def _truncate_max_text(text: str, max_len: int = MAX_MESSAGE_MAX_LENGTH) -> str:
@@ -617,16 +633,34 @@ class MaxService:
             return
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{MAX_API_BASE}/messages",
-                params={"chat_id": chat_id},
-                headers=self._auth_headers(access_token),
-                json=body,
-            )
-            if resp.status_code not in (200, 201):
+            for attempt in range(_MAX_ATTACHMENT_NOT_READY_RETRIES):
+                resp = await client.post(
+                    f"{MAX_API_BASE}/messages",
+                    params={"chat_id": chat_id},
+                    headers=self._auth_headers(access_token),
+                    json=body,
+                )
+                if resp.status_code in (200, 201):
+                    logger.info("Max: sent message to chat=%s", chat_id)
+                    return
+                if (
+                    _is_max_attachment_not_ready_response(resp.status_code, resp.text)
+                    and attempt < _MAX_ATTACHMENT_NOT_READY_RETRIES - 1
+                ):
+                    delay = _MAX_ATTACHMENT_NOT_READY_DELAYS[
+                        min(attempt, len(_MAX_ATTACHMENT_NOT_READY_DELAYS) - 1)
+                    ]
+                    logger.info(
+                        "Max attachment not ready (chat=%s), retry %d/%d in %ds",
+                        chat_id,
+                        attempt + 1,
+                        _MAX_ATTACHMENT_NOT_READY_RETRIES,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
                 logger.error("Max /messages error (chat=%s): %s", chat_id, resp.text)
-            else:
-                logger.info("Max: sent message to chat=%s", chat_id)
+                return
 
     # -------------------------------------------------------------------------
     # Media upload helpers
@@ -659,14 +693,14 @@ class MaxService:
     ) -> Optional[str]:
         """Upload media to Max /uploads endpoint and return attachment token."""
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # Step 1: get upload URL
-            r1 = await client.get(
+            # Step 1: get upload URL (MAX API requires POST, not GET)
+            r1 = await client.post(
                 f"{MAX_API_BASE}/uploads",
                 params={"type": upload_type},
                 headers=self._auth_headers(access_token),
             )
             if r1.status_code != 200:
-                raise ValueError(f"Max /uploads GET failed: {r1.text}")
+                raise ValueError(f"Max /uploads POST failed: {r1.text}")
             upload_url = r1.json().get("url")
             token = r1.json().get("token")  # for audio/video, token comes from upload server
 
