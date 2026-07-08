@@ -132,7 +132,6 @@ export function stepsToFlow(
           is_forced: tr.is_forced,
           is_fallback: tr.is_fallback ?? false,
           next_step_id: tr.next_step_id,
-          match_quick_reply: tr.match_quick_reply ?? null,
         },
       });
     });
@@ -246,7 +245,7 @@ export function flowToSteps(
   existingSteps.forEach((s) => stepMap.set(s.id, s));
 
   // Rebuild transitions from edges (exclude start-node and auto_step-targeting edges)
-  const transitionsBySource = new Map<string, { condition: string; is_forced: boolean; is_fallback: boolean; next_step_id: string; match_quick_reply?: string | null }[]>();
+  const transitionsBySource = new Map<string, { condition: string; is_forced: boolean; is_fallback: boolean; next_step_id: string }[]>();
 
   // Auto-step node IDs — edges targeting these must never become transitions.
   const autoStepNodeIds = new Set(
@@ -260,17 +259,11 @@ export function flowToSteps(
     // Also filter any non-timed edge whose target is an auto_step node (e.g. leaked from old configs).
     if (autoStepNodeIds.has(edge.target)) return;
     const list = transitionsBySource.get(edge.source) ?? [];
-    const existingStep = stepMap.get(edge.source);
-    const existingTr = existingStep?.transitions.find((t) => t.next_step_id === edge.target);
     list.push({
       condition: (edge.data as { condition?: string })?.condition ?? (edge.label as string) ?? "",
       is_forced: (edge.data as { is_forced?: boolean })?.is_forced ?? false,
       is_fallback: (edge.data as { is_fallback?: boolean })?.is_fallback ?? false,
       next_step_id: edge.target,
-      match_quick_reply:
-        (edge.data as { match_quick_reply?: string | null })?.match_quick_reply
-        ?? existingTr?.match_quick_reply
-        ?? null,
     });
     transitionsBySource.set(edge.source, list);
   });

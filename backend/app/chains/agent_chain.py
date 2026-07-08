@@ -302,40 +302,6 @@ async def _build_questionnaire_context_block(
         return ""
 
 
-def _try_quick_reply_transition(
-    state: WorkflowState,
-    step: WorkflowStep,
-    step_map: dict[str, WorkflowStep],
-) -> Optional[str]:
-    """Match user_message against step quick_replies and transition.match_quick_reply.
-
-    Returns:
-        - target step id when a matching transition is found
-        - step.id when a quick reply was pressed but no transition matched (stay)
-        - None when user_message is not a quick reply on this step (continue LLM eval)
-    """
-    user_message = (state.get("user_message") or "").strip()
-    if not user_message:
-        return None
-    quick_replies = step.quick_replies or []
-    if user_message not in quick_replies:
-        return None
-    for transition in step.transitions or []:
-        match_label = transition.match_quick_reply
-        if match_label and match_label == user_message:
-            target = transition.next_step_id
-            if step_map.get(target) is not None:
-                return target
-            logger.warning(
-                "Quick-reply transition target %s not found (step %s) — staying",
-                target,
-                step.id,
-                extra={"conversation_id": state.get("conversation_id")},
-            )
-            return step.id
-    return step.id
-
-
 # ---------------------------------------------------------------------------
 # AgentChain
 # ---------------------------------------------------------------------------
@@ -756,21 +722,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 system_text = agent_chain_self._build_step_system_prompt(
                     base_prompt, step, state.get("collected") or {}
                 )
-                user_message = (state.get("user_message") or "").strip()
-                if (
-                    user_message
-                    and step.quick_replies
-                    and user_message in step.quick_replies
-                    and not any(
-                        t.match_quick_reply == user_message
-                        for t in (step.transitions or [])
-                        if t.match_quick_reply
-                    )
-                ):
-                    system_text += (
-                        f"\n\nПользователь нажал кнопку «{user_message}». "
-                        "Ответь по сценарию этой кнопки, не завершай консультацию."
-                    )
             else:
                 system_text = base_prompt
 
@@ -1282,24 +1233,6 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                             **({"collected": existing_collected} if collected_update is not None else {}),
                         }
                 # All required fields are present — fall through to normal transition eval.
-
-            qr_target = _try_quick_reply_transition(state, step, step_map)
-            if qr_target is not None:
-                logger.info(
-                    "Pre-transition: quick reply %r → %s (from step %s)",
-                    (state.get("user_message") or "").strip(),
-                    qr_target,
-                    step_id,
-                    extra={"conversation_id": state.get("conversation_id")},
-                )
-                return _finalize_transition_outcome(
-                    state,
-                    step_map=step_map,
-                    entry_step_id=entry_step_id,
-                    new_step_id=qr_target,
-                    collected_update=collected_update,
-                    quick_replies_from_resolved_step=True,
-                )
 
             new_step_id = step_id
 

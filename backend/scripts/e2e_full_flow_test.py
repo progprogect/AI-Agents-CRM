@@ -4,7 +4,7 @@
 Checks:
 1. step_3 anamnesis collection blocks until pet_name/pet_breed/pet_age provided
 2. After providing data → step_1776689159495 with "Все понятно" buttons IMMEDIATELY
-3. "Все понятно" → short goodbye on step_consult_complete; share template via enter auto (~1s later)
+3. "Все понятно" → short goodbye on step_consult_complete; share template via exit auto (~1s later)
 4. auto_after_share_followup fires in 5s after share auto (chained from auto_recommendation_share)
 5. 24h auto-step fires in 90s (test delay)
 6. 7-day auto-step fires in 180s (test delay)

@@ -148,8 +148,13 @@
             "condition": "Пользователь нажал «Все понятно» или эквивалент (вопрос решён, всё понятно, спасибо хватит); не путать с «Еще есть вопросы»",
             "next_step_id": "step_consult_complete",
             "is_forced": false,
-            "is_fallback": false,
-            "match_quick_reply": "Все понятно"
+            "is_fallback": false
+          },
+          {
+            "condition": "Если пользователь задал новый вопрос, который отличается от текущей темы или требует дополнительного контекста и уточнений.",
+            "next_step_id": "step_3",
+            "is_forced": false,
+            "is_fallback": false
           }
         ],
         "timer_trigger": null,
@@ -161,7 +166,14 @@
         "instructions": "Пользователь подтвердил, что вопрос закрыт (кнопка «Все понятно» или эквивалент). Ответь одним коротким дружелюбным прощанием (1–2 предложения). Не повторяй приветствие и не давай новых медсоветов. Текст «поделись с друзьями» не включай — он приходит отдельным авто-сообщением сразу после твоей реплики.",
         "collect": [],
         "required": false,
-        "transitions": [],
+        "transitions": [
+          {
+            "condition": "Пользователь задал новый вопрос",
+            "next_step_id": "step_3",
+            "is_forced": false,
+            "is_fallback": false
+          }
+        ],
         "timer_trigger": null,
         "quick_replies": []
       }
@@ -170,8 +182,8 @@
       {
         "id": "auto_recommendation_share",
         "name": "Сообщение «поделись» (шаблон)",
-        "source_id": "step_consult_complete",
-        "schedule_anchor": "on_step_enter",
+        "source_id": "step_1776689159495",
+        "schedule_anchor": "on_step_exit",
         "delay_seconds": 1,
         "action_type": "static",
         "message_template": "__prompts_template__:recommendation_share_message",
@@ -182,7 +194,7 @@
       {
         "id": "auto_1776696721697",
         "name": "как дела у питомца?",
-        "source_id": "step_consult_complete",
+        "source_id": "step_1776689159495",
         "schedule_anchor": "on_step_exit",
         "delay_seconds": 86400,
         "action_type": "agent",
