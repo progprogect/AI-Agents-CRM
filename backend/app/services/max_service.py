@@ -205,7 +205,7 @@ class MaxService:
     ) -> None:
         """Handle bot_started — user pressed Start button."""
         user = payload.get("user", {})
-        chat_id = str(user.get("user_id", ""))
+        chat_id = str(payload.get("chat_id") or user.get("user_id") or "")
         if not chat_id:
             return
 
