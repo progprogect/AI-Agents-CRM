@@ -75,7 +75,11 @@ def _truncate_max_text(text: str, max_len: int = MAX_MESSAGE_MAX_LENGTH) -> str:
 
 
 def _build_max_inline_keyboard(quick_replies: list[str]) -> Optional[dict]:
-    """Build Max inline_keyboard attachment from quick_reply labels."""
+    """Build Max inline_keyboard attachment from quick_reply labels.
+
+    Uses ``type: message`` so MAX sends ``message_created`` with ``body.text`` equal
+    to the label — same path as Telegram ReplyKeyboard and plain user text.
+    """
     if not quick_replies:
         return None
     rows = [quick_replies[i:i + 2] for i in range(0, len(quick_replies), 2)]
@@ -83,13 +87,40 @@ def _build_max_inline_keyboard(quick_replies: list[str]) -> Optional[dict]:
     for row in rows:
         buttons.append([
             {
-                "type": "callback",
+                "type": "message",
                 "text": label[:40],
-                "payload": json.dumps({"cmd": "reply", "text": label}, ensure_ascii=False)[:1024],
+                "payload": label[:1024],
             }
             for label in row
         ])
     return {"type": "inline_keyboard", "payload": {"buttons": buttons}}
+
+
+def _resolve_callback_button_text(
+    cb_payload_raw: str,
+    message_data: dict[str, Any],
+) -> str:
+    """Resolve button label from callback payload (backward compat for old callback buttons)."""
+    if not cb_payload_raw:
+        return ""
+
+    try:
+        parsed = json.loads(cb_payload_raw)
+        if isinstance(parsed, dict) and parsed.get("cmd") == "reply":
+            return str(parsed.get("text") or "").strip()
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+
+    attachments = (message_data.get("body") or {}).get("attachments") or []
+    for att in attachments:
+        if att.get("type") != "inline_keyboard":
+            continue
+        for row in (att.get("payload") or {}).get("buttons") or []:
+            for btn in row:
+                if btn.get("payload") == cb_payload_raw:
+                    return str(btn.get("text") or "").strip()
+
+    return cb_payload_raw.strip()
 
 
 def _build_max_payment_keyboard(pay_buttons: list[dict]) -> Optional[dict]:
@@ -200,17 +231,26 @@ class MaxService:
     async def _handle_message_callback(
         self, payload: dict[str, Any], binding: Any, binding_id: str
     ) -> None:
-        """Handle message_callback (inline button press)."""
+        """Handle message_callback (inline button press).
+
+        Quick-reply buttons now use ``type: message`` and arrive as ``message_created``.
+        This handler remains for legacy callback buttons, payment callbacks, and /restart.
+        """
         callback = payload.get("callback", {})
         callback_id = callback.get("callback_id")
-        cb_payload_raw = callback.get("payload", "")
+        cb_payload_raw = callback.get("payload", "") or ""
         user = callback.get("user", {})
-        chat_id_raw = user.get("user_id")
+        message_data = payload.get("message", {})
+        recipient = message_data.get("recipient", {})
+
+        chat_id_raw = recipient.get("chat_id") or recipient.get("user_id")
+        sender_user_id = user.get("user_id")
 
         if not callback_id or not chat_id_raw:
             return
 
         chat_id = str(chat_id_raw)
+        sender_id = sender_user_id or chat_id_raw
 
         # Always answer callback
         try:
@@ -220,9 +260,11 @@ class MaxService:
             logger.warning("Max POST /answers failed: %s", exc)
 
         # Parse payload
+        cb_payload: dict[str, Any] = {}
         try:
-            cb_payload = json.loads(cb_payload_raw) if cb_payload_raw else {}
-        except (json.JSONDecodeError, ValueError):
+            parsed = json.loads(cb_payload_raw) if cb_payload_raw else {}
+            cb_payload = parsed if isinstance(parsed, dict) else {}
+        except (json.JSONDecodeError, ValueError, TypeError):
             cb_payload = {}
 
         cmd = cb_payload.get("cmd", "")
@@ -245,19 +287,36 @@ class MaxService:
                 )
             except Exception as exc:
                 logger.warning("Max callback /restart failed: %s", exc)
-        elif cmd == "reply":
-            reply_text = cb_payload.get("text", "")
-            if reply_text:
-                synthetic = {
-                    "update_type": "message_created",
-                    "message": {
-                        "recipient": {"chat_id": chat_id_raw, "chat_type": "dialog", "user_id": chat_id_raw},
-                        "body": {"mid": "", "seq": 0, "text": reply_text},
-                        "sender": {"user_id": chat_id_raw, "is_bot": False},
-                        "timestamp": 0,
+            return
+
+        reply_text = ""
+        if cmd == "reply":
+            reply_text = str(cb_payload.get("text") or "").strip()
+        else:
+            reply_text = _resolve_callback_button_text(cb_payload_raw, message_data)
+
+        if reply_text:
+            synthetic = {
+                "update_type": "message_created",
+                "message": {
+                    "recipient": {
+                        "chat_id": chat_id_raw,
+                        "chat_type": recipient.get("chat_type", "dialog"),
+                        "user_id": recipient.get("user_id") or chat_id_raw,
                     },
-                }
-                await self._handle_message_created(synthetic, binding, binding_id)
+                    "body": {"mid": "", "seq": 0, "text": reply_text},
+                    "sender": {"user_id": sender_id, "is_bot": False},
+                    "timestamp": message_data.get("timestamp", 0),
+                },
+            }
+            await self._handle_message_created(synthetic, binding, binding_id)
+            return
+
+        logger.warning(
+            "Max unrecognized callback payload (chat=%s): %r",
+            chat_id,
+            cb_payload_raw[:200] if cb_payload_raw else "",
+        )
 
     async def _answer_callback(self, access_token: str, callback_id: str) -> None:
         """POST /answers to acknowledge callback press."""

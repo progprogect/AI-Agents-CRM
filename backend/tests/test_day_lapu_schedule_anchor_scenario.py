@@ -1,4 +1,4 @@
-"""Сценарий «Дай Лапу»: exit-авто с шага «Дать ответ» и цепочка авто→авто.
+"""Сценарий «Дай Лапу»: enter-авто на step_consult_complete и цепочка авто→авто.
 
 Проверяем валидацию PUT /api/v1/agents/{id} и ожидаемый набор pending_auto
 при переходе step_1776689159495 → step_consult_complete (как в agent_chain).
@@ -34,7 +34,7 @@ def test_day_lapu_config_parses_like_api_validation(day_lapu_config: dict) -> No
     cfg = AgentConfig.from_dict(day_lapu_config)
     assert cfg.agent_id == "day_lapu_tat_yana_vetirinarnyy_pomoshchnik_2"
     auto_day = next(a for a in cfg.workflow.auto_steps if a.id == "auto_1776696721697")
-    assert auto_day.source_id == "step_1776689159495"
+    assert auto_day.source_id == "step_consult_complete"
     assert auto_day.schedule_anchor == "on_step_exit"
     assert auto_day.delay_seconds == 86400
 
@@ -48,8 +48,8 @@ def test_day_lapu_step_3_collect_sufficiency_flag(day_lapu_config: dict) -> None
     assert cfg.workflow.start_step_id == "step_privacy"
 
 
-def test_pending_auto_when_leaving_answer_step(day_lapu_config: dict) -> None:
-    """При смене шага answer→consult_complete: только exit-авто со шага «Дать ответ».
+def test_pending_auto_when_entering_consult_complete(day_lapu_config: dict) -> None:
+    """При смене шага answer→consult_complete: enter-авто share + exit-авто 24h.
 
     Цепочки auto_after_share и 7d висят от auto_recommendation_share и планируются
     при срабатывании этого авто, не при workflow-переходе.
@@ -67,11 +67,17 @@ def test_pending_auto_when_leaving_answer_step(day_lapu_config: dict) -> None:
     exit_autos = [
         a.id
         for a in wf.auto_steps
+        if a.source_id == new_step_id and a.schedule_anchor == "on_step_exit"
+    ]
+    exit_from_answer = [
+        a.id
+        for a in wf.auto_steps
         if a.source_id == step_id and a.schedule_anchor == "on_step_exit"
     ]
 
-    assert enter_autos == []
-    assert set(exit_autos) == {"auto_recommendation_share", "auto_1776696721697"}
+    assert set(enter_autos) == {"auto_recommendation_share"}
+    assert set(exit_autos) == {"auto_1776696721697"}
+    assert exit_from_answer == []
 
     chained_from_share = [
         a.id
@@ -117,17 +123,17 @@ def test_put_agent_endpoint_validates_fixture(day_lapu_config: dict) -> None:
     body = r.json()
     assert body["agent_id"] == agent_id
     anchors = [a["schedule_anchor"] for a in body["config"]["workflow"]["auto_steps"]]
+    assert "on_step_enter" in anchors
     assert "on_step_exit" in anchors
 
 
-def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu_config: dict) -> None:
-    """POST /api/v1/chat/.../messages: при переходе с «Дать ответ» планируются два exit-авто.
+def test_chat_api_post_message_schedules_enter_auto_on_consult_complete(day_lapu_config: dict) -> None:
+    """POST /api/v1/chat/.../messages: при переходе на consult_complete планируются enter+exit авто.
 
     Граф замокан; pending_auto как у agent_chain при переходе на step_consult_complete.
     """
     agent_id = day_lapu_config["agent_id"]
     cfg = AgentConfig.from_dict(day_lapu_config)
-    step_answer = "step_1776689159495"
     new_step_id = "step_consult_complete"
 
     enter_schedules = [
@@ -146,7 +152,7 @@ def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu
             "auto_step": a.model_dump(),
         }
         for a in cfg.workflow.auto_steps
-        if a.source_id == step_answer and a.schedule_anchor == "on_step_exit"
+        if a.source_id == new_step_id and a.schedule_anchor == "on_step_exit"
     ]
     pending_schedules = enter_schedules + exit_schedules
     assert len(pending_schedules) == 2
@@ -215,7 +221,7 @@ def test_chat_api_post_message_calls_schedule_auto_step_for_exit_anchor(day_lapu
 
         r = client.post(
             f"/api/v1/chat/conversations/{conversation_id}/messages",
-            json={"content": "спасибо, вопрос решён"},
+            json={"content": "Все понятно"},
         )
         assert r.status_code == 201, r.text
         assert r.json()["role"] == "agent"

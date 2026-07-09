@@ -391,6 +391,13 @@ class WorkflowTransition(BaseModel):
             "Mutually exclusive with is_forced."
         ),
     )
+    match_quick_reply: Optional[str] = Field(
+        default=None,
+        description=(
+            "If set, transition fires when user_message exactly matches this "
+            "quick-reply label (before LLM evaluator)."
+        ),
+    )
 
 
 class WorkflowStep(BaseModel):

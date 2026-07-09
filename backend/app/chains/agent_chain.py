@@ -214,6 +214,39 @@ def _transition_conversation_sample(
     return "\n".join(lines)
 
 
+def _try_quick_reply_transition(
+    state: WorkflowState,
+    step: WorkflowStep,
+    step_map: dict[str, WorkflowStep],
+) -> tuple[bool, str]:
+    """Match deterministic quick-reply transitions before LLM evaluation.
+
+    Returns ``(is_quick_reply, next_step_id)``. When ``is_quick_reply`` is True,
+    the caller must skip LLM transition evaluation; ``next_step_id`` may equal the
+    current step (e.g. «Еще есть вопросы» with no ``match_quick_reply`` transition).
+    """
+    user_message = (state.get("user_message") or "").strip()
+    if not user_message or not step.quick_replies:
+        return False, step.id
+    if user_message not in step.quick_replies:
+        return False, step.id
+
+    for transition in step.transitions:
+        match_label = getattr(transition, "match_quick_reply", None)
+        if match_label and match_label == user_message:
+            if step_map.get(transition.next_step_id) is not None:
+                return True, transition.next_step_id
+            logger.warning(
+                "Quick-reply transition target %s not found (step %s)",
+                transition.next_step_id,
+                step.id,
+                extra={"conversation_id": state.get("conversation_id")},
+            )
+            return True, step.id
+
+    return True, step.id
+
+
 def _clean_response(text: str) -> str:
     return re.sub(
         r"^\[(?:SAFETY_HANDLER|THINKING|INTERNAL|SYSTEM|TOOL_USE)\][^\n]*\n?",
@@ -735,6 +768,21 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             if questionnaire_block:
                 system_text = system_text + "\n\n" + questionnaire_block
 
+            user_message = (state.get("user_message") or "").strip()
+            if (
+                step is not None
+                and step.quick_replies
+                and user_message in step.quick_replies
+                and not any(
+                    getattr(t, "match_quick_reply", None) == user_message
+                    for t in (step.transitions or [])
+                )
+            ):
+                system_text += (
+                    f"\n\nПользователь нажал кнопку «{user_message}». "
+                    "Ответь по сценарию этой кнопки, не завершай консультацию."
+                )
+
             return {"step_system_prompt": system_text}
 
         # ---- Node: rag_retrieval ----
@@ -1233,6 +1281,31 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                             **({"collected": existing_collected} if collected_update is not None else {}),
                         }
                 # All required fields are present — fall through to normal transition eval.
+
+            is_quick_reply, quick_reply_next = _try_quick_reply_transition(state, step, step_map)
+            if is_quick_reply:
+                if quick_reply_next != step_id:
+                    logger.info(
+                        "Pre-transition: quick_reply match %s → %s",
+                        step_id,
+                        quick_reply_next,
+                        extra={"conversation_id": state.get("conversation_id")},
+                    )
+                else:
+                    logger.info(
+                        "Pre-transition: quick_reply %r — staying on %s",
+                        (state.get("user_message") or "").strip(),
+                        step_id,
+                        extra={"conversation_id": state.get("conversation_id")},
+                    )
+                return _finalize_transition_outcome(
+                    state,
+                    step_map=step_map,
+                    entry_step_id=entry_step_id,
+                    new_step_id=quick_reply_next,
+                    collected_update=collected_update,
+                    quick_replies_from_resolved_step=True,
+                )
 
             new_step_id = step_id
 
