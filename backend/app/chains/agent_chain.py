@@ -214,6 +214,19 @@ def _transition_conversation_sample(
     return "\n".join(lines)
 
 
+def _should_llm_evaluate_transition(transition: Any) -> bool:
+    """True for conditional transitions evaluated by YES/NO LLM.
+
+    Transitions with ``match_quick_reply`` are handled only by
+    ``_try_quick_reply_transition`` in pre_transition (exact button label).
+    """
+    if transition.is_fallback or not transition.condition.strip():
+        return False
+    if getattr(transition, "match_quick_reply", None):
+        return False
+    return True
+
+
 def _try_quick_reply_transition(
     state: WorkflowState,
     step: WorkflowStep,
@@ -582,7 +595,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
             llm = None
             conversation_summary: str | None = None
             for transition in step.transitions:
-                if transition.is_fallback or not transition.condition.strip():
+                if not _should_llm_evaluate_transition(transition):
                     continue
                 if llm is None:
                     llm = _get_service("llm")
@@ -1314,7 +1327,7 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                 conversation_summary: str | None = None
 
                 for transition in step.transitions:
-                    if transition.is_fallback or not transition.condition.strip():
+                    if not _should_llm_evaluate_transition(transition):
                         continue
 
                     if llm is None:
@@ -1451,6 +1464,8 @@ Use format: [Image: URL] or ![description](URL) for the user to view.
                                 step_id,
                                 transition.next_step_id,
                             )
+                        continue
+                    if getattr(transition, "match_quick_reply", None):
                         continue
 
                     if llm is None:

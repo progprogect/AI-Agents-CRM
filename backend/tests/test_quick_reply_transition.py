@@ -173,3 +173,66 @@ async def test_pre_transition_more_questions_stays_on_answer_step(day_lapu_confi
     assert final.get("current_step_id") == STEP_ANSWER
     pending = final.get("pending_auto_schedules") or []
     assert not any(p["auto_step_id"] == "auto_recommendation_share" for p in pending)
+
+
+@pytest.mark.anyio
+async def test_post_transition_skips_match_quick_reply_llm_eval(day_lapu_config: AgentConfig) -> None:
+    """After agent answer on «Дать ответ», LLM YES on «Все понятно» must not advance step."""
+    _graph_cache.clear()
+
+    async def llm_invoke(messages):
+        content = messages[0].content if messages else ""
+        if "Reply with exactly 'YES' or 'NO'" in content:
+            return AIMessage(content="YES")
+        return AIMessage(content="Промой ухо тёплой водой и понаблюдай за питомцем.")
+
+    mock_llm = MagicMock()
+    mock_llm.ainvoke = AsyncMock(side_effect=llm_invoke)
+
+    llm_factory = MagicMock()
+    llm_factory.get_chat_model = AsyncMock(return_value=mock_llm)
+
+    with patch(
+        "app.storage.postgres_checkpointer.get_checkpointer",
+        return_value=MemorySaver(),
+    ):
+        chain = AgentChain(agent_config=day_lapu_config, llm_factory=llm_factory)
+        graph = chain._get_compiled_graph()
+
+    rc = {
+        "configurable": {
+            "thread_id": "qr-test-post-no-llm-complete",
+            "llm": mock_llm,
+            "moderation_service": None,
+            "escalation_service": None,
+            "rag_service": None,
+            "is_reply_stale": None,
+        }
+    }
+
+    await graph.aupdate_state(
+        rc,
+        {
+            "conversation_id": "conv-qr-3",
+            "agent_id": day_lapu_config.agent_id,
+            "current_step_id": STEP_ANSWER,
+            "step_history": [STEP_ANSWER],
+            "collected": {},
+            "messages": [],
+        },
+    )
+
+    with patch(
+        "app.chains.agent_chain._build_questionnaire_context_block",
+        new_callable=AsyncMock,
+        return_value="",
+    ):
+        final = await graph.ainvoke(
+            {"user_message": "чешется ухо, что делать?"},
+            config=rc,
+        )
+
+    assert final.get("current_step_id") == STEP_ANSWER
+    qr = final.get("quick_replies") or final.get("result", {}).get("quick_replies") or []
+    assert "Все понятно" in qr
+    assert "Еще есть вопросы" in qr
