@@ -1,8 +1,8 @@
 """VK (ВКонтакте) service — Callback API integration.
 
-Handles incoming Callback API events (message_new, message_event, confirmation),
-sends messages through VK API with full media support, inline keyboards,
-bot commands dispatch, and payment guard integration.
+Handles incoming Callback API events (message_new, message_allow, message_event,
+confirmation), sends messages through VK API with full media support, inline
+keyboards, bot commands dispatch, and payment guard integration.
 
 Binding fields:
     channel_account_id  — VK Group ID (numeric string)
@@ -13,6 +13,7 @@ Binding fields:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import random
@@ -153,6 +154,21 @@ class VKService:
                     logger.warning("VK binding %s: secret mismatch", binding_id)
                     return "ok"
 
+            # ── Permission to receive messages (user pressed "Start") ────────
+            if event_type == "message_allow":
+                user_id = payload.get("object", {}).get("user_id")
+                if user_id:
+                    access_token = await self.channel_binding_service.get_access_token(binding_id)
+                    from app.services.bot_commands_service import dispatch_command_generic
+                    await dispatch_command_generic(
+                        command="/restart",
+                        chat_id=str(user_id),
+                        binding=binding,
+                        send_fn=self._make_command_send_fn(access_token, int(user_id), binding),
+                        db=self.db,
+                    )
+                return "ok"
+
             # ── Inline callback (button press) ───────────────────────────────
             if event_type == "message_event":
                 await self._handle_message_event(payload, binding, binding_id)
@@ -203,9 +219,7 @@ class VKService:
                     command="/restart",
                     chat_id=str(peer_id),
                     binding=binding,
-                    send_fn=lambda text, *, media_url=None, media_type=None: self._send_text(
-                        access_token, peer_id, text
-                    ),
+                    send_fn=self._make_command_send_fn(access_token, int(peer_id), binding),
                     db=self.db,
                 )
             except Exception as exc:
@@ -363,9 +377,7 @@ class VKService:
                     command=message_text,
                     chat_id=peer_id_str,
                     binding=binding,
-                    send_fn=lambda text, *, media_url=None, media_type=None: self._send_text(
-                        access_token, int(peer_id_str), text
-                    ),
+                    send_fn=self._make_command_send_fn(access_token, int(peer_id_str), binding),
                     db=self.db,
                 )
                 if handled:
@@ -533,6 +545,22 @@ class VKService:
     # Outbound — send message
     # -------------------------------------------------------------------------
 
+    def _make_command_send_fn(self, access_token: str, peer_id: int, binding: Any):
+        """Factory for send_fn used by dispatch_command_generic (supports media)."""
+        group_id = int(binding.channel_account_id) if binding.channel_account_id else None
+
+        async def send_fn(text, *, media_url=None, media_type=None):
+            await self._send_message_raw(
+                access_token,
+                peer_id,
+                text,
+                media_url=media_url,
+                media_type=media_type,
+                group_id=group_id,
+            )
+
+        return send_fn
+
     async def send_message(
         self,
         binding_id: str,
@@ -544,6 +572,12 @@ class VKService:
     ) -> None:
         """Send a message to a VK user/chat via messages.send."""
         access_token = await self.channel_binding_service.get_access_token(binding_id)
+        binding = await self.channel_binding_service.get_binding(binding_id)
+        group_id = (
+            int(binding.channel_account_id)
+            if binding and binding.channel_account_id
+            else None
+        )
         text = _truncate_vk_text(message_text or "")
         await self._send_message_raw(
             access_token=access_token,
@@ -552,11 +586,8 @@ class VKService:
             media_url=media_url,
             media_type=media_type,
             keyboard=keyboard,
+            group_id=group_id,
         )
-
-    async def _send_text(self, access_token: str, peer_id: int, text: str) -> None:
-        """Send a plain text message (used by command handlers)."""
-        await self._send_message_raw(access_token=access_token, peer_id=peer_id, text=text)
 
     async def _send_message_raw(
         self,
@@ -566,27 +597,42 @@ class VKService:
         media_url: Optional[str] = None,
         media_type: Optional[str] = None,
         keyboard: Optional[dict] = None,
+        group_id: Optional[int] = None,
+        append_url_on_upload_failure: bool = True,
     ) -> None:
         """Low-level send via VK messages.send.
 
-        Handles media upload → attach. Falls back to URL in text on failure.
+        Handles media upload → attach. Falls back to URL in text on failure
+        (except intro video: empty text + media_type=video).
         """
         attachment: Optional[str] = None
+
+        if append_url_on_upload_failure and not text and media_type == "video":
+            append_url_on_upload_failure = False
 
         if media_url and media_type:
             try:
                 attachment = await self._upload_and_get_attachment(
-                    access_token, peer_id, media_url, media_type
+                    access_token, peer_id, media_url, media_type, group_id=group_id
                 )
             except Exception as exc:
-                logger.warning(
-                    "VK media upload failed (peer=%s type=%s): %s — sending URL in text",
-                    peer_id, media_type, exc,
-                )
-                if text:
-                    text = f"{text}\n{media_url}"
+                if append_url_on_upload_failure:
+                    logger.warning(
+                        "VK media upload failed (peer=%s type=%s): %s — sending URL in text",
+                        peer_id, media_type, exc,
+                    )
+                    if text:
+                        text = f"{text}\n{media_url}"
+                    else:
+                        text = media_url
                 else:
-                    text = media_url
+                    logger.warning(
+                        "VK media upload failed (peer=%s type=%s): %s — skipping attachment",
+                        peer_id, media_type, exc,
+                    )
+
+        if not text and not attachment:
+            return
 
         params: dict[str, Any] = {
             "peer_id": peer_id,
@@ -601,32 +647,46 @@ class VKService:
         if keyboard:
             params["keyboard"] = json.dumps(keyboard, ensure_ascii=False)
 
+        max_attempts = 3 if attachment else 1
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(f"{VK_API_BASE}messages.send", params=params)
-            data = resp.json()
-            if "error" in data:
-                logger.error("VK messages.send error (peer=%s): %s", peer_id, data["error"])
-            else:
-                logger.info("VK: sent message to peer=%s", peer_id)
+            for attempt in range(max_attempts):
+                resp = await client.post(f"{VK_API_BASE}messages.send", params=params)
+                data = resp.json()
+                if "error" not in data:
+                    logger.info("VK: sent message to peer=%s", peer_id)
+                    return
+                logger.error(
+                    "VK messages.send error (peer=%s attempt=%s): %s",
+                    peer_id, attempt + 1, data["error"],
+                )
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(1)
 
     # -------------------------------------------------------------------------
     # Media upload helpers
     # -------------------------------------------------------------------------
 
     async def _upload_and_get_attachment(
-        self, access_token: str, peer_id: int, media_url: str, media_type: str
+        self,
+        access_token: str,
+        peer_id: int,
+        media_url: str,
+        media_type: str,
+        group_id: Optional[int] = None,
     ) -> str:
         """Upload media to VK and return an attachment string like photo123_456.
 
         For images: photos.getMessagesUploadServer → upload → photos.saveMessagesPhoto
+        For video: video.save → upload → video{owner_id}_{video_id}
         For audio/documents: docs.getMessagesUploadServer → upload → docs.save
         """
         async with httpx.AsyncClient(timeout=60.0) as client:
             if media_type == "image":
                 return await self._upload_photo(client, access_token, peer_id, media_url)
-            else:
-                doc_type = "audio_message" if media_type == "audio" else "doc"
-                return await self._upload_doc(client, access_token, peer_id, media_url, doc_type)
+            if media_type == "video":
+                return await self._upload_video(client, access_token, media_url, group_id)
+            doc_type = "audio_message" if media_type == "audio" else "doc"
+            return await self._upload_doc(client, access_token, peer_id, media_url, doc_type)
 
     async def _upload_photo(
         self, client: httpx.AsyncClient, access_token: str, peer_id: int, image_url: str
@@ -657,6 +717,47 @@ class VKService:
         )
         saved = r3.json()["response"][0]
         return f"photo{saved['owner_id']}_{saved['id']}"
+
+    async def _upload_video(
+        self,
+        client: httpx.AsyncClient,
+        access_token: str,
+        media_url: str,
+        group_id: Optional[int],
+    ) -> str:
+        """Upload MP4 via video.save and return attachment string video{owner}_{id}."""
+        if not group_id:
+            raise ValueError("group_id required for VK video upload")
+
+        r1 = await client.get(
+            f"{VK_API_BASE}video.save",
+            params={
+                "group_id": group_id,
+                "is_private": 1,
+                "wallpost": 0,
+                "name": "intro",
+                "access_token": access_token,
+                "v": VK_API_VERSION,
+            },
+        )
+        save_data = r1.json()
+        if "error" in save_data:
+            raise RuntimeError(f"video.save failed: {save_data['error']}")
+
+        save_resp = save_data["response"]
+        upload_url = save_resp["upload_url"]
+        owner_id = save_resp["owner_id"]
+        video_id = save_resp["video_id"]
+
+        video_resp = await client.get(media_url)
+        video_resp.raise_for_status()
+        r2 = await client.post(
+            upload_url,
+            files={"video_file": ("intro.mp4", video_resp.content, "video/mp4")},
+        )
+        r2.raise_for_status()
+
+        return f"video{owner_id}_{video_id}"
 
     async def _upload_doc(
         self, client: httpx.AsyncClient, access_token: str, peer_id: int, doc_url: str, doc_type: str
