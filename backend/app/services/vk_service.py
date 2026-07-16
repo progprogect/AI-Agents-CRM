@@ -54,6 +54,17 @@ def _truncate_vk_text(text: str, max_len: int = VK_MESSAGE_MAX_LENGTH) -> str:
     return text[:take] + suffix if take > 64 else text[:max_len]
 
 
+def _normalize_vk_group_id(channel_account_id: Optional[str]) -> Optional[int]:
+    """Return positive VK community ID for video.save (strip leading minus)."""
+    if not channel_account_id:
+        return None
+    raw = str(channel_account_id).strip().lstrip("-")
+    if not raw.isdigit():
+        logger.warning("Invalid VK group_id: %s", channel_account_id)
+        return None
+    return int(raw)
+
+
 def _build_vk_inline_keyboard(quick_replies: list[str]) -> Optional[dict]:
     """Build VK inline keyboard from quick_reply labels."""
     if not quick_replies:
@@ -547,7 +558,7 @@ class VKService:
 
     def _make_command_send_fn(self, access_token: str, peer_id: int, binding: Any):
         """Factory for send_fn used by dispatch_command_generic (supports media)."""
-        group_id = int(binding.channel_account_id) if binding.channel_account_id else None
+        group_id = _normalize_vk_group_id(binding.channel_account_id)
 
         async def send_fn(text, *, media_url=None, media_type=None):
             await self._send_message_raw(
@@ -574,8 +585,8 @@ class VKService:
         access_token = await self.channel_binding_service.get_access_token(binding_id)
         binding = await self.channel_binding_service.get_binding(binding_id)
         group_id = (
-            int(binding.channel_account_id)
-            if binding and binding.channel_account_id
+            _normalize_vk_group_id(binding.channel_account_id)
+            if binding
             else None
         )
         text = _truncate_vk_text(message_text or "")
@@ -647,7 +658,8 @@ class VKService:
         if keyboard:
             params["keyboard"] = json.dumps(keyboard, ensure_ascii=False)
 
-        max_attempts = 3 if attachment else 1
+        max_attempts = 5 if attachment and media_type == "video" else (3 if attachment else 1)
+        retry_delay = 2.0 if media_type == "video" else 1.0
         async with httpx.AsyncClient(timeout=30.0) as client:
             for attempt in range(max_attempts):
                 resp = await client.post(f"{VK_API_BASE}messages.send", params=params)
@@ -660,7 +672,13 @@ class VKService:
                     peer_id, attempt + 1, data["error"],
                 )
                 if attempt < max_attempts - 1:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(retry_delay)
+
+        if attachment and media_type == "video" and not text:
+            logger.error(
+                "VK intro video delivery failed after %s attempts (peer=%s attachment=%s)",
+                max_attempts, peer_id, attachment,
+            )
 
     # -------------------------------------------------------------------------
     # Media upload helpers
@@ -725,14 +743,14 @@ class VKService:
         media_url: str,
         group_id: Optional[int],
     ) -> str:
-        """Upload MP4 via video.save and return attachment string video{owner}_{id}."""
+        """Upload MP4 via video.save and return attachment video{owner}_{id}[_access_key]."""
         if not group_id:
             raise ValueError("group_id required for VK video upload")
 
         r1 = await client.get(
             f"{VK_API_BASE}video.save",
             params={
-                "group_id": group_id,
+                "group_id": abs(group_id),
                 "is_private": 1,
                 "wallpost": 0,
                 "name": "intro",
@@ -745,9 +763,12 @@ class VKService:
             raise RuntimeError(f"video.save failed: {save_data['error']}")
 
         save_resp = save_data["response"]
-        upload_url = save_resp["upload_url"]
-        owner_id = save_resp["owner_id"]
-        video_id = save_resp["video_id"]
+        upload_url = save_resp.get("upload_url")
+        owner_id = save_resp.get("owner_id")
+        video_id = save_resp.get("video_id")
+        access_key = (save_resp.get("access_key") or "").strip()
+        if not upload_url or owner_id is None or video_id is None:
+            raise RuntimeError(f"video.save returned incomplete response: {save_resp}")
 
         video_resp = await client.get(media_url)
         video_resp.raise_for_status()
@@ -756,8 +777,22 @@ class VKService:
             files={"video_file": ("intro.mp4", video_resp.content, "video/mp4")},
         )
         r2.raise_for_status()
+        if r2.content:
+            try:
+                upload_data = r2.json()
+                if isinstance(upload_data, dict) and upload_data.get("error"):
+                    raise RuntimeError(f"video upload failed: {upload_data['error']}")
+            except (json.JSONDecodeError, ValueError):
+                pass
 
-        return f"video{owner_id}_{video_id}"
+        attachment = f"video{owner_id}_{video_id}"
+        if access_key:
+            attachment = f"{attachment}_{access_key}"
+        logger.info(
+            "VK video uploaded group_id=%s owner_id=%s video_id=%s has_access_key=%s",
+            group_id, owner_id, video_id, bool(access_key),
+        )
+        return attachment
 
     async def _upload_doc(
         self, client: httpx.AsyncClient, access_token: str, peer_id: int, doc_url: str, doc_type: str

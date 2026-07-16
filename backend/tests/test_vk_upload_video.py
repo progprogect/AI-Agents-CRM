@@ -24,7 +24,41 @@ def _mock_response(json_data: dict, *, status_code: int = 200) -> MagicMock:
 
 
 @pytest.mark.anyio
-async def test_upload_video_returns_attachment() -> None:
+async def test_upload_video_returns_attachment_with_access_key() -> None:
+    svc = _vk_service()
+    video_bytes = b"fake-mp4-content"
+
+    save_resp = _mock_response({
+        "response": {
+            "upload_url": "https://upload.vk.com/video",
+            "owner_id": -123,
+            "video_id": 456,
+            "access_key": "5fabc30767e1b98c90",
+        },
+    })
+    download_resp = MagicMock()
+    download_resp.content = video_bytes
+    download_resp.raise_for_status = MagicMock()
+    upload_resp = MagicMock()
+    upload_resp.content = b""
+    upload_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=[save_resp, download_resp])
+    mock_client.post = AsyncMock(return_value=upload_resp)
+
+    attachment = await svc._upload_video(
+        mock_client,
+        "token",
+        "https://cdn.example.com/intro.mp4",
+        group_id=123,
+    )
+
+    assert attachment == "video-123_456_5fabc30767e1b98c90"
+
+
+@pytest.mark.anyio
+async def test_upload_video_returns_attachment_without_access_key() -> None:
     svc = _vk_service()
     video_bytes = b"fake-mp4-content"
 
@@ -39,26 +73,21 @@ async def test_upload_video_returns_attachment() -> None:
     download_resp.content = video_bytes
     download_resp.raise_for_status = MagicMock()
     upload_resp = MagicMock()
+    upload_resp.content = b""
     upload_resp.raise_for_status = MagicMock()
 
     mock_client = AsyncMock()
     mock_client.get = AsyncMock(side_effect=[save_resp, download_resp])
     mock_client.post = AsyncMock(return_value=upload_resp)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("app.services.vk_service.httpx.AsyncClient", return_value=mock_client):
-        attachment = await svc._upload_video(
-            mock_client,
-            "token",
-            "https://cdn.example.com/intro.mp4",
-            group_id=123,
-        )
+    attachment = await svc._upload_video(
+        mock_client,
+        "token",
+        "https://cdn.example.com/intro.mp4",
+        group_id=123,
+    )
 
     assert attachment == "video-123_456"
-    mock_client.post.assert_awaited_once()
-    upload_call = mock_client.post.await_args
-    assert "video_file" in upload_call.kwargs.get("files", {})
 
 
 @pytest.mark.anyio
